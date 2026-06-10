@@ -994,7 +994,7 @@ if __name__ == '__main__':
     XITOY_PAPKA   = 'Xitoy_Excel'                # Xitoy Excel fayllari shu yerda
     CHIQISH_PAPKA = 'konteynerlar/xitoy_parsed'  # Natija shu yerga chiqadi
     FAST_REJIM    = False                        # True → F_ prefiksi (tezkor konteyner)
-    TEST_REJIM    = False                        # True → faqat terminal, hech narsa saqlanmaydi
+    TEST_REJIM    = False                  # True → faqat terminal, hech narsa saqlanmaydi
                                                  # False → haqiqiy saqlash + arxiv
     # ================================================================
 

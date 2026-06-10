@@ -113,7 +113,7 @@ def get_category(name) -> str:
     s  = str(name).strip()
     sl = s.lower()
 
-    if re.match(r'^Ф-\d+', s) and 'ст' in s and re.search(r'\(\d+.*м\)', s):
+    if re.match(r'^(\([^)]*\)\s*)?Ф-\d+', s) and 'ст' in s and re.search(r'\(\d+.*м\)', s):
         return 'ТРУБА'
     if re.match(r'^.*Пр\.\s+\d+х\d+', s) and 'ст' in s and re.search(r'\(\d+.*м\)', s):
         return 'ПРОФИЛЬ'
