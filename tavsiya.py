@@ -36,8 +36,8 @@ from common import (
 
 SCRIPT_DIR      = Path(__file__).resolve().parent
 TARIX_FOLDER    = SCRIPT_DIR / 'tarix'
-MIN_ZAXIRA_FILE = SCRIPT_DIR / 'Minimal_zaxir_3oylik' / 'Min_Zaxira.xlsx'
-TAVSIYA_FILE    = SCRIPT_DIR / 'Tavsiya.xlsx'
+MIN_ZAXIRA_FILE = SCRIPT_DIR / 'Minimal_zaxiralar' / 'Min_Zaxira.xlsx'
+TAVSIYA_FILE    = SCRIPT_DIR / 'chiqish' / 'Tavsiya.xlsx'
 
 # Terminalda har kategoriyadan nechta tovar chiqsin
 TOP_N = 10

@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Bot runtime state (har ishga tushganda qayta yaratiladi)
+bot_holat/
+
+# Generated output fayllar
+chiqish/
+

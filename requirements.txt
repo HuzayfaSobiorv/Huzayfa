@@ -1,0 +1,8 @@
+pandas
+numpy
+openpyxl
+xlrd
+matplotlib
+pillow
+requests
+python-telegram-bot[job-queue]
