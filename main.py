@@ -30,7 +30,7 @@ from common import (
     get_category, get_marka, get_category_with_marka, get_category_order,
     get_himoya_foiz, yaxlitla_50, hisobla_min_zaxira, min_dan_kunlik_chiqar,
     load_qoldiq_file, keraksizmi, fayl_sanasi,
-    YOLDA_KUN, FAST_KUN, SLIDING_WINDOW, SEZON_OYNA,
+    YOLDA_KUN, FAST_KUN,
 )
 
 
@@ -40,11 +40,10 @@ from common import (
 
 SCRIPT_DIR        = Path(__file__).resolve().parent
 TARIX_FOLDER      = SCRIPT_DIR / 'tarix'
-CEX_FILE          = SCRIPT_DIR / 'Minimal_zaxir_3oylik' / 'ishlab_chiqarish.xlsx'
-MIN_ZAXIRA_FILE   = SCRIPT_DIR / 'Minimal_zaxir_3oylik' / 'Min_Zaxira.xlsx'
+MIN_ZAXIRA_FILE   = SCRIPT_DIR / 'Minimal_zaxiralar' / 'Min_Zaxira.xlsx'
 KONTEYNER_FOLDER       = SCRIPT_DIR / 'konteynerlar'
 KONTEYNER_XITOY_FOLDER = SCRIPT_DIR / 'konteynerlar' / 'xitoy_parsed'
-OUTPUT_FILE       = SCRIPT_DIR / 'NEJAVIYKA_POWER_BI.xlsx'
+OUTPUT_FILE       = SCRIPT_DIR / 'chiqish' / 'NEJAVIYKA_POWER_BI.xlsx'
 
 # ============================================================
 # BOSHLASH
@@ -82,15 +81,53 @@ print("\n2. MIN_ZAXIRA YUKLANMOQDA...")
 
 try:
     mz_raw = pd.read_excel(MIN_ZAXIRA_FILE, sheet_name='Min_Zaxira')
-    # Ustunlar: №, Товар, Категория, Йиллик_Сотув, Кунлик_Истеъмол, Мин_Захира
-    mz_raw = mz_raw[mz_raw['Товар'].notna()].copy()
-    mz_raw['Мин_Захира'] = pd.to_numeric(mz_raw['Мин_Захира'], errors='coerce').fillna(0)
-    mz_raw['Кунлик_Истеъмол'] = pd.to_numeric(mz_raw['Кунлик_Истеъмол'], errors='coerce').fillna(0)
-    mz_raw['Mahsulot_Normalized'] = mz_raw['Товар'].apply(normalize_product_name)
-    min_zaxira = mz_raw[['Mahsulot_Normalized', 'Мин_Захира', 'Кунлик_Истеъмол', 'Категория']].copy()
-    min_zaxira.columns = ['Mahsulot_Normalized', 'Min_Zaxira', 'Kunlik_Istemol', 'Kategoriya']
-    min_zaxira['Cex_Min'] = 0
+    # Ustunlar: №, Товар, Категория, Йиллик_Сотув, Кунлик_Истеъмол, Мин_Захира, (Цех_Захира)
+
+    # Ustun nomlarini ANIQ matnga emas, KALIT SO'ZGA qarab topamiz —
+    # chunki Excel'da sarlavhalar qo'lda qayta yozilganda harflar
+    # (kirill/lotin) biroz boshqacha bo'lib qolishi mumkin.
+    def _find_col(cols, include, exclude=()):
+        for c in cols:
+            cl = str(c).lower()
+            if any(k in cl for k in include) and not any(k in cl for k in exclude):
+                return c
+        return None
+
+    cols = list(mz_raw.columns)
+    tovar_col  = _find_col(cols, ['товар', 'tovar'])
+    kat_col    = _find_col(cols, ['категор', 'kategor'])
+    kunlik_col = _find_col(cols, ['кунлик', 'kunlik'])
+    cex_col    = _find_col(cols, ['цех', 'tsex', 'cex'])
+    sotuv_col  = _find_col(cols, ['захира', 'zaxira', 'мин', 'min'],
+                            exclude=['цех', 'tsex', 'cex'])
+
+    if not tovar_col or not sotuv_col:
+        raise KeyError(
+            f"Kerakli ustunlar topilmadi. Mavjud ustunlar: {cols} | "
+            f"tovar={tovar_col}, kategoriya={kat_col}, kunlik={kunlik_col}, "
+            f"sotuv_min={sotuv_col}, cex_min={cex_col}"
+        )
+
+    mz_raw = mz_raw[mz_raw[tovar_col].notna()].copy()
+
+    mz_raw['Sotuv_Min'] = pd.to_numeric(mz_raw[sotuv_col], errors='coerce').fillna(0)
+    mz_raw['Kunlik_Istemol'] = (
+        pd.to_numeric(mz_raw[kunlik_col], errors='coerce').fillna(0)
+        if kunlik_col else 0
+    )
+    mz_raw['Kategoriya'] = mz_raw[kat_col] if kat_col else 'БОШҚА'
+
+    if cex_col:
+        mz_raw['Cex_Min'] = pd.to_numeric(mz_raw[cex_col], errors='coerce').fillna(0)
+        print(f"  ✅ Цех ustuni topildi: '{cex_col}'")
+    else:
+        mz_raw['Cex_Min'] = 0
+        print("  ⚠️  Цех_Захира ustuni topilmadi — barcha Cex_Min = 0")
+
+    mz_raw['Mahsulot_Normalized'] = mz_raw[tovar_col].apply(normalize_product_name)
+    min_zaxira = mz_raw[['Mahsulot_Normalized', 'Sotuv_Min', 'Kunlik_Istemol', 'Kategoriya', 'Cex_Min']].copy()
     print(f"  ✅ {len(min_zaxira):,} ta tovar min zaxirasi yuklandi")
+    print(f"  ✅ {(min_zaxira['Cex_Min'] > 0).sum()} ta tovarda Цех_Захира > 0 (Tsex mahsulotlari)")
 except FileNotFoundError:
     print(f"  ❌ Min_Zaxira.xlsx topilmadi: {MIN_ZAXIRA_FILE}")
     print(f"     Avval 'yarat_min_zaxira.py' ni ishga tushiring!")
@@ -98,32 +135,6 @@ except FileNotFoundError:
 except Exception as e:
     print(f"  ❌ Min_Zaxira.xlsx xatosi: {e}")
     sys.exit(1)
-
-
-# ============================================================
-# 3. CEX (ISHLAB CHIQARISH) TOVARLARINI YUKLASH
-# ============================================================
-
-print("\n3. CEX TOVARLARI YUKLANMOQDA...")
-
-cex_df = pd.DataFrame(columns=['Mahsulot_Normalized'])
-
-try:
-    cex_raw = pd.read_excel(CEX_FILE, header=0)
-    # Fayl strukturasi: №, Махсулот номи (min zaxira yo'q)
-    cex_raw = cex_raw.iloc[:, :2].copy()
-    cex_raw.columns = ['Num', 'Mahsulot']
-    cex_raw = cex_raw[cex_raw['Mahsulot'].notna() & cex_raw['Num'].notna()].copy()
-    cex_raw['Mahsulot_Normalized'] = cex_raw['Mahsulot'].apply(normalize_product_name)
-    cex_df = cex_raw[['Mahsulot_Normalized']].copy()
-    print(f"  ✅ {len(cex_df)} ta cex tovari yuklandi")
-
-except FileNotFoundError:
-    print(f"  ⚠️  Cex fayl topilmadi: {CEX_FILE}")
-except Exception as e:
-    print(f"  ⚠️  Cex fayl xatosi: {e}")
-
-min_zaxira['Cex_Min'] = 0
 
 
 # ============================================================
@@ -259,203 +270,7 @@ else:
     print("  ⚠️  Konteyner ma'lumoti yo'q")
 
 
-# ============================================================
-# 5. KUNLIK SOTUV TAHLILI (sezon + tushish + trend)
-# ============================================================
-
-print("\n5. KUNLIK SOTUV TAHLILI...")
-
-kunlik_sotuv_df = pd.DataFrame()
-trend_df        = pd.DataFrame()
-umumiy_stat_df  = pd.DataFrame()
-dinamik_log_df  = pd.DataFrame()
-
-try:
-    if len(tarix_fayllar) < 2:
-        print("  ⚠️  Kamida 2 ta tarix fayli kerak!")
-    else:
-        kunlar = []
-        for fayl in tarix_fayllar:
-            fn = os.path.basename(fayl).replace('.xlsx', '')
-            try:
-                sana = datetime.strptime(fn, '%d.%m.%Y')
-            except ValueError:
-                continue
-            df_t = load_qoldiq_file(fayl)
-            df_t['Sana'] = sana
-            kunlar.append(df_t[['Mahsulot_Normalized', 'Qoldiq_Dona', 'Sana']])
-
-        if len(kunlar) >= 2:
-            tarix_df = pd.concat(kunlar, ignore_index=True).sort_values('Sana')
-            sanalar  = sorted(tarix_df['Sana'].unique())
-            real_kun_soni = max(1, (sanalar[-1] - sanalar[0]).days)
-
-            # Sotuv hisoblash
-            sotuv_kunlar = []
-            for i in range(1, len(sanalar)):
-                kecha_s   = sanalar[i - 1]
-                bugun_s   = sanalar[i]
-                kun_farqi = max(1, (bugun_s - kecha_s).days)
-
-                kecha_df = (tarix_df[tarix_df['Sana'] == kecha_s]
-                            [['Mahsulot_Normalized', 'Qoldiq_Dona']]
-                            .rename(columns={'Qoldiq_Dona': 'Kecha'}))
-                bugun_df = (tarix_df[tarix_df['Sana'] == bugun_s]
-                            [['Mahsulot_Normalized', 'Qoldiq_Dona']]
-                            .rename(columns={'Qoldiq_Dona': 'Bugun'}))
-
-                merged           = pd.merge(kecha_df, bugun_df, on='Mahsulot_Normalized', how='inner')
-                merged['Sotuv']  = ((merged['Kecha'] - merged['Bugun'])
-                                    .clip(lower=0) / kun_farqi).round(2)
-                merged           = merged[merged['Sotuv'] > 0]
-                merged['Sotuv_Jami'] = merged['Kecha'] - merged['Bugun']
-                merged['Sana']   = bugun_s
-                merged['Kun_Farqi'] = kun_farqi
-                merged['Kategoriya'] = merged['Mahsulot_Normalized'].apply(get_category)
-                sotuv_kunlar.append(merged[[
-                    'Sana', 'Kun_Farqi', 'Mahsulot_Normalized',
-                    'Kategoriya', 'Sotuv', 'Sotuv_Jami'
-                ]])
-
-            if sotuv_kunlar:
-                kunlik_sotuv_df = pd.concat(sotuv_kunlar, ignore_index=True)
-
-                # Sliding window — oxirgi SLIDING_WINDOW kun
-                max_sana     = kunlik_sotuv_df['Sana'].max()
-                window_start = max_sana - timedelta(days=SLIDING_WINDOW)
-                window_df    = kunlik_sotuv_df[kunlik_sotuv_df['Sana'] > window_start]
-
-                ortacha_df = (window_df.groupby('Mahsulot_Normalized')
-                              .agg(Kunlik_Haqiqiy=('Sotuv', 'mean'),
-                                   Kategoriya=('Kategoriya', 'first'),
-                                   Kuzatuv_Kun=('Sana', 'count'))
-                              .reset_index())
-                ortacha_df['Kunlik_Haqiqiy'] = ortacha_df['Kunlik_Haqiqiy'].round(2)
-
-                # Min va kunlik bazani qo'shish
-                ortacha_df = pd.merge(
-                    ortacha_df,
-                    min_zaxira[['Mahsulot_Normalized', 'Min_Zaxira', 'Kunlik_Istemol']],
-                    on='Mahsulot_Normalized', how='left'
-                )
-                ortacha_df['Min_Zaxira']     = ortacha_df['Min_Zaxira'].fillna(0)
-                ortacha_df['Kunlik_Istemol'] = ortacha_df['Kunlik_Istemol'].fillna(0)
-
-                # Bazaviy kunlik: min_zaxiradan teskari hisob (yoki cache dan)
-                ortacha_df['Kunlik_Baza'] = ortacha_df.apply(
-                    lambda r: (min_dan_kunlik_chiqar(r['Min_Zaxira'], r['Kategoriya'])
-                               if r['Min_Zaxira'] > 0
-                               else r['Kunlik_Istemol']),
-                    axis=1
-                )
-
-                # ── Sezon sezgichi ────────────────────────────────────
-                sezon_log = []
-                for mahsulot in ortacha_df['Mahsulot_Normalized']:
-                    m_df = kunlik_sotuv_df[kunlik_sotuv_df['Mahsulot_Normalized'] == mahsulot]
-                    if len(m_df) < SEZON_OYNA * 2:
-                        sezon_log.append({'Mahsulot_Normalized': mahsulot,
-                                          'Sezon_Signal': 'YETARLI_TARIX_YOQ'})
-                        continue
-                    oxirgi_7  = m_df.nlargest(SEZON_OYNA, 'Sana')['Sotuv'].mean()
-                    oldingi_7 = (m_df.nlargest(SEZON_OYNA * 2, 'Sana')
-                                 .nsmallest(SEZON_OYNA, 'Sana')['Sotuv'].mean())
-                    if oldingi_7 > 0:
-                        sezon_pct = (oxirgi_7 - oldingi_7) / oldingi_7 * 100
-                    else:
-                        sezon_pct = 0
-                    signal = ('🔺 SEZON_OSHDI' if sezon_pct >= 30
-                              else '🔻 SEZON_TUSHDI' if sezon_pct <= -30
-                              else '➡️ BARQAROR')
-                    sezon_log.append({
-                        'Mahsulot_Normalized': mahsulot,
-                        'Sezon_Signal':        signal,
-                        'Sezon_Foiz':          round(sezon_pct, 1),
-                        'Oxirgi_7_Kun':        round(oxirgi_7, 2),
-                        'Oldingi_7_Kun':       round(oldingi_7, 2),
-                    })
-                ortacha_df = pd.merge(ortacha_df, pd.DataFrame(sezon_log),
-                                      on='Mahsulot_Normalized', how='left')
-
-                # ── Tushish sezgichi (3/7/14 kun qoidasi) ────────────
-                tushish_log = []
-                for mahsulot in ortacha_df['Mahsulot_Normalized']:
-                    m_df = (kunlik_sotuv_df[kunlik_sotuv_df['Mahsulot_Normalized'] == mahsulot]
-                            .sort_values('Sana', ascending=False))
-                    if len(m_df) < 3:
-                        tushish_log.append({'Mahsulot_Normalized': mahsulot, 'Tushish_Signal': '—'})
-                        continue
-                    l3  = m_df.head(3)['Sotuv'].tolist()
-                    l7  = m_df.head(7)['Sotuv'].tolist() if len(m_df) >= 7 else []
-                    l14 = m_df.head(14)['Sotuv'].tolist() if len(m_df) >= 14 else []
-
-                    tushdi_3  = len(l3) >= 3 and all(l3[i] < l3[i+1] for i in range(2))
-                    tushdi_7  = len(l7) >= 7 and np.mean(l7[:3]) < np.mean(l7[4:]) * 0.7
-                    tushdi_14 = len(l14) >= 14 and np.mean(l14[:7]) < np.mean(l14[7:]) * 0.7
-
-                    if tushdi_14:  signal = '🔴 14KUN_PAST'
-                    elif tushdi_7: signal = '🟡 7KUN_KAMAYDI'
-                    elif tushdi_3: signal = '🟠 3KUN_KAMAYDI'
-                    else:          signal = '✅ NORMAL'
-                    tushish_log.append({'Mahsulot_Normalized': mahsulot, 'Tushish_Signal': signal})
-
-                ortacha_df = pd.merge(ortacha_df, pd.DataFrame(tushish_log),
-                                      on='Mahsulot_Normalized', how='left')
-
-                # ── Trend foizi ───────────────────────────────────────
-                ortacha_df['Trend_Foiz'] = ortacha_df.apply(
-                    lambda r: round(max(-500, min(500,
-                        (r['Kunlik_Haqiqiy'] - r['Kunlik_Baza']) / r['Kunlik_Baza'] * 100
-                    )), 1) if r['Kunlik_Baza'] > 0.5 else 0,
-                    axis=1
-                )
-                ortacha_df['Trend'] = ortacha_df['Trend_Foiz'].apply(
-                    lambda x: '📈 ЎСЯПТИ' if x > 10 else ('📉 КАМАЯПТИ' if x < -10 else '➡️ БАРҚАРОР')
-                )
-
-                # ── Tovar holati (yangi / mavjud) ─────────────────────
-                yillik_nomlar = set(min_zaxira['Mahsulot_Normalized'])
-                ortacha_df['Tovar_Holati'] = ortacha_df['Mahsulot_Normalized'].apply(
-                    lambda n: 'ЯНГИ' if n not in yillik_nomlar else 'МАВЖУД'
-                )
-
-                # ── Umumiy statistika ─────────────────────────────────
-                tovarlar_baza = ortacha_df[ortacha_df['Kunlik_Baza'] > 0]
-                if len(tovarlar_baza) > 0:
-                    jami_haqiqiy = tovarlar_baza['Kunlik_Haqiqiy'].sum()
-                    jami_baza    = tovarlar_baza['Kunlik_Baza'].sum()
-                    umumiy_foiz  = round((jami_haqiqiy - jami_baza) / jami_baza * 100, 2)
-                    umumiy_trend = ('📈 ЎСЯПТИ' if umumiy_foiz > 0
-                                    else '📉 КАМАЯПТИ' if umumiy_foiz < 0
-                                    else '➡️ БАРҚАРОР')
-                    print(f"\n  {'='*45}")
-                    print(f"  UMUMIY TREND: {umumiy_trend} {umumiy_foiz:+.2f}%")
-                    print(f"  {'='*45}")
-
-                    umumiy_stat_df = pd.DataFrame([{
-                        'Кун_Сони':          real_kun_soni,
-                        'Sliding_Window':     SLIDING_WINDOW,
-                        'Жами_Ҳақиқий':      round(jami_haqiqiy, 0),
-                        'Жами_Базавий':       round(jami_baza, 0),
-                        'Умумий_Тренд_Фоиз': umumiy_foiz,
-                        'Умумий_Тренд':       umumiy_trend,
-                        'Ўсаётган_Сони':      (ortacha_df['Trend'] == '📈 ЎСЯПТИ').sum(),
-                        'Камаяётган_Сони':    (ortacha_df['Trend'] == '📉 КАМАЯПТИ').sum(),
-                        'Барқарор_Сони':      (ortacha_df['Trend'] == '➡️ БАРҚАРОР').sum(),
-                        'Янги_Товар_Сони':    (ortacha_df['Tovar_Holati'] == 'ЯНГИ').sum(),
-                    }])
-
-                # Min_Zaxira o'zgartirilmaydi — faqat trend va tavsiya
-                trend_df = ortacha_df.copy()
-
-                print(f"\n  ✅ Kunlik sotuv: {len(kunlik_sotuv_df):,} qator ({real_kun_soni} kun)")
-                print(f"     📈 O'sayotgan:   {(ortacha_df['Trend'] == '📈 ЎСЯПТИ').sum():,} ta")
-                print(f"     📉 Kamayayotgan: {(ortacha_df['Trend'] == '📉 КАМАЯПТИ').sum():,} ta")
-                print(f"     ➡️ Barqaror:     {(ortacha_df['Trend'] == '➡️ БАРҚАРОР').sum():,} ta")
-
-except Exception as e:
-    print(f"  ⚠️  Tarix tahlil xatosi: {e}")
-    import traceback; traceback.print_exc()
+# 5-bosqich (sotuv trendi tahlili) olib tashlandi — ishlatilmaydi
 
 
 # ============================================================
@@ -471,15 +286,15 @@ result = qoldiq.copy().rename(columns={'Mahsulot_Normalized': 'Mahsulot_Key'})
 if not min_zaxira.empty:
     result = pd.merge(
         result,
-        min_zaxira[['Mahsulot_Normalized', 'Min_Zaxira', 'Kunlik_Istemol', 'Cex_Min']],
+        min_zaxira[['Mahsulot_Normalized', 'Sotuv_Min', 'Kunlik_Istemol', 'Cex_Min']],
         left_on='Mahsulot_Key', right_on='Mahsulot_Normalized', how='left'
     ).drop(columns=['Mahsulot_Normalized'])
 else:
-    result['Min_Zaxira']     = 0
+    result['Sotuv_Min']      = 0
     result['Kunlik_Istemol'] = 0
     result['Cex_Min']        = 0
 
-for col in ['Min_Zaxira', 'Kunlik_Istemol', 'Cex_Min']:
+for col in ['Sotuv_Min', 'Kunlik_Istemol', 'Cex_Min']:
     result[col] = result[col].fillna(0)
 
 # Konteynerlarni ulash (fast va standart alohida)
@@ -517,7 +332,7 @@ else:
         result[col] = None
 
 for col in ['Fast_Miqdor', 'Standart_Miqdor', 'Qoldiq_Dona', 'Qoldiq_Summa',
-            'Min_Zaxira', 'Cex_Min']:
+            'Sotuv_Min', 'Cex_Min']:
     result[col] = result[col].fillna(0)
 
 result['Mahsulot'] = result['Mahsulot'].fillna(result['Mahsulot_Key'])
@@ -536,11 +351,13 @@ result['Umumiy_Zaxira']      = result['Qoldiq_Dona'] + result['Yolda_Jami']
 result['Kategoriya']         = result['Mahsulot'].apply(get_category)
 result['Kategoriya_Display'] = result['Mahsulot'].apply(get_category_with_marka)
 
-# Cex tovarlar belgisi — bir joyda, bir marta
-cex_nomlar = set(cex_df['Mahsulot_Normalized'].tolist()) if not cex_df.empty else set()
-result['Tur'] = result['Mahsulot_Key'].apply(
-    lambda x: 'ЦЕХ🏭' if x in cex_nomlar else 'САВДО'
-)
+# Tur belgisi — Цех_Захира > 0 bo'lsa, demak bu tovar Tsexda ishlatiladi.
+# E'tibor: bir tovar HAM Sotuv_Min, HAM Cex_Min'ga ega bo'lishi mumkin —
+# bunday holda u ЦЕХ🏭 deb belgilanadi, lekin Жами_Мин ikkalasini ham qamrab oladi.
+result['Tur'] = result['Cex_Min'].apply(lambda x: 'ЦЕХ🏭' if x > 0 else 'САВДО')
+
+# Жами минимал захира — Холат (КРИТИК/ПАСТ/НОРМА) shu asosda hisoblanadi
+result['Min_Zaxira'] = result['Sotuv_Min'] + result['Cex_Min']
 
 
 def _simulatsiya(row) -> tuple:
@@ -619,7 +436,7 @@ final_df = result[[
     'Qoldiq_Dona',
     'Fast_Miqdor', 'Fast_Kelish_Kun', 'Fast_Kelish_Sana',
     'Standart_Miqdor', 'Standart_Kelish_Kun', 'Standart_Kelish_Sana',
-    'Yolda_Jami', 'Umumiy_Zaxira', 'Min_Zaxira', 'Cex_Min',
+    'Yolda_Jami', 'Umumiy_Zaxira', 'Min_Zaxira', 'Sotuv_Min', 'Cex_Min',
     'Kunlik_Istemol', 'Kun_Yetadi', 'Yakuniy_Qoldiq',
     'Farq', 'Etishmaydi', 'Qoldiq_Summa',
 ]].copy()
@@ -656,7 +473,8 @@ final_df = final_df.rename(columns={
     'Yolda_Jami':           'Йўлда_Жами',
     'Umumiy_Zaxira':        'Умумий_Захира',
     'Min_Zaxira':           'Мин_Захира',
-    'Cex_Min':              'Цех_Мин',
+    'Sotuv_Min':            'Сотув_Захира',
+    'Cex_Min':              'Цех_Захира',
     'Kunlik_Istemol':       'Кунлик_Истеъмол',
     'Kun_Yetadi':           'Кун_Етади',
     'Yakuniy_Qoldiq':       'Якуний_Қолдиқ',
@@ -689,9 +507,9 @@ with pd.ExcelWriter(str(OUTPUT_FILE), engine='openpyxl') as writer:
     # ── Инвентар — asosiy jadval ────────────────────────────
     final_df.to_excel(writer, sheet_name='Инвентар', index=False)
 
-    # ── Ишлаб_Чиқариш — FAQAT ЦЕХ tovarlari ──
-    if cex_nomlar:
-        cex_inv = final_df[final_df['Тур'] == 'ЦЕХ🏭'].copy()
+    # ── Ишлаб_Чиқариш — FAQAT ЦЕХ tovarlari (Цех_Захира > 0) ──
+    cex_inv = final_df[final_df['Тур'] == 'ЦЕХ🏭'].copy()
+    if not cex_inv.empty:
         cex_inv.to_excel(writer, sheet_name='Ишлаб_Чиқариш', index=False)
         print(f"  ✅ Ишлаб_Чиқариш: {len(cex_inv)} ta tovar")
 
@@ -701,47 +519,6 @@ with pd.ExcelWriter(str(OUTPUT_FILE), engine='openpyxl') as writer:
     ]].copy()
     kritik_df.to_excel(writer, sheet_name='Критик', index=False)
 
-    # ── Кунлик_Сотув ────────────────────────────────────────
-    if not kunlik_sotuv_df.empty:
-        ks = kunlik_sotuv_df.copy()
-        ks['Sana'] = pd.to_datetime(ks['Sana']).dt.strftime('%d.%m.%Y')
-        ks = ks.rename(columns={
-            'Mahsulot_Normalized': 'Товар',
-            'Kategoriya':          'Категория',
-            'Sotuv':               'Сотув',
-            'Sotuv_Jami':          'Жами_Сотув',
-            'Kun_Farqi':           'Кун_Фарқи',
-            'Sana':                'Сана',
-        })
-        ks.to_excel(writer, sheet_name='Кунлик_Сотув', index=False)
-
-    # ── Тренд ────────────────────────────────────────────────
-    if not trend_df.empty:
-        tr_col_map = {
-            'Mahsulot_Normalized': 'Товар',
-            'Kategoriya':          'Категория',
-            'Tovar_Holati':        'Товар_Тури',
-            'Kunlik_Haqiqiy':      'Кунлик_Ҳақиқий',
-            'Kunlik_Baza':         'Кунлик_Базавий',
-            'Kuzatuv_Kun':         'Кузатув_Кун',
-            'Min_Zaxira':          'Мин_Захира',
-            'Trend_Foiz':          'Тренд_Фоиз',
-            'Trend':               'Тренд',
-            'Sezon_Signal':        'Сезон',
-            'Sezon_Foiz':          'Сезон_%',
-            'Tushish_Signal':      'Тушиш',
-        }
-        tr = trend_df[[c for c in tr_col_map if c in trend_df.columns]].copy()
-        tr = tr.rename(columns=tr_col_map)
-        tr.sort_values('Тренд_Фоиз', ascending=False).to_excel(
-            writer, sheet_name='Тренд', index=False
-        )
-
-    if not umumiy_stat_df.empty:
-        umumiy_stat_df.to_excel(writer, sheet_name='Умумий_Тренд', index=False)
-
-    if not dinamik_log_df.empty:
-        dinamik_log_df.to_excel(writer, sheet_name='Мин_Янгиланиш_Журнали', index=False)
 
     # ── Контейнерлар ─────────────────────────────────────────
     if not containers.empty:

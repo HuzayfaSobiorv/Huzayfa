@@ -22,9 +22,10 @@ warnings.filterwarnings('ignore')
 # KONSTANTALAR — faqat shu yerda, boshqa joyda takrorlanmaydi
 # ============================================================
 
-YOLDA_KUN       = 45    # standart konteyner yetib kelish vaqti (kun)
+KELISH_KUNI     = 55    # ◄ ASOSIY: konteyner yetib kelish vaqti (kun) — FAQAT SHU YERDA O'ZGARTIR
+YOLDA_KUN       = KELISH_KUNI   # alias (eski kod uchun)
 FAST_KUN        = 20    # tezkor konteyner yetib kelish vaqti (kun)
-TREND_KUN       = 45    # necha kun barqaror bo'lsa min oshiriladi
+TREND_KUN       = KELISH_KUNI   # necha kun barqaror bo'lsa min oshiriladi
 SLIDING_WINDOW  = 30    # oxirgi necha kunni kuzatish
 SEZON_OYNA      = 7     # sezon taqqoslash oynasi (kun)
 MIN_KUZATUV_KUN = 7     # yangi tovar uchun kamida necha kun kuzatish kerak
@@ -65,6 +66,14 @@ KERAKSIZ_QISM = [
     '100х100-Чашка-01 (Матовый)',
     '100х100-Чашка-02 (Матовый)',
     'Декоративний', 'Детский качале', 'Стелаж', 'Умвалик', 'Баласина (Балик)', 'Брак баласина',
+    'Фланс','S-гул ','БП','Дрель','Дуга (Сотув булми)','Зажим ', 'Заклёпка','Итого','КР-001 (210х100)',
+    'Кабр','Казерог ','Каска','Катта гул','Кислород балон','Контейнер','Краска. Голд','Кресло', 
+    'Кук материал','Кучага хизмат сварка хизмати','Ламинад Д=1700','Латок','Ловия',
+    'Малочни материал','Масжид','Маска','(Сотув булими)',
+    'Мойка 2600х80х40 (Сотув булмига)','Мешалка','Ножка 900Х650Х45 (Сотув булмига) Голд','Нукус сахна','сахна','Обувница (карши)Голд',
+    'карши','бухоро','Ойна (кора)','Петля',' (марям)','урожайнига','Тахта','Очки №1','Перфоратор',
+    'Перегаротка 210х50 (Ташкент) Голд','Перегароткa',
+    'Петля','Перчатка','Тележка','Фанер',
 ]
 
 KERAKSIZ_ALON = ['стол']   # to'liq so'z sifatida qidiriladi
@@ -248,5 +257,4 @@ def fayl_sanasi(fayl_yoli: str) -> datetime:
     try:
         return datetime.strptime(filename, '%d.%m.%Y')
     except ValueError:
-        print(f"  ⚠️  Sana formati noto'g'ri: '{filename}' (kutilgan: DD.MM.YYYY)")
-        return datetime.min
+        return datetime.fromtimestamp(os.path.getmtime(fayl_yoli))
