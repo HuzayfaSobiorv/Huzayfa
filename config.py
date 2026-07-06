@@ -120,3 +120,13 @@ BACK_MAP = {
     "load":          "main",
     "load_channel":  "load",
     "status":        "main",
+    "settings":      "main",
+    "search":        "main",
+    "search_kat":    "search",
+    "konteyner":     "main",
+    "keldi_menu":    "konteyner",
+    "keldi_ekran":   "keldi_menu",
+}
+
+# Xitoy nomi → inventar nomi qo'lda mapping
+XITOY_NOM_MAP: dict[str, str] = {}

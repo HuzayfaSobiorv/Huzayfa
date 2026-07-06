@@ -179,4 +179,105 @@ def generate_kelgan_rasm(iso: str) -> io.BytesIO | None:
         jami_miq += miq if pd.notna(miq) else 0
         lines = _wrap(ddraw, tovar, font_name, COL_NAME_W - 24)
         h = max(ROW_H0, len(lines) * LINE_H + 16)
-        rows_prepared.append((lines, miq
+        rows_prepared.append((lines, miq, h))
+
+    total_h = HDR_H + SUB_H + sum(r[2] for r in rows_prepared) + TOT_H + PAD * 2 + 6
+    img  = Image.new("RGB", (IMG_W, int(total_h)), "#FFFFFF")
+    draw = ImageDraw.Draw(img)
+
+    y = PAD
+
+    # ── Sarlavha — 🚛 konteyner nomidan OLDIN (kichikroq, matn bilan
+    # proportsional o'lchamda), "Келди" (haqiqiy, taxminiy EMAS) sana bilan.
+    # ✅ olib tashlandi — foydalanuvchi so'rovi bo'yicha (juda katta
+    # ko'rinib, ortiqcha edi; "Келди" so'zining o'zi yetarli signal beradi).
+    draw.rectangle([PAD, y, IMG_W - PAD, y + HDR_H], fill=f"#{CLR_ARRIVED_BG}")
+    icon_h = 26   # matn balandligiga (~20px) yaqinroq, proporsional kichik
+    cx = PAD + 12
+
+    truck_icon = _emoji_icon("🚛", icon_h)
+    if truck_icon:
+        img.paste(truck_icon, (int(cx), int(y + (HDR_H - icon_h) / 2)), truck_icon)
+        cx += truck_icon.width + 10
+
+    draw.text((cx, y + HDR_H / 2), iso, font=font_hdr,
+               fill=f"#{CLR_ARRIVED_TEXT}", anchor="lm")
+    cx += draw.textlength(iso, font=font_hdr) + 14
+
+    rest_text = f"│    Юкланган: {yukl_sana}    │    Келди: {keldi_sana}"
+    if turi and turi != "STANDART":
+        rest_text += f"    │    {turi}"
+    draw.text((cx, y + HDR_H / 2), rest_text, font=font_hdr,
+               fill=f"#{CLR_ARRIVED_TEXT}", anchor="lm")
+    y += HDR_H
+
+    # ── Ustun sarlavhalari ──────────────────────────────────────────────────
+    draw.rectangle([PAD, y, IMG_W - PAD, y + SUB_H], fill=f"#{CLR_YOLDA_SUB}")
+    x0 = PAD
+    for label, w, align in [
+        ("Товар",   COL_NAME_W, "l"),
+        ("Миқдор",  COL_MIQ_W,  "c"),
+    ]:
+        if align == "l":
+            draw.text((x0 + 12, y + SUB_H / 2), label, font=font_sub,
+                       fill=f"#{CLR_COL_HDR_TEXT}", anchor="lm")
+        else:
+            draw.text((x0 + w / 2, y + SUB_H / 2), label, font=font_sub,
+                       fill=f"#{CLR_COL_HDR_TEXT}", anchor="mm")
+        x0 += w
+    y += SUB_H
+
+    # ── Tovar qatorlari ─────────────────────────────────────────────────────
+    for i, (lines, miq, h) in enumerate(rows_prepared):
+        bg = ROW_CLR_DARK if i % 2 == 0 else ROW_CLR_LIGHT
+        draw.rectangle([PAD, y, IMG_W - PAD, y + h], fill=f"#{bg}")
+        ty = y + h / 2 - (len(lines) - 1) * LINE_H / 2
+        for ln in lines:
+            draw.text((PAD + 12, ty), ln, font=font_name, fill="#222222", anchor="lm")
+            ty += LINE_H
+        draw.text((PAD + COL_NAME_W + COL_MIQ_W / 2, y + h / 2), str(miq),
+                   font=font_miq, fill="#000000", anchor="mm")
+        y += h
+
+    # ── Jami qator — SONI EMAS, TONNA ko'rsatiladi (masalan "⚖️ 28 т") ──────
+    draw.rectangle([PAD, y, IMG_W - PAD, y + TOT_H], fill=f"#{CLR_TOTAL_BG}")
+    draw.text((PAD + COL_NAME_W - 12, y + TOT_H / 2), "ЖАМИ:",
+               font=font_tot, fill="#000000", anchor="rm")
+
+    tonna_text  = f"{jami_tonna} т"
+    tot_cx      = PAD + COL_NAME_W + COL_MIQ_W / 2
+    scale_icon  = _emoji_icon("⚖️", TOT_H - 18)
+    if scale_icon:
+        txt_w   = draw.textlength(tonna_text, font=font_tot)
+        total_w = scale_icon.width + 8 + txt_w
+        start_x = tot_cx - total_w / 2
+        img.paste(scale_icon, (int(start_x), int(y + (TOT_H - scale_icon.height) / 2)), scale_icon)
+        draw.text((start_x + scale_icon.width + 8, y + TOT_H / 2), tonna_text,
+                   font=font_tot, fill="#000000", anchor="lm")
+    else:
+        # Emoji shrifti topilmasa — DejaVuSans'da ISHLAYDIGAN oddiy tarozi
+        # belgisi ("⚖", VS16'siz) bilan almashtiriladi.
+        draw.text((tot_cx, y + TOT_H / 2), f"⚖ {tonna_text}",
+                   font=font_tot, fill="#000000", anchor="mm")
+    y += TOT_H
+
+    # ── Umumiy chegara ──────────────────────────────────────────────────────
+    draw.rectangle([PAD, PAD, IMG_W - PAD, y], outline="#1A3A5C", width=2)
+
+    bio = io.BytesIO()
+    img.save(bio, format="PNG")
+    bio.seek(0)
+    return bio
+
+
+# ── Standalone test ───────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    import sys
+    iso_test = sys.argv[1] if len(sys.argv) > 1 else "TEST0000000"
+    bio = generate_kelgan_rasm(iso_test)
+    if bio:
+        out = Path(__file__).parent / "chiqish" / f"kelgan_{iso_test}.png"
+        out.write_bytes(bio.read())
+        print(f"✅ Saqlandi: {out}")
+    else:
+        print("❌ Ma'lumot topilmadi")

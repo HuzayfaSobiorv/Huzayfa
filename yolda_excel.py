@@ -343,4 +343,28 @@ def yolda_excel(data_file: str | Path) -> io.BytesIO | None:
 
     for ri, (a, b, c, d) in enumerate(xulosa_rows, start=3):
         for ci, val in enumerate([a, b, c, d], start=1):
-            cell = ws2.cell(row=ri, column=ci, value=
+            cell = ws2.cell(row=ri, column=ci, value=val)
+            cell.border = BORDER_THIN
+            cell.font   = _font(size=11)
+            cell.alignment = _align(h="left" if ci in (1, 3) else "center")
+
+    bio = io.BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    return bio
+
+
+# ── Standalone ishlatish ─────────────────────────────────────────────────────
+if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+
+    data_f = Path(__file__).parent / "chiqish" / "NEJAVIYKA_POWER_BI.xlsx"
+    out_f  = Path(__file__).parent / "chiqish" / "Yolda_konteynerlar.xlsx"
+
+    bio = yolda_excel(data_f)
+    if bio:
+        out_f.write_bytes(bio.read())
+        print(f"✅  Saqlandi: {out_f}")
+    else:
+        print("❌  Ma'lumot topilmadi")

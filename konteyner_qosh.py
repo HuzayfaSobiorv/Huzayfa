@@ -1303,4 +1303,154 @@ def draft_excel_oqi(raw: bytes) -> list[dict]:
       "manba": "tahrirlangan", "tonna": float}]
 
     Har bir konteyner blokining sarlavha qatoridan ("🆕  ISO │ Yuklangan: ...
-    │ Tonna: ... t │ ...") ISO/sana o'qila
+    │ Tonna: ... t │ ...") ISO/sana o'qiladi, undan keyingi
+    Tovar-nomi/Miqdor/Vazn(kg) qatorlari "JAMI:" qatorigacha yig'iladi.
+
+    DIQQAT: tonna sarlavhadagi (eski, admin tahrirlashdan OLDINGI) qiymatdan
+    emas — "Vazn (kg)" ustunidagi (yoki admin uni o'chirib qo'ygan bo'lsa,
+    qayta hisoblangan) qiymatlar yig'indisidan olinadi, aks holda admin
+    miqdorni o'zgartirsa ham eski (endi noto'g'ri) tonna qolib ketardi.
+    """
+    try:
+        from parsers import _get_inventar_set
+        inv_set = _get_inventar_set()
+    except Exception:
+        inv_set = set()
+
+    wb = openpyxl.load_workbook(BytesIO(raw), data_only=True)
+    ws = wb.active
+
+    natija: list[dict] = []
+    cur_iso = cur_sana = None
+    cur_items: list = []
+    in_items = False
+
+    def _blokni_yopish():
+        if cur_iso and cur_items:
+            jami_kg = sum(it[2] for it in cur_items)
+            natija.append({
+                "iso": cur_iso, "sana": cur_sana or "?", "items": list(cur_items),
+                "manba": "tahrirlangan", "tonna": round(jami_kg / 1000, 2),
+            })
+
+    for row in ws.iter_rows(values_only=True):
+        if not row:
+            continue
+        a = row[0]
+        a_s = str(a).strip() if a is not None else ""
+
+        # Sarlavha qatori — yangi konteyner bloki boshlanadi
+        if a_s.startswith("🆕") and "Yuklangan:" in a_s:
+            _blokni_yopish()
+            # Avval haqiqiy ISO formatini sinab ko'ramiz (eng ishonchli),
+            # topilmasa — pozitsiya bo'yicha (mashina-asosidagi pseudo-ID
+            # kabi holatlar uchun, masalan "ME5312") FALLBACK qilinadi.
+            cur_iso   = _iso(a_s)
+            if not cur_iso:
+                m_id = _HDR_ID_RE.search(a_s)
+                cur_iso = m_id.group(1) if m_id else None
+            m_sana    = _HDR_ISO_SANA_RE.search(a_s)
+            cur_sana  = m_sana.group(1) if m_sana else "?"
+            cur_items = []
+            in_items  = False
+            continue
+
+        if a_s == "Tovar nomi":
+            in_items = True
+            continue
+
+        if a_s == "JAMI:":
+            in_items = False
+            continue
+
+        if not in_items or not a_s or not cur_iso:
+            continue
+
+        # "⚠️ " belgisi faqat KO'RSATISH uchun (inventarda topilmagan
+        # tovarni ajratib ko'rsatadi) — qayta o'qishda olib tashlanadi,
+        # aks holda tovar nomi ichida qolib, doim "notanish" bo'lib qolar edi.
+        if a_s.startswith("⚠️"):
+            a_s = a_s.replace("⚠️", "", 1).strip()
+
+        miq = row[1] if len(row) > 1 else None
+        try:
+            miq_i = int(float(miq)) if miq not in (None, "") else 0
+        except (ValueError, TypeError):
+            miq_i = 0
+        if miq_i <= 0:
+            continue
+
+        # "Vazn (kg)" ustuni (D, index 3) — admin uni saqlab qoldirgan bo'lsa
+        # o'qiladi; bo'sh/o'chirilgan bo'lsa (masalan admin yangi qator
+        # qo'shgan) — o'z formulamiz bilan qayta hisoblanadi (tanish
+        # bo'lmasa 0, chunki bu bosqichda Xitoyning original qator vazni
+        # endi qo'limizda yo'q).
+        vazn_raw = row[3] if len(row) > 3 else None
+        try:
+            vazn_kg = float(vazn_raw) if vazn_raw not in (None, "") else None
+        except (ValueError, TypeError):
+            vazn_kg = None
+        if vazn_kg is None:
+            vazn_kg = _item_vazn_kg(a_s, miq_i, None, inv_set)
+
+        # G ustuni (index 6) — YASHIRIN texnik kalit (xom Xitoy spec).
+        # Admin shu qatorda YOZGAN nom ("Tovar nomi", a_s) hozirgi
+        # AVTOMATIK (evristika) natijadan FARQ QILSAGINA — bu chindan
+        # ham qo'lda tuzatish deb hisoblanib, doimiy saqlanadi. Farq
+        # bo'lmasa (admin hech narsani o'zgartirmagan, shunchaki qayta
+        # yuborgan) — saqlanmaydi, aks holda har bir allaqachon to'g'ri
+        # qator ham abadiy "muzlab" qolib, kelajakda inventar o'zgarsa
+        # ham eski javobni qaytaraverar edi.
+        raw_key = row[6] if len(row) > 6 and row[6] else None
+        if raw_key:
+            raw_key = str(raw_key).strip()
+            avtomatik = _xom_keydan_avtomatik_nom(raw_key, inv_set)
+            if avtomatik is not None and avtomatik != a_s:
+                _tuzatish_saqla(raw_key, a_s)
+
+        cur_items.append((a_s, miq_i, vazn_kg, raw_key or ""))
+
+    _blokni_yopish()
+    return natija
+
+
+# ── Preview matn ─────────────────────────────────────────────────────────────
+
+def preview_matn(yangilar: list[dict], oxirgi_sana: "date | None" = None) -> str:
+    """
+    Foydalanuvchiga ko'rsatiladigan qisqacha xabar.
+    """
+    oxirgi_qator = (
+        f"📅 _Tizimdagi eng oxirgi ma'lum sana: {oxirgi_sana.strftime('%d.%m.%Y')} "
+        f"— shundan keyingi yuklar qidirildi._\n\n"
+        if oxirgi_sana else ""
+    )
+    if not yangilar:
+        return oxirgi_qator + "✅ Barcha konteynerlar allaqachon ro'yxatda."
+
+    aralash = [k for k in yangilar if k["manba"] == "aralash"]
+    faqat_t = [k for k in yangilar if k["manba"] == "truba"]
+    faqat_l = [k for k in yangilar if k["manba"] == "list"]
+
+    lines = [oxirgi_qator + f"🆕 *{len(yangilar)} ta yangi konteyner topildi:*\n"]
+
+    if aralash:
+        lines.append("🔀 *Birlashtirilgan (Трубa + Лист):*")
+        for k in aralash:
+            tonna_qator = f" — {k['tonna']} t" if k.get("tonna") else ""
+            lines.append(f"  • `{k['iso']}` — {k['sana']} — {len(k['items'])} ta tovar{tonna_qator}")
+
+    if faqat_t:
+        lines.append("\n🔩 *Faqat Труба/Профиль:*")
+        for k in faqat_t:
+            tonna_qator = f" — {k['tonna']} t" if k.get("tonna") else ""
+            lines.append(f"  • `{k['iso']}` — {k['sana']} — {len(k['items'])} ta tovar{tonna_qator}")
+
+    if faqat_l:
+        lines.append("\n📄 *Faqat Лист:*")
+        for k in faqat_l:
+            tonna_qator = f" — {k['tonna']} t" if k.get("tonna") else ""
+            lines.append(f"  • `{k['iso']}` — {k['sana']} — {len(k['items'])} ta tovar{tonna_qator}")
+
+    lines.append("\n✅ Tasdiqlaysizmi?")
+    return "\n".join(lines)
