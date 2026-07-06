@@ -17,16 +17,19 @@ from telegram import Update
 logger = logging.getLogger(__name__)
 from telegram.ext import ContextTypes
 
-from config import BOT_HOLAT_DIR, CH_KEY, BACK_MAP, BASE_DIR, KONT_DIR, ADMIN_IDS, SUPER_ADMIN_ID, SUPPORT_PHONE, SUPPORT_USERNAME
+import config
+from config import BOT_HOLAT_DIR, CH_KEY, BACK_MAP, BASE_DIR, KONT_DIR, XITOY_PARSED_DIR, ADMIN_IDS, SUPER_ADMIN_ID, SUPPORT_PHONE, SUPPORT_USERNAME
 from config import xlsx_refresh as _xlsx_refresh
+from kont_rasm import generate_kelgan_rasm
 from texts import t
 from keyboards import (
     main_kb, order_kb, order_channel_kb, load_kb, load_channel_kb,
-    settings_kb, search_kb, til_ikb,
+    settings_kb, search_kb, til_ikb, konteyner_kb,
     xitoy_sorash_ikb, xitoy_mavjud_ikb, xitoy_yana_ikb,
     tozala_kanal_ikb, tozala_tasdiq_ikb, zakaz_tasdiq_ikb,
     grafik_kat_ikb, kont_tasdiq_ikb, boglanish_ikb,
 )
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from services import (
     buyurtma_yuklash, buyurtma_saqlash, buyurtma_tozala,
     pending_saqlash, pending_yuklash, pending_tozala,
@@ -34,6 +37,8 @@ from services import (
     xitoy_yuklash, xitoy_saqlash, buyurtma_tekshir,
     kamomat_olish, zakaz_preview_text, kamomat_stats,
     grafik_qidirish, vazn_lookup_yangilash,
+    qidiruv_olish, qidiruv_text,
+    konteyner_tarix_olish, konteyner_tarix_qoshish, konteyner_tarix_kalit,
     kirish_ruxsati, whitelist_qosh, whitelist_ochir, whitelist_yuklash,
 )
 from parsers import xitoy_ostatka_oqi
@@ -150,6 +155,33 @@ async def users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append("  _(bo'sh)_")
     lines.append(f"\nJami whitelist: *{len(wl)}* ta")
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def chatid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/chatid — joriy chat (guruh/topic) ID sini ko'rsatadi.
+    Botni istalgan guruhga (xususiy, oddiy yoki topic'li) qo'shib, shu yerda
+    /chatid deb yozsangiz — .env uchun kerakli KELGAN_YUKLAR_CHAT_ID va
+    (agar topic bo'lsa) KELGAN_YUKLAR_TOPIC_ID qiymatlarini darhol ko'rasiz.
+    Telegram linkidan (t.me/c/...) qidirishga hojat qolmaydi — bu oddiy
+    (topic'siz) guruhlarda umuman ishlamaydi."""
+    uid = update.message.from_user.id
+    if ADMIN_IDS and uid not in ADMIN_IDS:
+        return  # guruhdagi boshqa a'zolarga javob bermaymiz
+    chat = update.effective_chat
+    msg  = update.message
+    lines = [
+        "🆔 *Chat ma'lumotlari:*",
+        f"Chat ID: `{chat.id}`",
+        f"Turi: {chat.type}",
+    ]
+    if chat.title:
+        lines.append(f"Nomi: {chat.title}")
+    thread_id = getattr(msg, "message_thread_id", None)
+    if thread_id:
+        lines.append(f"Topic (mavzu) ID: `{thread_id}`")
+    else:
+        lines.append("_Bu xabar biror topic/mavzuga tegishli emas — oddiy guruh bo'lsa shunday bo'lishi kerak._")
+    await msg.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -327,6 +359,320 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await query.edit_message_text(f"❌ Xato: {e}")
 
+    elif query.data == "yolda_barchasi":
+        lang = context.user_data.get("lang", "cyr")
+        await query.edit_message_text("⏳ Yuklanmoqda...")
+        await yolda_ko_rish(query.message, context, lang)
+
+    elif query.data == "kont_noop":
+        pass
+
+    elif query.data == "kont_keldi_ask":
+        lang = context.user_data.get("lang", "cyr")
+        context.user_data["kutilmoqda"] = ("kont_keldi_sana",)
+        context.user_data["screen"] = "keldi_ekran"
+        from telegram import ReplyKeyboardMarkup as _RKM
+        orqaga_kb = _RKM([[t(lang, "back")]], resize_keyboard=True)
+        await query.message.reply_text(
+            "📅 Sana *yoki* konteyner nomini kiriting:\n"
+            "_(Sana: 07.06.2026 — yoki ISO: CRXU1561318)_",
+            parse_mode="Markdown",
+            reply_markup=orqaga_kb,
+        )
+        await query.answer()
+
+    elif query.data == "kont_qaytarish_ask":
+        lang = context.user_data.get("lang", "cyr")
+        context.user_data["kutilmoqda"] = ("kont_qaytarish_sana",)
+        context.user_data["screen"] = "keldi_ekran"
+        from telegram import ReplyKeyboardMarkup as _RKM
+        orqaga_kb = _RKM([[t(lang, "back")]], resize_keyboard=True)
+        await query.message.reply_text(
+            "📅 Sana *yoki* konteyner nomini kiriting:\n"
+            "_(Sana: 07.06.2026 — yoki ISO: CRXU1561318)_",
+            parse_mode="Markdown",
+            reply_markup=orqaga_kb,
+        )
+        await query.answer()
+
+    elif query.data.startswith("kont_bir_keldi:"):
+        fname = query.data[len("kont_bir_keldi:"):].split("|", 1)[0]
+        old_path = XITOY_PARSED_DIR / fname
+        if not old_path.exists():
+            await query.answer("Fayl topilmadi.", show_alert=True)
+        else:
+            iso    = old_path.stem.rsplit("_", 1)[0]
+            sana_f = old_path.stem.rsplit("_", 1)[-1]
+
+            # ── Rasmni ALBATTA belgilashdan oldin tayyorlaymiz — aks holda
+            # main.py qayta hisoblagach "Yuklangan sana" "Архив" ga almashadi ──
+            rasm = generate_kelgan_rasm(iso)
+
+            old_path.rename(XITOY_PARSED_DIR / f"{old_path.stem}_D.xlsx")
+            _main_py_ishga_tushir()
+            await query.answer(f"✅ {iso} — KELDI!", show_alert=False)
+            try:
+                await query.message.edit_text(
+                    f"✅ *{iso}* ({sana_f}) — KELDI ga o'zgartirildi!",
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+            context.user_data["screen"] = "keldi_menu"
+
+            # ── Kelgan konteyner rasmi tayyor — guruhga yuborish so'raymiz ──
+            if rasm:
+                sent = await query.message.reply_photo(
+                    photo=rasm,
+                    caption=(
+                        f"🖼 *{iso}* — kelgan yuklar ro'yxati.\n"
+                        "Guruhga yuborilsinmi?"
+                    ),
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📤 Guruhga jo'natish", callback_data=f"kg_send:{iso}")],
+                        [InlineKeyboardButton("❌ Bekor qilish", callback_data=f"kg_cancel:{iso}")],
+                    ]),
+                )
+                context.user_data["kg_pending"] = {
+                    "iso": iso,
+                    "file_id": sent.photo[-1].file_id,
+                }
+            else:
+                await kont_holat_royhat(query.message, context)
+
+    elif query.data.startswith("kont_bir_qayt:"):
+        fname = query.data[len("kont_bir_qayt:"):].split("|", 1)[0]
+        old_path = XITOY_PARSED_DIR / fname
+        if not old_path.exists():
+            await query.answer("Fayl topilmadi.", show_alert=True)
+        else:
+            stem_no_d = old_path.stem[:-2]
+            iso    = stem_no_d.rsplit("_", 1)[0]
+            sana_f = stem_no_d.rsplit("_", 1)[-1]
+            old_path.rename(XITOY_PARSED_DIR / f"{stem_no_d}.xlsx")
+            _main_py_ishga_tushir()
+            await query.answer(f"🚢 {iso} — Yo'lda!", show_alert=False)
+            try:
+                await query.message.edit_text(
+                    f"🚢 *{iso}* ({sana_f}) — ЙЎЛДА ga qaytarildi!",
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+            context.user_data["screen"] = "keldi_menu"
+            await kont_holat_royhat(query.message, context)
+
+    elif query.data.startswith("kont_bekor:"):
+        await query.edit_message_text("❌ Bekor qilindi.")
+
+    elif query.data.startswith("kg_send:"):
+        iso     = query.data.split(":", 1)[1]
+        pending = context.user_data.get("kg_pending")
+        if not pending or pending.get("iso") != iso:
+            await query.answer("Bu so'rov eskirgan, qayta urinib ko'ring.", show_alert=True)
+        else:
+            context.user_data["kutilmoqda"] = ("kg_caption", iso, pending["file_id"])
+            context.user_data["screen"] = "keldi_menu"
+            lang = context.user_data.get("lang", "cyr")
+            from telegram import ReplyKeyboardMarkup as _RKM
+            orqaga_kb = _RKM([[t(lang, "back")]], resize_keyboard=True)
+            await query.answer()
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+            await query.message.reply_text(
+                "✏️ Rasm ostiga yoziladigan matnni kiriting:",
+                reply_markup=orqaga_kb,
+            )
+
+    elif query.data.startswith("kg_cancel:"):
+        context.user_data.pop("kg_pending", None)
+        context.user_data.pop("kutilmoqda", None)
+        await query.answer("Bekor qilindi.")
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        context.user_data["screen"] = "keldi_menu"
+        await kont_holat_royhat(query.message, context)
+
+    elif query.data.startswith("kg_tgl:"):
+        payload = query.data[len("kg_tgl:"):]
+        fname, _, mk_query_key = payload.partition("|")
+        sel_data = context.user_data.get("kg_multi_sel")
+        if not sel_data or sel_data.get("query_key") != mk_query_key:
+            sel_data = {"query_key": mk_query_key, "selected": set()}
+        selected = sel_data["selected"]
+        if fname in selected:
+            selected.discard(fname)
+        else:
+            selected.add(fname)
+        context.user_data["kg_multi_sel"] = {"query_key": mk_query_key, "selected": selected}
+        fayllar = _yolda_fayllar_topish(mk_query_key)
+        try:
+            await query.edit_message_reply_markup(
+                reply_markup=_kg_multi_kb(fayllar, mk_query_key, selected)
+            )
+        except Exception:
+            pass
+        await query.answer()
+
+    elif query.data.startswith("kg_confirm_multi:"):
+        mk_query_key = query.data.split(":", 1)[1]
+        sel_data = context.user_data.get("kg_multi_sel") or {}
+        selected = sel_data.get("selected") or set()
+        if sel_data.get("query_key") != mk_query_key or not selected:
+            await query.answer("Hech narsa tanlanmagan.", show_alert=True)
+        else:
+            await query.answer("Ishlanmoqda...")
+            isos = []
+            rasmlar = []   # (iso, BytesIO) — belgilashdan OLDIN tayyorlanadi,
+                            # aks holda main.py "Yuklangan sana"ni "Архив" qilib qo'yadi
+            for fname in list(selected):
+                old_path = XITOY_PARSED_DIR / fname
+                if old_path.exists():
+                    iso = old_path.stem.rsplit("_", 1)[0]
+                    rasm = generate_kelgan_rasm(iso)
+                    old_path.rename(XITOY_PARSED_DIR / f"{old_path.stem}_D.xlsx")
+                    isos.append(iso)
+                    if rasm:
+                        rasmlar.append((iso, rasm))
+            context.user_data.pop("kg_multi_sel", None)
+            context.user_data["screen"] = "keldi_menu"
+
+            if not isos:
+                await query.message.reply_text("❌ Tanlangan fayllar topilmadi.")
+                await kont_holat_royhat(query.message, context)
+            else:
+                _main_py_ishga_tushir()
+                try:
+                    await query.edit_message_text(
+                        f"✅ {len(isos)} ta konteyner KELDI ga o'zgartirildi:\n" +
+                        "\n".join(f"• {x}" for x in isos)
+                    )
+                except Exception:
+                    pass
+
+                media_items = [InputMediaPhoto(media=rasm) for _, rasm in rasmlar]
+                ok_isos = [iso for iso, _ in rasmlar]
+
+                if not media_items:
+                    await query.message.reply_text("⚠️ Rasm yaratib bo'lmadi.")
+                    await kont_holat_royhat(query.message, context)
+                else:
+                    sent_msgs = await context.bot.send_media_group(
+                        chat_id=query.message.chat_id,
+                        media=media_items,
+                    )
+                    file_ids = [m.photo[-1].file_id for m in sent_msgs if m.photo]
+                    context.user_data["kg_pending_multi"] = {
+                        "isos": ok_isos,
+                        "file_ids": file_ids,
+                    }
+                    await query.message.reply_text(
+                        f"🖼 {len(ok_isos)} ta konteyner rasmi tayyor.\nGuruhga yuborilsinmi?",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("📤 Guruhga jo'natish", callback_data="kg_send_multi")],
+                            [InlineKeyboardButton("❌ Bekor qilish", callback_data="kg_cancel_multi")],
+                        ]),
+                    )
+
+    elif query.data == "kg_send_multi":
+        pending = context.user_data.get("kg_pending_multi")
+        if not pending or not pending.get("file_ids"):
+            await query.answer("Bu so'rov eskirgan.", show_alert=True)
+        else:
+            context.user_data["kutilmoqda"] = ("kg_caption_multi",)
+            context.user_data["screen"] = "keldi_menu"
+            lang = context.user_data.get("lang", "cyr")
+            from telegram import ReplyKeyboardMarkup as _RKM
+            orqaga_kb = _RKM([[t(lang, "back")]], resize_keyboard=True)
+            await query.answer()
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+            await query.message.reply_text(
+                "✏️ Rasmlar ostiga yoziladigan matnni kiriting:",
+                reply_markup=orqaga_kb,
+            )
+
+    elif query.data == "kg_cancel_multi":
+        context.user_data.pop("kg_pending_multi", None)
+        context.user_data.pop("kutilmoqda", None)
+        await query.answer("Bekor qilindi.")
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        context.user_data["screen"] = "keldi_menu"
+        await kont_holat_royhat(query.message, context)
+
+    elif query.data.startswith("qt_tgl:"):
+        payload = query.data[len("qt_tgl:"):]
+        fname, _, mk_query_key = payload.partition("|")
+        sel_data = context.user_data.get("qt_multi_sel")
+        if not sel_data or sel_data.get("query_key") != mk_query_key:
+            sel_data = {"query_key": mk_query_key, "selected": set()}
+        selected = sel_data["selected"]
+        if fname in selected:
+            selected.discard(fname)
+        else:
+            selected.add(fname)
+        context.user_data["qt_multi_sel"] = {"query_key": mk_query_key, "selected": selected}
+        fayllar = _keldi_fayllar_topish(mk_query_key)
+        try:
+            await query.edit_message_reply_markup(
+                reply_markup=_qt_multi_kb(fayllar, mk_query_key, selected)
+            )
+        except Exception:
+            pass
+        await query.answer()
+
+    elif query.data.startswith("qt_confirm_multi:"):
+        mk_query_key = query.data.split(":", 1)[1]
+        sel_data = context.user_data.get("qt_multi_sel") or {}
+        selected = sel_data.get("selected") or set()
+        if sel_data.get("query_key") != mk_query_key or not selected:
+            await query.answer("Hech narsa tanlanmagan.", show_alert=True)
+        else:
+            await query.answer("Ishlanmoqda...")
+            isos = []
+            for fname in list(selected):
+                old_path = XITOY_PARSED_DIR / fname
+                if old_path.exists():
+                    stem_no_d = old_path.stem[:-2]
+                    iso = stem_no_d.rsplit("_", 1)[0]
+                    old_path.rename(XITOY_PARSED_DIR / f"{stem_no_d}.xlsx")
+                    isos.append(iso)
+            context.user_data.pop("qt_multi_sel", None)
+            context.user_data["screen"] = "keldi_menu"
+
+            if not isos:
+                await query.message.reply_text("❌ Tanlangan fayllar topilmadi.")
+            else:
+                _main_py_ishga_tushir()
+                try:
+                    await query.edit_message_text(
+                        f"↩️ {len(isos)} ta konteyner ЙЎЛДА ga qaytarildi:\n" +
+                        "\n".join(f"• {x}" for x in isos)
+                    )
+                except Exception:
+                    pass
+            await kont_holat_royhat(query.message, context)
+
+    elif query.data == "qt_cancel_multi":
+        context.user_data.pop("qt_multi_sel", None)
+        await query.answer("Bekor qilindi.")
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        context.user_data["screen"] = "keldi_menu"
+        await kont_holat_royhat(query.message, context)
+
     elif query.data.startswith("karta_kat:"):
         kat  = query.data.split(":")[1]
         lang = context.user_data.get("lang", "cyr")
@@ -342,6 +688,17 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["screen"] = "search_kat"
         await query.edit_message_text(
             t(lang, key_map[kat]), parse_mode="Markdown"
+        )
+
+    elif query.data == "karta_umumiy":
+        lang  = context.user_data.get("lang", "cyr")
+        kanal = context.user_data.get("kanal", "asosiy")
+        context.user_data["kutilmoqda"] = ("umumiy_qidirish", kanal)
+        context.user_data["screen"] = "search_kat"
+        await query.edit_message_text(
+            "🔍 Qidirmoqchi bo'lgan tovar nomi yoki o'lchamini yozing "
+            "(kategoriya tanlash shart emas):",
+            parse_mode="Markdown",
         )
 
     elif query.data.startswith("karta_tovar:"):
@@ -413,6 +770,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         decision = query.data.split(":")[1]
         if decision == "yoq":
             context.user_data.pop("kont_yangilar", None)
+            context.user_data.pop("kutilmoqda", None)
             try:
                 await query.edit_message_reply_markup(reply_markup=None)
             except Exception:
@@ -420,6 +778,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text(t(lang, "kont_tasdiq_yoq"))
         elif decision == "ha":
             yangilar = context.user_data.pop("kont_yangilar", [])
+            context.user_data.pop("kutilmoqda", None)
             try:
                 await query.edit_message_reply_markup(reply_markup=None)
             except Exception:
@@ -429,12 +788,24 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             from konteyner_qosh import konteyner_xlsx_yarat
             n_ok = 0
+            qoshilganlar = []
             for kont in yangilar:
                 try:
-                    konteyner_xlsx_yarat(kont, KONT_DIR)
+                    # XITOY_PARSED_DIR — main.py aynan shu papkani o'qib,
+                    # "Yo'ldagi yuklar" hisobotiga qo'shadi (KONT_DIR emas!)
+                    konteyner_xlsx_yarat(kont, XITOY_PARSED_DIR)
                     n_ok += 1
+                    qoshilganlar.append(kont)
                 except Exception as e:
                     logger.error(f"konteyner xlsx xato {kont['iso']}: {e}")
+            if qoshilganlar:
+                # Doimiy tarixga (ISO+sana) yozamiz — fayl keyin o'chirilsa ham
+                # aynan shu yetkazib berish qayta "yangi" deb qo'shilib ketmaydi
+                # (lekin xuddi shu ISO boshqa sanada YANGI yuk bilan kelsa —
+                # bemalol qo'shiladi, chunki konteyner raqamlari qayta ishlatiladi)
+                konteyner_tarix_qoshish(qoshilganlar)
+            if n_ok:
+                _main_py_ishga_tushir()
             await query.message.reply_text(
                 t(lang, "kont_qoshildi").format(n=n_ok),
                 parse_mode="Markdown"
@@ -447,6 +818,7 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not kirish_ruxsati(uid):
         await update.message.reply_text("⛔ Kirish huquqi yo'q.")
         return
+    context.user_data["user_id"] = uid  # _is_admin uchun
     lang   = context.user_data.get("lang", "cyr")
     screen = context.user_data.get("screen", "main")
     text   = update.message.text.strip()
@@ -459,6 +831,59 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # xitoy_ostatka_fayl holatida menyu tugmasi kelsa — normal ishlat (kutilmoqda tozala)
     # Tasodifiy matn kelsa — eslatma, holatni saqlat
     kut = context.user_data.get("kutilmoqda")
+
+    # ── Konteyner qidiruv holatlari (sana yoki nom bo'yicha) ─────────────────
+    if isinstance(kut, tuple) and kut[0] in ("kont_keldi_sana", "kont_qaytarish_sana"):
+        _back_texts = {t("cyr", "back"), t("lat", "back"), "⬅️ Орқага", "⬅️ Orqaga", "← Orqaga"}
+        if text in _back_texts or bool(get_action(lang, screen, text)):
+            context.user_data.pop("kutilmoqda", None)
+        else:
+            import re as _re
+            rejim = kut[0]
+            is_keldi_rejim = (rejim == "kont_keldi_sana")
+
+            if _re.match(r"^\d{2}\.\d{2}\.\d{4}$", text):
+                query_key = f"sana:{text}"
+            else:
+                query_key = f"nom:{text.strip().upper()}"
+
+            context.user_data.pop("kutilmoqda", None)
+            await _kont_list_yuborish(msg, query_key, is_keldi_rejim,
+                                       reply=True, context=context)
+            return
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # ── "Kelgan yuklar" guruhiga yuborish uchun matn (caption) kutilmoqda ──────
+    if isinstance(kut, tuple) and kut[0] == "kg_caption":
+        _back_texts = {t("cyr", "back"), t("lat", "back"), "⬅️ Орқага", "⬅️ Orqaga", "← Orqaga"}
+        _, kg_iso, kg_file_id = kut
+        if text in _back_texts or bool(get_action(lang, screen, text)):
+            context.user_data.pop("kutilmoqda", None)
+            context.user_data.pop("kg_pending", None)
+        else:
+            context.user_data.pop("kutilmoqda", None)
+            context.user_data.pop("kg_pending", None)
+            await _kg_yuborish_guruhga(msg, context, kg_iso, kg_file_id, text)
+            return
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # ── Bir nechta konteyner (albom) uchun caption kutilmoqda ──────────────────
+    if isinstance(kut, tuple) and kut[0] == "kg_caption_multi":
+        _back_texts = {t("cyr", "back"), t("lat", "back"), "⬅️ Орқага", "⬅️ Orqaga", "← Orqaga"}
+        pending = context.user_data.get("kg_pending_multi") or {}
+        if text in _back_texts or bool(get_action(lang, screen, text)):
+            context.user_data.pop("kutilmoqda", None)
+            context.user_data.pop("kg_pending_multi", None)
+        else:
+            context.user_data.pop("kutilmoqda", None)
+            context.user_data.pop("kg_pending_multi", None)
+            await _kg_yuborish_guruhga_multi(
+                msg, context,
+                pending.get("isos", []), pending.get("file_ids", []), text
+            )
+            return
+    # ─────────────────────────────────────────────────────────────────────────
+
     _KAT_MATN = {
         "truba":  "grafik_truba",  "profil": "grafik_profil",
         "list":   "grafik_list",   "bal":    "grafik_bal",
@@ -512,6 +937,23 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             return
 
+    # ── Umumiy (kategoriyasiz) qidiruv ───────────────────────────────────────
+    if isinstance(kut, tuple) and kut[0] == "umumiy_qidirish":
+        kanal = kut[1]
+        if text == t(lang, "back"):
+            context.user_data.pop("kutilmoqda", None)
+            await go_screen(msg, context, "search")
+            await msg.reply_text(t(lang, "karta_kat_sor"), reply_markup=grafik_kat_ikb())
+            return
+        if get_action(lang, screen, text):
+            # Boshqa menyu tugmasi — holatni tozalab, odatiy amalga o'tamiz
+            context.user_data.pop("kutilmoqda", None)
+        else:
+            df = qidiruv_olish(text, kanal)
+            matn = qidiruv_text(text, df, lang)
+            await msg.reply_text(matn, parse_mode="Markdown")
+            return  # kutilmoqda saqlanadi — davomli qidiruv uchun
+
     if isinstance(kut, tuple):
         if kut[0] in ("xitoy_tp", "xitoy_list", "xitoy_ostatka_fayl", "xitoy_fayl"):
             is_back    = (text == t(lang, "back"))
@@ -534,12 +976,17 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data.pop("kutilmoqda", None)
 
     # Orqaga (universal — har qanday ekranda ishlaydi)
-    if text == t(lang, "back"):
-        parent = BACK_MAP.get(screen, "main")
+    _back_set = {t("cyr", "back"), t("lat", "back"), "⬅️ Орқага", "⬅️ Orqaga", "← Orqaga"}
+    if text in _back_set:
         context.user_data.pop("kutilmoqda", None)
         context.user_data.pop("grafik_natijalar", None)
+        # keldi_ekran dan Orqaga → inline menyu ko'rsatish, keldi_menu ga o'tish
+        if screen == "keldi_ekran":
+            context.user_data["screen"] = "keldi_menu"
+            await kont_holat_royhat(msg, context)
+            return
+        parent = BACK_MAP.get(screen, "main")
         await go_screen(msg, context, parent)
-        # search_kat dan search ga qaytganda kategoriya tanlash qayta ko'rsatiladi
         if parent == "search":
             await msg.reply_text(t(lang, "karta_kat_sor"), reply_markup=grafik_kat_ikb())
         return
@@ -756,7 +1203,14 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text(t(lang, "karta_kat_sor"), reply_markup=grafik_kat_ikb())
 
     elif action == "yolda":
-        await yolda_ko_rish(msg, context, lang)
+        pass  # Eski tugma — hozircha bo'sh
+
+    elif action == "konteyner":
+        await go_screen(msg, context, "konteyner")
+
+    elif action == "keldi_belgi":
+        context.user_data["screen"] = "keldi_menu"
+        await kont_holat_royhat(msg, context, change_kb=True)
 
     elif action == "yangilash":
         loop = asyncio.get_event_loop()
@@ -833,11 +1287,12 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not kirish_ruxsati(uid):
         await update.message.reply_text("⛔ Kirish huquqi yo'q.")
         return
+    context.user_data["user_id"] = uid  # _is_admin uchun
     lang  = context.user_data.get("lang", "cyr")
     msg   = update.message
     kut   = context.user_data.get("kutilmoqda")
 
-    if not (isinstance(kut, tuple) and kut[0] in ("xitoy_fayl", "xitoy_ostatka_fayl", "xitoy_tp", "xitoy_list", "buyurtma_tasdiq", "kont_tp", "kont_list")):
+    if not (isinstance(kut, tuple) and kut[0] in ("xitoy_fayl", "xitoy_ostatka_fayl", "xitoy_tp", "xitoy_list", "buyurtma_tasdiq", "kont_tp", "kont_list", "kont_tasdiq_fayl")):
         await msg.reply_text("Fayl kutilmayapti. Avval kanal tanlang.")
         return
 
@@ -846,6 +1301,14 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if doc is None:
         await msg.reply_text("Hujjat topilmadi.")
         return
+
+    # DIQQAT: bu xabar Telegram'dan faylni YUKLAB OLISHDAN OLDIN
+    # yuboriladi — aks holda (avvalgi kod shunday edi) katta fayllarda
+    # bot bir necha soniya JIM turib qolar edi (fayl hali serverdan
+    # yuklab olinayotgan payt hech qanday javob yo'q edi), va foydalanuvchi
+    # botni "osilib qoldi" deb o'ylardi. Har bir holat (kont_tp, kont_list
+    # va h.k.) o'zining KEYINGI, aniqroq xabarini pastda alohida yuboradi.
+    await msg.reply_text("📎 Fayl qabul qilindi, yuklanmoqda...")
 
     try:
         tg_file = await doc.get_file()
@@ -886,20 +1349,158 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             preview = zakaz_preview_text(kanal, items, lang)
         except Exception as e:
-            preview = f"✅ {len(items)} ta tovar buyurtmasi qabul qilindi."
-        await msg.reply_text(preview, parse_mode="Markdown", reply_markup=zakaz_tasdiq_ikb(lang, kanal))
+            preview = f"Oldingi tasdiq: {e}"
+        await msg.reply_text(
+            preview,
+            parse_mode="Markdown",
+            reply_markup=zakaz_tasdiq_ikb(lang, kanal),
+        )
         return
 
-    # ── Xitoy ostatka fayli (2-fayl: xitoy_tp → xitoy_list) ─────────────────
-    ok, xato, xitoy_map, kont_rows, ombor_map, vazn_map = xitoy_ostatka_oqi(raw)
+    # ── Yo'lga konteyner qo'shish: 1/2 — Труба/Профиль装箱单 ────────────────────
+    if kut[0] == "kont_tp":
+        # DIQQAT: bu yerda hali og'ir tekshirish/parslash YO'Q — faqat
+        # xotiraga saqlanadi, haqiqiy o'qish ikkala fayl ham kelgach
+        # ("kont_list" bosqichida) bajariladi. Shuning uchun qo'shimcha
+        # "tekshirilmoqda" xabari YOLG'ON va ORTIQCHA edi (yuqoridagi umumiy
+        # "qabul qilindi" xabari yetarli) — olib tashlandi.
+        context.user_data["kont_tp_raw"] = raw
+        context.user_data["kutilmoqda"] = ("kont_list", None)
+        await msg.reply_text(t(lang, "kont_list_kut"), parse_mode="Markdown")
+        return
+
+    # ── Yo'lga konteyner qo'shish: 2/2 — Лист出货清单 → tekshirish uchun draft ──
+    if kut[0] == "kont_list":
+        from konteyner_qosh import (
+            xitoy_yuklar_oqi, draft_excel_yarat, qisqa_xulosa,
+            iso_boyicha_yangilarini_ajrat, notanish_soni,
+        )
+        await msg.reply_text("⏳ Ikkala fayl o'qilmoqda va solishtirilmoqda, biroz kuting...")
+        truba_raw = context.user_data.pop("kont_tp_raw", None)
+        if not truba_raw:
+            await msg.reply_text(
+                "⚠️ 1-fayl (Труба/Профиль) topilmadi — qaytadan boshlang."
+            )
+            context.user_data.pop("kutilmoqda", None)
+            return
+        try:
+            yuklar = xitoy_yuklar_oqi(truba_raw, raw)
+        except Exception as e:
+            await msg.reply_text(t(lang, "kont_xato").format(xato=str(e)[:300]), parse_mode="Markdown")
+            context.user_data.pop("kutilmoqda", None)
+            return
+        tarix = konteyner_tarix_olish()
+        # Asosiy mezon: HAR BIR ISO alohida tekshiriladi — shu ISO tizimda
+        # umuman uchramagan bo'lsa (masalan unutilib qolgan konteyner)
+        # sanasidan qat'iy nazar yangi deb chiqadi; ISO bor bo'lsa faqat
+        # undan KEYINGI sanadagi yuklar yangi hisoblanadi. Global sana
+        # chegarasi eski-lekin-hech-qachon-qoshilmagan konteynerlarni
+        # yashirib qo'yishi mumkin edi — shuning uchun endi ISO-boyicha
+        # tekshiriladi.
+        yangilar = iso_boyicha_yangilarini_ajrat(yuklar, XITOY_PARSED_DIR, tarix)
+        if not yangilar:
+            await msg.reply_text(t(lang, "kont_barchasi_bor"), parse_mode="Markdown")
+            context.user_data.pop("kutilmoqda", None)
+            return
+        context.user_data["kont_yangilar"] = yangilar
+        context.user_data["kutilmoqda"] = ("kont_tasdiq_fayl", None)
+        # Tasdiqlashdan oldin QISQA xulosa (har bir konteyner — birlashganmi,
+        # faqat Труба/Лист, tonnaji, inventarda mos kelmagan tovar bormi) +
+        # to'liq tafsilotli Excel + tasdiqlash tugmasi.
+        await msg.reply_text(qisqa_xulosa(yangilar), parse_mode="Markdown")
+        bio = draft_excel_yarat(yangilar)
+        await msg.reply_document(
+            document=bio, filename="Yangi_konteynerlar.xlsx",
+            caption=(
+                "📋 Har bir konteynerning to'liq tovar ro'yxati shu faylda. "
+                "Xato bo'lsa tahrirlab qayta shu yerga yuboring. "
+                "Hammasi to'g'ri bo'lsa — pastdagi tugmani bosing."
+            ),
+        )
+        n_nomos = notanish_soni(yangilar)
+        if n_nomos:
+            await msg.reply_text(
+                f"⚠️ *DIQQAT: {n_nomos} ta tovar hali ham inventarda "
+                f"NOTANISH* (faylda ⚠️ belgi bilan ajratilgan). Iltimos, "
+                f"yuqoridagi Excel faylni oching, shu qatorlarni TO'G'IRLAB "
+                f"qayta shu yerga yuboring — aks holda ular xato/noaniq nom "
+                f"bilan saqlanib qoladi.",
+                parse_mode="Markdown",
+            )
+            await msg.reply_text(
+                "✅ Baribir tasdiqlaysizmi?",
+                reply_markup=kont_tasdiq_ikb(lang),
+            )
+        else:
+            await msg.reply_text(
+                "✅ Tasdiqlaysizmi?",
+                reply_markup=kont_tasdiq_ikb(lang),
+            )
+        return
+
+    # ── Yo'lga konteyner qo'shish: tasdiqlashdan oldin tahrirlangan fayl ──────
+    if kut[0] == "kont_tasdiq_fayl":
+        from konteyner_qosh import (
+            draft_excel_oqi, draft_excel_yarat, qisqa_xulosa,
+            iso_boyicha_yangilarini_ajrat, notanish_soni,
+        )
+        await msg.reply_text("⏳ Tahrirlangan fayl o'qilmoqda, biroz kuting...")
+        try:
+            yangilar = draft_excel_oqi(raw)
+        except Exception as e:
+            await msg.reply_text(t(lang, "kont_xato").format(xato=str(e)[:300]), parse_mode="Markdown")
+            return
+        tarix = konteyner_tarix_olish()
+        yangilar = iso_boyicha_yangilarini_ajrat(yangilar, XITOY_PARSED_DIR, tarix)
+        if not yangilar:
+            await msg.reply_text(
+                "⚠️ Faylda hech qanday to'g'ri (yoki hammasi allaqachon "
+                "tasdiqlangan) qator topilmadi — qaytadan tekshiring."
+            )
+            return
+        context.user_data["kont_yangilar"] = yangilar
+        await msg.reply_text("✏️ *Yangilangan ro'yxat:*\n\n" + qisqa_xulosa(yangilar), parse_mode="Markdown")
+        bio = draft_excel_yarat(yangilar)
+        await msg.reply_document(
+            document=bio, filename="Yangi_konteynerlar.xlsx",
+            caption=(
+                "Yana tahrirlash kerak bo'lsa qayta yuboring. "
+                "Hammasi to'g'ri bo'lsa — pastdagi tugmani bosing."
+            ),
+        )
+        n_nomos = notanish_soni(yangilar)
+        if n_nomos:
+            await msg.reply_text(
+                f"⚠️ *DIQQAT: {n_nomos} ta tovar hali ham inventarda "
+                f"NOTANISH* (faylda ⚠️ belgi bilan ajratilgan). Iltimos, "
+                f"yuqoridagi Excel faylni oching, shu qatorlarni TO'G'IRLAB "
+                f"qayta shu yerga yuboring — aks holda ular xato/noaniq nom "
+                f"bilan saqlanib qoladi.",
+                parse_mode="Markdown",
+            )
+            await msg.reply_text(
+                "✅ Baribir tasdiqlaysizmi?",
+                reply_markup=kont_tasdiq_ikb(lang),
+            )
+        else:
+            await msg.reply_text(
+                "✅ Tasdiqlaysizmi?",
+                reply_markup=kont_tasdiq_ikb(lang),
+            )
+        return
+
+    # ── Xitoy / Yuklatish fayllari uchun parse ───────────────────────────────
+    try:
+        ok, xato, xitoy_map, kont_rows, ombor_map, vazn_map = xitoy_ostatka_oqi(raw)
+    except Exception as e:
+        await msg.reply_text(f"❌ Fayl o'qishda xato: {str(e)[:300]}")
+        return
     if not ok:
-        await msg.reply_text(f"Xato: {xato}")
+        await msg.reply_text(f"❌ {xato}")
         return
 
     if kut[0] == "xitoy_tp":
-        # 1-fayl: Труба/Профиль — vaqtincha saqlash, Лист so'rash
-        context.user_data["xitoy_tp_data"] = dict(xitoy_map or {})
-        context.user_data["xitoy_tp_vazn"] = dict(vazn_map or {})
+        context.user_data["xitoy_tp_data"] = {"tovarlar": xitoy_map or {}, "ombor": ombor_map or {}, "vazn": vazn_map or {}}
         context.user_data["kutilmoqda"] = ("xitoy_list", kanal)
         n = len(xitoy_map or {})
         await msg.reply_text(
@@ -908,12 +1509,10 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif kut[0] in ("xitoy_list", "xitoy_ostatka_fayl"):
-        # 2-fayl: List Xitoy fayli yoki ostatka fayili
         tp_data   = context.user_data.pop("xitoy_tp_data", {})
         tp_map    = tp_data.get("tovarlar", {})
         tp_ombor  = tp_data.get("ombor", {})
         tp_vazn   = tp_data.get("vazn", {})
-        # Ikki faylni birlashtirish
         final_map   = {**tp_map,   **(xitoy_map   or {})}
         final_ombor = {**tp_ombor, **(ombor_map   or {})}
         final_vazn  = {**tp_vazn,  **(vazn_map    or {})}
@@ -927,8 +1526,207 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             t(lang, "xitoy_qabul").format(n=n),
             parse_mode="Markdown",
         )
-        # Avtomatik draft Excel yaratish
         await draft_buyurtma_yubor(msg, context, kanal, lang, xitoy_ostatka=final_map)
 
     elif kut[0] == "xitoy_fayl":
-        pass  # fayl_keldi da ishlanadi
+        pass
+
+
+# ── Konteyner holati ─────────────────────────────────────────────────
+def _kont_parse(kont_dir):
+    yolda, keldi = [], []
+    if not kont_dir.exists():
+        return yolda, keldi
+    for f in sorted(kont_dir.glob("*.xlsx")):
+        stem = f.stem
+        if stem.endswith("_D"):
+            base = stem[:-2]
+            parts = base.split("_", 1)
+            keldi.append((parts[0], parts[1] if len(parts) > 1 else "?", f.name))
+        else:
+            parts = stem.split("_", 1)
+            yolda.append((parts[0], parts[1] if len(parts) > 1 else "?", f.name))
+    return yolda, keldi
+
+
+def _main_py_ishga_tushir():
+    import subprocess
+    try:
+        subprocess.Popen(
+            ["python", str(BASE_DIR / "main.py")],
+            cwd=str(BASE_DIR),
+            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+        )
+    except Exception:
+        pass
+
+
+
+def _yolda_fayllar_topish(query_key: str) -> list:
+    """query_key ("sana:..." yoki "nom:...") bo'yicha YOLDA (hali kelmagan)
+    konteyner fayllarini topib, sorted list qaytaradi. kg_tgl va
+    _kont_list_yuborish (is_keldi=True) uchun umumiy logika."""
+    if query_key.startswith("sana:"):
+        sana = query_key[5:]
+        return sorted(XITOY_PARSED_DIR.glob(f"*_{sana}.xlsx"))
+    else:
+        nom = query_key[4:].upper()
+        return sorted(f for f in XITOY_PARSED_DIR.glob("*.xlsx")
+                      if not f.stem.endswith("_D") and f.stem.upper().startswith(nom))
+
+
+def _keldi_fayllar_topish(query_key: str) -> list:
+    """query_key bo'yicha KELDI bo'lgan (allaqachon kelgan) konteyner
+    fayllarini topib, sorted list qaytaradi. qt_tgl va
+    _kont_list_yuborish (is_keldi=False) uchun umumiy logika."""
+    if query_key.startswith("sana:"):
+        sana = query_key[5:]
+        return sorted(XITOY_PARSED_DIR.glob(f"*_{sana}_D.xlsx"))
+    else:
+        nom = query_key[4:].upper()
+        return sorted(f for f in XITOY_PARSED_DIR.glob("*_D.xlsx")
+                      if f.stem[:-2].upper().startswith(nom))
+
+
+async def _kont_list_yuborish(msg, query_key: str, is_keldi: bool,
+                              reply: bool = True, context=None):
+    """
+    query_key: "sana:07.06.2026" yoki "nom:CRXU"
+    is_keldi=True  -> YOLDA larni korsatib KELDI tugmalari
+    is_keldi=False -> KELDI larni korsatib QAYTARISH tugmalari
+    """
+    tag = query_key.split(":", 1)[1] if ":" in query_key else query_key
+
+    if query_key.startswith("sana:"):
+        sana = query_key[5:]
+        if is_keldi:
+            fayllar = _yolda_fayllar_topish(query_key)
+            sarlavha = f"\U0001f6a2 *{sana}* \u2014 yo'ldagi konteynerlar:"
+        else:
+            fayllar = _keldi_fayllar_topish(query_key)
+            sarlavha = f"\u2705 *{sana}* \u2014 kelgan konteynerlar:"
+    else:
+        nom = query_key[4:].upper()
+        if is_keldi:
+            fayllar = _yolda_fayllar_topish(query_key)
+            sarlavha = f"\U0001f6a2 *{nom}* \u2014 yo'ldagi konteynerlar:"
+        else:
+            fayllar = _keldi_fayllar_topish(query_key)
+            sarlavha = f"\u2705 *{nom}* \u2014 kelgan konteynerlar:"
+
+    if not fayllar:
+        topilmadi = f"\u274c *{tag}* bo'yicha konteyner topilmadi."
+        await msg.reply_text(topilmadi, parse_mode="Markdown")
+        if context is not None:
+            context.user_data["screen"] = "keldi_menu"
+            await kont_holat_royhat(msg, context)
+        return
+
+    # \u2500\u2500 Bir nechta konteyner bir vaqtda KELDI bo'lsa \u2014 belgilash (checkbox) rejimi \u2500\u2500
+    if is_keldi and len(fayllar) > 1:
+        if context is not None:
+            context.user_data["kg_multi_sel"] = {"query_key": query_key, "selected": set()}
+        await msg.reply_text(
+            sarlavha + "\n\n_Kerakli konteynerlarni belgilang, so'ng pastdagi tugmani bosing:_",
+            parse_mode="Markdown",
+            reply_markup=_kg_multi_kb(fayllar, query_key, set()),
+        )
+        return
+
+    # \u2500\u2500 Bir nechta konteyner bir vaqtda QAYTARISH kerak bo'lsa \u2014 checkbox rejimi \u2500\u2500
+    if not is_keldi and len(fayllar) > 1:
+        if context is not None:
+            context.user_data["qt_multi_sel"] = {"query_key": query_key, "selected": set()}
+        await msg.reply_text(
+            sarlavha + "\n\n_Qaytariladigan konteynerlarni belgilang, so'ng pastdagi tugmani bosing:_",
+            parse_mode="Markdown",
+            reply_markup=_qt_multi_kb(fayllar, query_key, set()),
+        )
+        return
+
+    buttons = []
+    for f in fayllar:
+        if is_keldi:
+            iso    = f.stem.rsplit("_", 1)[0]
+            sana_f = f.stem.rsplit("_", 1)[-1]
+            lbl    = f"\U0001f6a2 {iso} ({sana_f})"
+            cb     = f"kont_bir_keldi:{f.name}|{query_key}"
+        else:
+            stem_no_d = f.stem[:-2]
+            iso    = stem_no_d.rsplit("_", 1)[0]
+            sana_f = stem_no_d.rsplit("_", 1)[-1]
+            lbl    = f"\u2705 {iso} ({sana_f})"
+            cb     = f"kont_bir_qayt:{f.name}|{query_key}"
+        buttons.append([InlineKeyboardButton(lbl, callback_data=cb)])
+
+    await msg.reply_text(sarlavha, parse_mode="Markdown",
+                         reply_markup=InlineKeyboardMarkup(buttons))
+
+
+def _kg_multi_kb(fayllar, query_key: str, selected: set) -> InlineKeyboardMarkup:
+    """YOLDA konteynerlar ro'yxati \u2014 checkbox (belgilash) klaviaturasi."""
+    buttons = []
+    for f in fayllar:
+        iso    = f.stem.rsplit("_", 1)[0]
+        sana_f = f.stem.rsplit("_", 1)[-1]
+        mark   = "\u2705" if f.name in selected else "\u2b1c"
+        lbl    = f"{mark} {iso} ({sana_f})"
+        cb     = f"kg_tgl:{f.name}|{query_key}"
+        buttons.append([InlineKeyboardButton(lbl, callback_data=cb)])
+    n = len(selected)
+    buttons.append([InlineKeyboardButton(
+        f"\u2705 Tanlanganlarni KELDI qilish ({n} ta)" if n else "\u2705 Tanlanganlarni KELDI qilish",
+        callback_data=f"kg_confirm_multi:{query_key}"
+    )])
+    buttons.append([InlineKeyboardButton("\u274c Bekor qilish", callback_data="kg_cancel_multi")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def _qt_multi_kb(fayllar, query_key: str, selected: set) -> InlineKeyboardMarkup:
+    """KELDI konteynerlar ro'yxati \u2014 QAYTARISH uchun checkbox klaviaturasi."""
+    buttons = []
+    for f in fayllar:
+        stem_no_d = f.stem[:-2]
+        iso    = stem_no_d.rsplit("_", 1)[0]
+        sana_f = stem_no_d.rsplit("_", 1)[-1]
+        mark   = "\u2705" if f.name in selected else "\u2b1c"
+        lbl    = f"{mark} {iso} ({sana_f})"
+        cb     = f"qt_tgl:{f.name}|{query_key}"
+        buttons.append([InlineKeyboardButton(lbl, callback_data=cb)])
+    n = len(selected)
+    buttons.append([InlineKeyboardButton(
+        f"\u21a9\ufe0f Tanlanganlarni qaytarish ({n} ta)" if n else "\u21a9\ufe0f Tanlanganlarni qaytarish",
+        callback_data=f"qt_confirm_multi:{query_key}"
+    )])
+    buttons.append([InlineKeyboardButton("\u274c Bekor qilish", callback_data="qt_cancel_multi")])
+    return InlineKeyboardMarkup(buttons)
+
+
+async def _kg_yuborish_guruhga(msg, context, iso: str, file_id: str, caption: str):
+    """KELDI bo'lgan konteyner rasmini 'Kelgan yuklar' guruhi/mavzusiga yuboradi."""
+    if not config.KELGAN_YUKLAR_CHAT_ID:
+        await msg.reply_text(
+            "⚠️ Guruh sozlanmagan. .env faylida KELGAN_YUKLAR_CHAT_ID "
+            "(va kerak bo'lsa KELGAN_YUKLAR_TOPIC_ID) qiymatini kiriting."
+        )
+    else:
+        try:
+            await context.bot.send_photo(
+                chat_id=config.KELGAN_YUKLAR_CHAT_ID,
+                photo=file_id,
+                caption=caption,
+                message_thread_id=config.KELGAN_YUKLAR_TOPIC_ID,
+            )
+            await msg.reply_text(
+                f"✅ *{iso}* — \"Kelgan yuklar\" guruhiga yuborildi!",
+                parse_mode="Markdown",
+            )
+        except Exception as e:
+            await msg.reply_text(f"❌ Guruhga yuborishda xato: {e}")
+
+    context.user_data["screen"] = "keldi_menu"
+    await kont_holat_royhat(msg, context)
+
+
+async def _kg_yuborish_guruhga_multi(msg, context, isos: list, file_ids: list, caption: str):
+    """Bir nechta KELDI bo'lgan konteyner r

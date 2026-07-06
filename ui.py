@@ -11,7 +11,7 @@ from config import BASE_DIR, DATA_FILE, BACK_MAP, CH_KEY, _MPL_LOCK, get_inv, ge
 from texts import t
 from keyboards import (
     main_kb, main_kb_user, order_kb, order_channel_kb, load_kb, load_channel_kb,
-    status_kb, settings_kb, settings_kb_user, search_kb,
+    status_kb, settings_kb, settings_kb_user, search_kb, konteyner_kb,
     grafik_kat_ikb, grafik_tovar_ikb,
     xitoy_sorash_ikb, xitoy_mavjud_ikb, boglanish_ikb,
 )
@@ -143,6 +143,12 @@ def build_screen(screen: str, lang: str, context) -> tuple:
         return t(lang, "settings_title_user"), settings_kb_user(lang)
     if screen in ("search", "search_kat"):
         return t(lang, "search_title"), search_kb(lang)
+    if screen == "konteyner":
+        return t(lang, "konteyner_title"), konteyner_kb(lang)
+    if screen == "keldi_ekran":
+        from telegram import ReplyKeyboardMarkup
+        orqaga_kb = ReplyKeyboardMarkup([[t(lang, "back")]], resize_keyboard=True)
+        return t(lang, "konteyner_title"), orqaga_kb
     return t(lang, "user_main_title") if not admin else t(lang, "main_title"), \
            main_kb_user(lang) if not admin else main_kb(lang)
 
@@ -170,9 +176,15 @@ def get_action(lang: str, screen: str, text: str):
             t(lang, "b_load"):        "load",
             t(lang, "b_karta"):       "karta",
             t(lang, "b_yolda"):       "yolda",
+            t(lang, "b_konteyner"):   "konteyner",
             t(lang, "b_settings"):    "settings",
             # User (filyal) tugmalari
             t(lang, "b_yolda_excel"): "yolda_excel",
+        },
+        "konteyner": {
+            t(lang, "b_yolda_excel"): "yolda_excel",
+            t(lang, "b_yolga_kont"):  "yolga_kont",
+            t(lang, "b_keldi_belgi"): "keldi_belgi",
         },
         "order": {
             t(lang, "ch_asosiy"): ("order_channel", "asosiy"),
@@ -424,7 +436,7 @@ async def yolda_ko_rish(msg, context, lang: str):
             return
         n_cont = 0
         await msg.reply_text(
-            f"🚢 *Yo'ldagi konteynerlar*\n_(Kelish sanasiga qarab tartiblangan)_"
+            f"🚛 *Yo'ldagi konteynerlar*\n_(Kelish sanasiga qarab tartiblangan)_"
         )
         await msg.reply_document(
             document=bio,

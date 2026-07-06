@@ -208,6 +208,19 @@ def _parse_konteyner_fayli(file_path: str) -> list[dict]:
             df.columns[2]
         )
 
+        # "Vazn_kg" ustuni (agar mavjud bo'lsa) — konteyner_qosh.py
+        # tomonidan BIR MARTA (qo'shilayotgan paytda) hisoblab yozib
+        # qo'yilgan og'irlik. Mavjud bo'lsa shu qiymat ishlatiladi — bu
+        # yerda yoki keyinroq (yolda_excel.py'da) tovar nomidan qayta
+        # hisoblashga hojat qolmaydi. Eski (bu ustun yo'q) fayllar uchun
+        # None qoladi — yolda_excel.py bunday holatda tovar nomidan
+        # taxminiy hisoblaydi (orqaga moslashuvchan fallback).
+        vazn_col = next(
+            (c for c in df.columns if str(c).strip().lower() in
+             ('vazn_kg', 'вазн_кг', 'vazn (kg)', 'vazn')),
+            None
+        )
+
         for _, row in df.iterrows():
             mahsulot = row[mahsulot_col]
             if pd.isna(mahsulot):
@@ -222,10 +235,18 @@ def _parse_konteyner_fayli(file_path: str) -> list[dict]:
             try:
                 qty = float(row[miqdor_col])
                 if qty > 0:
+                    vazn_kg = None
+                    if vazn_col is not None:
+                        try:
+                            v = row[vazn_col]
+                            vazn_kg = float(v) if pd.notna(v) and v != '' else None
+                        except (ValueError, TypeError):
+                            vazn_kg = None
                     rows.append({
                         'Konteyner_Raqam':    konteyner_raqam,
                         'Mahsulot_Normalized': normalize_product_name(mahsulot_str),
                         'Konteyner_Miqdor':   qty,
+                        'Konteyner_Vazn_Kg':  vazn_kg,
                         'Chiqish_Sana':       departure_date,
                         'Kelish_Sana':        arrival_date,
                         'Transit_Kun':        transit_days,
@@ -260,6 +281,7 @@ if all_containers:
         as_index=False
     ).agg({
         'Konteyner_Miqdor': 'sum',
+        'Konteyner_Vazn_Kg': lambda s: s.sum(min_count=1),  # hammasi NaN bo'lsa NaN qoladi
         'Chiqish_Sana':     'min',
         'Kelish_Sana':      'min',
     })
@@ -537,6 +559,7 @@ with pd.ExcelWriter(str(OUTPUT_FILE), engine='openpyxl') as writer:
         cont = cont.rename(columns={
             'Mahsulot_Normalized': 'Товар',
             'Konteyner_Miqdor':    'Миқдор',
+            'Konteyner_Vazn_Kg':   'Вазн_кг',
             'Konteyner_Raqam':     'Контейнер',
             'Konteyner_Turi':      'Тури',
             'Holat':               'Холат',
@@ -653,6 +676,12 @@ with pd.ExcelWriter(str(OUTPUT_FILE), engine='openpyxl') as writer:
         print(f"  ℹ️  Konteyner yo'q — barcha varaqlar bo'sh yaratildi")
 
 print(f"\n  ✅ Saqlandi: {OUTPUT_FILE}")
+
+# Power BI root fayliga ham nusxa ko'chirish
+ROOT_BI_FILE = SCRIPT_DIR / 'NEJAVIYKA_POWER_BI.xlsx'
+import shutil as _shutil
+_shutil.copy2(str(OUTPUT_FILE), str(ROOT_BI_FILE))
+print(f"  ✅ Power BI nusxa: {ROOT_BI_FILE}")
 
 
 # ============================================================

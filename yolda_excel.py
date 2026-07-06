@@ -23,7 +23,7 @@ from openpyxl.styles import (
     PatternFill, Font, Alignment, Border, Side, numbers
 )
 from openpyxl.utils import get_column_letter
-from vazn_hisobla import xitoy_nomi
+from vazn_hisobla import tovar_vazni
 
 # ── Ranglar ──────────────────────────────────────────────────────────────────
 CLR_KECHIKDI_BG   = "C0392B"   # qizil (КЕЧИКДИ sarlavha fon)
@@ -57,8 +57,8 @@ def _font(bold=False, color="000000", size=11) -> Font:
     return Font(name="Calibri", bold=bold, color=color, size=size)
 
 
-def _align(h="left", v="center", wrap=False) -> Alignment:
-    return Alignment(horizontal=h, vertical=v, wrap_text=wrap)
+def _align(h="left", v="center", wrap=False, indent=0) -> Alignment:
+    return Alignment(horizontal=h, vertical=v, wrap_text=wrap, indent=indent)
 
 
 def _get_marka(name: str) -> str:
@@ -119,7 +119,7 @@ def yolda_excel(data_file: str | Path) -> io.BytesIO | None:
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Yo'ldagi konteynerlar"
+    ws.title = "Йўлдаги контейнерлар"
 
     # Ustun kengliklari: A=30(tovar), B=12(miqdor), C=14(turkum)
     ws.column_dimensions["A"].width = 52   # Tovar nomi
@@ -131,6 +131,7 @@ def yolda_excel(data_file: str | Path) -> io.BytesIO | None:
     # Sarlavha uchun A-F merge ishlatamiz
 
     cur_row = 1
+    umumiy_tonna_kg = 0.0
 
     for cont_no, cont_id in enumerate(container_order):
         grp = df[df["Контейнер"] == cont_id]
@@ -145,6 +146,28 @@ def yolda_excel(data_file: str | Path) -> io.BytesIO | None:
 
         kechikdi = "КЕЧИКДИ" in holat
 
+        # ── Konteynerning umumiy tonnasi ─────────────────────────────────────
+        # Birinchi navbatda "Вазн_кг" ustunidagi OLDINDAN HISOBLANGAN
+        # (konteyner qo'shilgan paytda, bir marta) qiymatlar yig'iladi —
+        # bu yerda tovar nomidan qayta hisoblash SHART EMAS. Faqat bu
+        # ustun umuman yo'q yoki bo'sh bo'lgan (masalan eski, bu funksiya
+        # qo'shilishidan OLDINGI konteynerlar) qatorlar uchun — orqaga
+        # moslashuvchan fallback sifatida — tovar nomidan taxminiy
+        # hisoblanadi.
+        has_vazn_col = "Вазн_кг" in grp.columns
+        jami_tonna_kg = 0.0
+        for _, trow in grp.iterrows():
+            vazn_kg = trow.get("Вазн_кг") if has_vazn_col else None
+            if pd.notna(vazn_kg) and vazn_kg not in (None, ""):
+                jami_tonna_kg += float(vazn_kg)
+            else:
+                vazn = tovar_vazni(str(trow.get("Товар", "")))
+                miq_t = trow.get("Миқдор", 0)
+                if vazn and pd.notna(miq_t):
+                    jami_tonna_kg += vazn * miq_t
+        jami_tonna = round(jami_tonna_kg / 1000, 2)
+        umumiy_tonna_kg += jami_tonna_kg
+
         # ── Rang tanlash ──────────────────────────────────────────────────
         # Faqat sarlavha qatori farqlanadi; ustun sarlavha va tovarlar — har doim ko'k
         if kechikdi:
@@ -158,16 +181,17 @@ def yolda_excel(data_file: str | Path) -> io.BytesIO | None:
         # ── 1-qator: Konteyner sarlavhasi (A:F merge) ────────────────────
         if kechikdi:
             kk = int(kechik_kun) if pd.notna(kechik_kun) else 0
-            vaqt_info = f"⚠️  {kk} kun kechikdi"
+            vaqt_info = f"⚠️  {kk} кун кечикди"
         else:
             kq = int(float(kun_qoldi)) if pd.notna(kun_qoldi) else "?"
-            vaqt_info = f"🕐 {kq} kun qoldi"
+            vaqt_info = f"🕐 {kq} кун қолди"
 
         hdr_text = (
             f"🚢  {cont_id}    │    "
-            f"Yuklangan: {yukl_sana}    │    "
-            f"Kelish: {kelish}    │    "
-            f"{vaqt_info}"
+            f"Юкланган: {yukl_sana}    │    "
+            f"Келиш: {kelish}    │    "
+            f"{vaqt_info}    │    "
+            f"⚖️ {jami_tonna} т"
             + (f"    │    {turi}" if turi and turi != "STANDART" else "")
         )
 
@@ -184,13 +208,13 @@ def yolda_excel(data_file: str | Path) -> io.BytesIO | None:
         cur_row += 1
 
         # ── 2-qator: Ustun sarlavhalari ───────────────────────────────────
-        col_headers = ["Tovar nomi", "Miqdor", "Kategoriya", "", "", ""]
+        col_headers = ["Товар", "Миқдор", "Категория", "", "", ""]
         col_fills   = [_fill(sub_bg)] * 3 + [_fill(sub_bg)] * 3
         col_fonts   = [_font(bold=True, color=CLR_COL_HDR_TEXT)] * 6
         col_aligns  = [
-            _align(h="left",   v="center"),
+            _align(h="left",   v="center", indent=1),
             _align(h="center", v="center"),
-            _align(h="left",   v="center"),
+            _align(h="left",   v="center", indent=1),
         ] + [_align()] * 3
         _set_row(ws, cur_row, col_headers, fills=col_fills,
                  fonts=col_fonts, aligns=col_aligns, height=18)
@@ -210,7 +234,17 @@ def yolda_excel(data_file: str | Path) -> io.BytesIO | None:
         blok_start  = cur_row - 2  # sarlavha + ustun header (oldingi 2 qator)
 
         for _, trow in grp_sorted.iterrows():
-            tovar = xitoy_nomi(str(trow.get("Товар", "")))
+            # DIQQAT: bu yer — "Yo'ldagi konteynerlarni ko'rish" (filyal
+            # boshqaruvchilari ko'radigan) varaq. Bu yerda tovar nomi HAR
+            # DOIM inventar formatida (masalan "ст 0,9", "ст 1,0", "ст
+            # 2,0", "ст 3,0" — yaxlitlangan) ko'rsatilishi SHART, chunki
+            # inventar tizimidagi haqiqiy nom bilan bir xil bo'lishi kerak.
+            # Avval shu yerda xitoy_nomi() chaqirilib, nomni Xitoyning O'Z
+            # (kamaytirilgan, masalan 0,85/0,95/1,95/2,95) formatiga
+            # aylantirib yuborardi — bu XATO edi: xitoy_nomi() faqat
+            # Xitoyga YUBORILADIGAN "Yuklangan ro'yxat" (yuklatish_rejasi.py)
+            # uchun mo'ljallangan, bu yerga aloqasi yo'q edi.
+            tovar = str(trow.get("Товар", ""))
             miq   = trow.get("Миқдор", 0)
             kat   = str(trow.get("Категория", "")).strip()
 
@@ -229,25 +263,27 @@ def yolda_excel(data_file: str | Path) -> io.BytesIO | None:
                 _font(size=10, color="444444"),
             ] + [_font(size=10)] * 3
             aligns = [
-                _align(h="left",   v="center", wrap=True),
+                _align(h="left",   v="center", wrap=True, indent=1),
                 _align(h="center", v="center"),
-                _align(h="left",   v="center"),
+                _align(h="left",   v="center", indent=1),
             ] + [_align()] * 3
             _set_row(ws, cur_row, values, fills=fills,
                      fonts=fonts, aligns=aligns, height=17)
             cur_row += 1
 
-        # ── Jami qator ───────────────────────────────────────────────────
-        jami_vals  = ["JAMI:", jami_miq, "", "", "", ""]
+        # ── Jami qator (Kategoriya ustunida — chekkasida — tonna ham) ─────
+        jami_vals  = ["ЖАМИ:", jami_miq, f"⚖️ {jami_tonna} т", "", "", ""]
         jami_fills = [_fill(CLR_TOTAL_BG)] * 6
         jami_fonts = [
             _font(bold=True, size=10),
             _font(bold=True, size=10),
-        ] + [_font(size=10)] * 4
+            _font(bold=True, size=10, color="444444"),
+        ] + [_font(size=10)] * 3
         jami_aligns = [
             _align(h="right",  v="center"),
             _align(h="center", v="center"),
-        ] + [_align()] * 4
+            _align(h="left",   v="center", indent=1),
+        ] + [_align()] * 3
         _set_row(ws, cur_row, jami_vals, fills=jami_fills,
                  fonts=jami_fonts, aligns=jami_aligns, height=16)
         blok_end = cur_row
@@ -277,7 +313,7 @@ def yolda_excel(data_file: str | Path) -> io.BytesIO | None:
         cur_row += 1
 
     # ── 2-varaq: Xulosa ──────────────────────────────────────────────────────
-    ws2 = wb.create_sheet(title="Xulosa")
+    ws2 = wb.create_sheet(title="Хулоса")
     ws2.column_dimensions["A"].width = 22
     ws2.column_dimensions["B"].width = 14
     ws2.column_dimensions["C"].width = 22
@@ -288,17 +324,18 @@ def yolda_excel(data_file: str | Path) -> io.BytesIO | None:
     total_cont    = df["Контейнер"].nunique()
 
     xulosa_rows = [
-        ("Jami yo'ldagi", total_cont,    "ЙЎЛДА 🚢",    total_yolda),
-        ("КЕЧИКДИ",       total_kechikdi, "",            ""),
+        ("Жами йўлда",  total_cont,    "ЙЎЛДА 🚢",    total_yolda),
+        ("КЕЧИКДИ",     total_kechikdi, "",            ""),
+        ("Жами тонна",  f"{round(umumiy_tonna_kg / 1000, 2)} т", "", ""),
     ]
-    ws2.cell(row=1, column=1, value="📊  Xulosa").font = _font(bold=True, size=13)
+    ws2.cell(row=1, column=1, value="📊  Хулоса").font = _font(bold=True, size=13)
     ws2.merge_cells("A1:D1")
     ws2.row_dimensions[1].height = 22
 
-    ws2.cell(row=2, column=1, value="Holat").font  = _font(bold=True)
-    ws2.cell(row=2, column=2, value="Soni").font   = _font(bold=True)
-    ws2.cell(row=2, column=3, value="Holat").font  = _font(bold=True)
-    ws2.cell(row=2, column=4, value="Soni").font   = _font(bold=True)
+    ws2.cell(row=2, column=1, value="Ҳолат").font  = _font(bold=True)
+    ws2.cell(row=2, column=2, value="Сони").font   = _font(bold=True)
+    ws2.cell(row=2, column=3, value="Ҳолат").font  = _font(bold=True)
+    ws2.cell(row=2, column=4, value="Сони").font   = _font(bold=True)
     for c in range(1, 5):
         ws2.cell(row=2, column=c).fill   = _fill("1A5276")
         ws2.cell(row=2, column=c).font   = _font(bold=True, color="FFFFFF")
@@ -306,28 +343,4 @@ def yolda_excel(data_file: str | Path) -> io.BytesIO | None:
 
     for ri, (a, b, c, d) in enumerate(xulosa_rows, start=3):
         for ci, val in enumerate([a, b, c, d], start=1):
-            cell = ws2.cell(row=ri, column=ci, value=val)
-            cell.border = BORDER_THIN
-            cell.font   = _font(size=11)
-            cell.alignment = _align(h="left" if ci in (1, 3) else "center")
-
-    bio = io.BytesIO()
-    wb.save(bio)
-    bio.seek(0)
-    return bio
-
-
-# ── Standalone ishlatish ─────────────────────────────────────────────────────
-if __name__ == "__main__":
-    import sys
-    from pathlib import Path
-
-    data_f = Path(__file__).parent / "chiqish" / "NEJAVIYKA_POWER_BI.xlsx"
-    out_f  = Path(__file__).parent / "chiqish" / "Yolda_konteynerlar.xlsx"
-
-    bio = yolda_excel(data_f)
-    if bio:
-        out_f.write_bytes(bio.read())
-        print(f"✅  Saqlandi: {out_f}")
-    else:
-        print("❌  Ma'lumot topilmadi")
+            cell = ws2.cell(row=ri, column=ci, value=

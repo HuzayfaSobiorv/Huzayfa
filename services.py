@@ -1,6 +1,7 @@
 """
 services.py — Biznes logika: inventar, kamomat, buyurtma, konteyner
 """
+import difflib
 import json
 import logging
 import re
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 from config import (
     BASE_DIR, DATA_FILE, BOT_HOLAT_DIR, VARAQLAR,
     CAT_SHEET, AKSESSUAR_KATS, get_inv, get_kont,
+    KONTEYNER_TARIX_FILE, XITOY_PARSED_DIR,
 )
 from common import normalize_product_name
 
@@ -108,6 +110,67 @@ def whitelist_ochir(uid: int) -> bool:
     wl.discard(uid)
     whitelist_saqlash(wl)
     return True
+
+
+# ── Konteyner qo'shish tarixi (fayl o'chsa ham unutilmasin) ───────────────────
+# MUHIM: kalit ISO emas, ISO+sana ("ISO|sana" shaklida) — chunki jismoniy
+# konteyner raqamlari (ISO) dunyoda qayta-qayta ishlatiladi va bitta ISO
+# boshqa sanada butunlay YANGI yuk bilan qaytib kelishi mumkin. Faqat aynan
+# bir xil ISO+sana (ya'ni xuddi shu yetkazib berish) qayta bloklanadi.
+
+def konteyner_tarix_kalit(iso: str, sana: str) -> str:
+    return f"{iso}|{sana}"
+
+
+def konteyner_tarix_olish() -> set[str]:
+    """Bir marta tasdiqlangan konteynerlar (ISO+sana kalit shaklida)
+    to'plamini qaytaradi. xitoy_parsed papkasidagi fayl keyinchalik
+    o'chirilgan bo'lsa ham, shu kalit qayta "yangi" deb qo'shilib
+    ketmasligi uchun ishlatiladi.
+
+    Birinchi chaqiriqda (tarix fayli hali yo'q bo'lsa) hozirgi
+    xitoy_parsed papkasidagi BARCHA konteynerlar bilan bir martalik
+    "boshlang'ich to'ldirish" qilinadi — shu orqali oldindan (bu tarix
+    tizimi yaratilishidan oldin) qo'shilgan konteynerlar ham himoyalanadi."""
+    if not KONTEYNER_TARIX_FILE.exists():
+        boshlangich = set()
+        if XITOY_PARSED_DIR.exists():
+            for f in XITOY_PARSED_DIR.glob("*.xlsx"):
+                stem = f.stem[:-2] if f.stem.endswith("_D") else f.stem
+                iso, _, sana = stem.partition("_")
+                if iso:
+                    boshlangich.add(konteyner_tarix_kalit(iso, sana))
+        try:
+            KONTEYNER_TARIX_FILE.write_text(
+                json.dumps(sorted(boshlangich), ensure_ascii=False), encoding="utf-8"
+            )
+        except Exception as e:
+            logger.error(f"konteyner_tarix boshlang'ich to'ldirishda xato: {e}")
+        return boshlangich
+    try:
+        return set(json.loads(KONTEYNER_TARIX_FILE.read_text(encoding="utf-8")))
+    except Exception:
+        return set()
+
+
+def konteyner_tarix_qoshish(konteynerlar: list) -> None:
+    """Tasdiqlangan konteynerlarni doimiy tarixga qo'shadi.
+    `konteynerlar` — [{"iso":.., "sana":..}, ...] yoki (iso, sana) juftliklari."""
+    if not konteynerlar:
+        return
+    tarix = konteyner_tarix_olish()
+    for k in konteynerlar:
+        if isinstance(k, dict):
+            iso, sana = k["iso"], k["sana"]
+        else:
+            iso, sana = k
+        tarix.add(konteyner_tarix_kalit(iso, sana))
+    try:
+        KONTEYNER_TARIX_FILE.write_text(
+            json.dumps(sorted(tarix), ensure_ascii=False), encoding="utf-8"
+        )
+    except Exception as e:
+        logger.error(f"konteyner_tarix_qoshish yozishda xato: {e}")
 
 
 def kirish_ruxsati(uid: int) -> bool:
@@ -225,21 +288,81 @@ def kritiklar_text(df: pd.DataFrame, lang: str) -> str:
     return "\n".join(lines)
 
 
+# ── Kirill/lotin bir xil deb hisoblovchi normalizatsiya (umumiy qidiruv) ──────
+_CYR2LAT = {
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
+    'ж': 'j', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+    'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+    'ф': 'f', 'х': 'x', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'sh',
+    'ъ': '', 'ы': 'i', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+    'қ': 'q', 'ғ': 'g', 'ў': 'o', 'ҳ': 'h',
+}
+
+
+def _translit(s: str) -> str:
+    """Kirillni lotinga o'giradi (harf-baharf); lotin harflar o'zgarishsiz qoladi."""
+    return "".join(_CYR2LAT.get(ch, ch) for ch in s.lower())
+
+
+def _qidiruv_normalize(s: str) -> str:
+    """Qidiruv uchun: kirill/lotin, katta/kichik harf va '.'/',' farqini
+    yo'qotadi; so'z chegaralarini (bo'sh joy) saqlab qoladi — pastda
+    tokenlarga ajratish (fuzzy qidiruv) uchun kerak."""
+    s = _translit(str(s))
+    s = s.replace(".", ",")
+    s = re.sub(r"[\'ʻʼ`’]", "", s)
+    s = re.sub(r"[^a-z0-9,]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _fuzzy_score(terms: list, name_tokens: list) -> float:
+    """Har bir so'rov so'zi uchun nom ichidagi eng yaqin so'zni topib,
+    o'rtacha o'xshashlik darajasini qaytaradi (0..1)."""
+    if not terms or not name_tokens:
+        return 0.0
+    total = 0.0
+    for term in terms:
+        best = max(
+            (difflib.SequenceMatcher(None, term, tok).ratio() for tok in name_tokens),
+            default=0.0,
+        )
+        total += best
+    return total / len(terms)
+
+
 def qidiruv_olish(query: str, kanal: str | None = None, limit: int = 12) -> pd.DataFrame:
+    """
+    Umumiy (kategoriyasiz) qidiruv — butun inventar bo'yicha.
+    Kirill va lotin yozuvi farqi hisobga olinmaydi (masalan "труба" va "truba"
+    bir xil natija beradi), '.' va ',' ham bir xil qabul qilinadi.
+    Aniq mos kelmasa — xato/yozuv farqiga chidamli (taxminiy/fuzzy) eng
+    yaqin natijalarni qaytaradi.
+    """
     df = inventar_olish(kanal)
     if df.empty or "Товар" not in df.columns:
         return pd.DataFrame()
 
-    terms = [t for t in re.split(r"\s+", query.lower().strip()) if t]
+    terms = [_qidiruv_normalize(t) for t in re.split(r"\s+", query.strip()) if t.strip()]
+    terms = [t for t in terms if t]
     if not terms:
         return pd.DataFrame()
 
-    names = df["Товар"].astype(str).str.lower()
+    names_norm = df["Товар"].astype(str).apply(_qidiruv_normalize)
     mask = pd.Series(True, index=df.index)
     for term in terms:
-        mask &= names.str.contains(re.escape(term), na=False)
+        mask &= names_norm.str.contains(re.escape(term), na=False)
 
     out = df[mask].copy()
+
+    # ── Aniq mos kelmasa — so'z darajasida taxminiy (fuzzy) qidiruv ─────────
+    if out.empty:
+        name_tokens = names_norm.str.split(" ")
+        scores = name_tokens.apply(lambda toks: _fuzzy_score(terms, toks))
+        best = scores[scores >= 0.6].sort_values(ascending=False)
+        if not best.empty:
+            out = df.loc[best.index[:limit]].copy()
+
     if out.empty:
         return out
     status_rank = {"🔴 КРИТИК": 1, "🟡 ПАСТ": 2, "🟢 НОРМА": 3, "МЕЁР ЙЎҚ": 4}

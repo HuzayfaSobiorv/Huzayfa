@@ -24,7 +24,7 @@ from telegram.ext import (
 )
 
 from config import BOT_TOKEN, logger, xlsx_refresh
-from handlers import start, callback_handler, text_keldi, fayl_keldi, adduser_cmd, removeuser_cmd, users_cmd
+from handlers import start, callback_handler, text_keldi, fayl_keldi, adduser_cmd, removeuser_cmd, users_cmd, chatid_cmd
 
 
 def main() -> None:
@@ -34,6 +34,7 @@ def main() -> None:
     app.add_handler(CommandHandler("adduser",    adduser_cmd))
     app.add_handler(CommandHandler("removeuser", removeuser_cmd))
     app.add_handler(CommandHandler("users",      users_cmd))
+    app.add_handler(CommandHandler("chatid",     chatid_cmd))
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.Document.ALL, fayl_keldi))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_keldi))

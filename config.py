@@ -12,6 +12,15 @@ BOT_HOLAT_DIR = BASE_DIR / "bot_holat"
 BOT_HOLAT_DIR.mkdir(exist_ok=True)
 KONT_DIR      = BOT_HOLAT_DIR / "konteynerlar"
 KONT_DIR.mkdir(exist_ok=True)
+XITOY_PARSED_DIR = BASE_DIR / "konteynerlar" / "xitoy_parsed"
+# Bir marta tasdiqlangan konteyner ISO'lari tarixi — fayli keyinchalik
+# o'chirilsa ham (masalan KELDI bo'lib arxivlangach), qayta qo'shilib
+# ketmasligi uchun (konteyner_qosh.py / handlers.py "yo'lga qo'shish" flow)
+KONTEYNER_TARIX_FILE = BOT_HOLAT_DIR / "qoshilgan_konteynerlar.json"
+# Admin tomonidan bir marta qo'lda to'g'irlangan Xitoy spec -> inventar nomi
+# bog'lanishlari — shu yerga saqlanadi, keyingi safar xuddi shu spec
+# chiqqanda avtomatik (qayta taxmin qilmasdan) ishlatiladi.
+XITOY_TUZATISH_FILE = BOT_HOLAT_DIR / "xitoy_tuzatishlar.json"
 ENV_FILE      = BASE_DIR / ".env"
 
 # ── .env fayl yuklash ────────────────────────────────────────────────────────
@@ -45,6 +54,12 @@ ADMIN_ID = SUPER_ADMIN_ID or next(iter(ADMIN_IDS), None)  # backward compat
 # Filyal uchun bog'lanish ma'lumotlari
 SUPPORT_PHONE    = os.getenv("SUPPORT_PHONE", "").strip()
 SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "").strip()
+
+# "Kelgan yuklar" guruhi — konteyner KELDI bo'lganda avtomatik rasm shu yerga boradi
+_kg_chat_raw  = os.getenv("KELGAN_YUKLAR_CHAT_ID", "").strip()
+_kg_topic_raw = os.getenv("KELGAN_YUKLAR_TOPIC_ID", "").strip()
+KELGAN_YUKLAR_CHAT_ID:  int | None = int(_kg_chat_raw)  if _kg_chat_raw.lstrip("-").isdigit()  else None
+KELGAN_YUKLAR_TOPIC_ID: int | None = int(_kg_topic_raw) if _kg_topic_raw.lstrip("-").isdigit() else None
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -105,10 +120,3 @@ BACK_MAP = {
     "load":          "main",
     "load_channel":  "load",
     "status":        "main",
-    "settings":      "main",
-    "search":        "main",
-    "search_kat":    "search",
-}
-
-# Xitoy nomi → inventar nomi qo'lda mapping
-XITOY_NOM_MAP: dict[str, str] = {}

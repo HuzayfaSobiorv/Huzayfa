@@ -32,9 +32,19 @@ def ikb(*rows) -> InlineKeyboardMarkup:
 def main_kb(lang: str) -> ReplyKeyboardMarkup:
     """Admin uchun to'liq menyu."""
     return rkb(
-        [t(lang, "b_order"),   t(lang, "b_load")],
-        [t(lang, "b_yolda"),   t(lang, "b_karta")],
+        [t(lang, "b_order"),      t(lang, "b_load")],
+        [t(lang, "b_konteyner"),  t(lang, "b_karta")],
         [t(lang, "b_settings")],
+    )
+
+
+def konteyner_kb(lang: str) -> ReplyKeyboardMarkup:
+    """Konteynerlar bilan ishlash ekrani."""
+    return rkb(
+        [t(lang, "b_yolda_excel")],
+        [t(lang, "b_yolga_kont")],
+        [t(lang, "b_keldi_belgi")],
+        [t(lang, "back")],
     )
 
 
@@ -112,8 +122,6 @@ def settings_kb(lang: str, admin: bool = False) -> ReplyKeyboardMarkup:
         [t(lang, "b_tozala_buy")],
         [t(lang, "b_tozala_xitoy")],
     ]
-    if admin:
-        rows.append([t(lang, "b_yolga_kont")])
     rows.append([t(lang, "back")])
     return rkb(*rows)
 
@@ -145,6 +153,7 @@ def grafik_kat_ikb() -> InlineKeyboardMarkup:
         [("🔩 Стойка",       "karta_kat:stoyka"), ("🎯 Чашка",          "karta_kat:chas")],
         [("🍄 Қузиқорин",    "karta_kat:kuz"),    ("🔵 Шар",            "karta_kat:shar")],
         [("💿 Соққа",        "karta_kat:sokka"),  ("🪟 Ойна держатель", "karta_kat:oyna")],
+        [("🔍 Umumiy qidiruv", "karta_umumiy")],
     )
 
 
