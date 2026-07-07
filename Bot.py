@@ -30,14 +30,24 @@ from handlers import start, callback_handler, text_keldi, fayl_keldi, adduser_cm
 def main() -> None:
     xlsx_refresh(force=True)
     app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start",      start))
-    app.add_handler(CommandHandler("adduser",    adduser_cmd))
-    app.add_handler(CommandHandler("removeuser", removeuser_cmd))
-    app.add_handler(CommandHandler("users",      users_cmd))
+    # DIQQAT: botning butun menyu/navigatsiya tizimi FAQAT shaxsiy (private)
+    # chat uchun mo'ljallangan — "Kelgan yuklar" kabi guruhlar faqat botdan
+    # xabar QABUL qiladi, hech qachon botga buyruq/matn YUBORMAYDI. Shu
+    # sababli bu handlerlar filters.ChatType.PRIVATE bilan cheklandi — aks
+    # holda guruhdagi har qanday odam yozgan har qanday xabarga (yoki hujjat
+    # yuborsa) bot javob berib, guruhni chalg'itib yuborardi.
+    # /chatid bundan MUSTASNO — uning yagona vazifasi aynan guruh/topic
+    # ID'sini olish, shuning uchun u ATAYLAB har qanday chatda ishlaydi
+    # (lekin ADMIN_IDS bilan ichkarida cheklangan — handlers.py'ga qarang).
+    private = filters.ChatType.PRIVATE
+    app.add_handler(CommandHandler("start",      start,       filters=private))
+    app.add_handler(CommandHandler("adduser",    adduser_cmd, filters=private))
+    app.add_handler(CommandHandler("removeuser", removeuser_cmd, filters=private))
+    app.add_handler(CommandHandler("users",      users_cmd,   filters=private))
     app.add_handler(CommandHandler("chatid",     chatid_cmd))
     app.add_handler(CallbackQueryHandler(callback_handler))
-    app.add_handler(MessageHandler(filters.Document.ALL, fayl_keldi))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_keldi))
+    app.add_handler(MessageHandler(private & filters.Document.ALL, fayl_keldi))
+    app.add_handler(MessageHandler(private & filters.TEXT & ~filters.COMMAND, text_keldi))
     logger.info("Bot started.")
     app.run_polling()
 
