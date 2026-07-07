@@ -1374,6 +1374,7 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from konteyner_qosh import (
             xitoy_yuklar_oqi, draft_excel_yarat, qisqa_xulosa,
             iso_boyicha_yangilarini_ajrat, notanish_soni,
+            oxirgi_malum_sana, faqat_sanadan_keyingi,
         )
         await msg.reply_text("⏳ Ikkala fayl o'qilmoqda va solishtirilmoqda, biroz kuting...")
         truba_raw = context.user_data.pop("kont_tp_raw", None)
@@ -1390,13 +1391,28 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data.pop("kutilmoqda", None)
             return
         tarix = konteyner_tarix_olish()
-        # Asosiy mezon: HAR BIR ISO alohida tekshiriladi — shu ISO tizimda
-        # umuman uchramagan bo'lsa (masalan unutilib qolgan konteyner)
-        # sanasidan qat'iy nazar yangi deb chiqadi; ISO bor bo'lsa faqat
-        # undan KEYINGI sanadagi yuklar yangi hisoblanadi. Global sana
-        # chegarasi eski-lekin-hech-qachon-qoshilmagan konteynerlarni
-        # yashirib qo'yishi mumkin edi — shuning uchun endi ISO-boyicha
-        # tekshiriladi.
+        # 1-QADAM — GLOBAL sana chegarasi: Xitoy faylida (kumulyativ master
+        # ro'yxat bo'lgani uchun) ko'p oy oldingi (masalan mart/aprel)
+        # yozuvlar ham bor bo'lishi mumkin. Bular ILGARI "ISO hech qachon
+        # uchramagan bo'lsa — sanasidan qat'iy nazar yangi" qoidasi orqali
+        # noto'g'ri qoshilib ketardi (masalan yangi payqalgan mashina-raqam
+        # psevdo-ID'lari yoki tuzatilgan ISO'lar). Endi tizimdagi ENG OXIRGI
+        # ma'lum yuklangan sanadan KEYINGI (qat'iy katta) yozuvlar
+        # QOLDIRILADI — bundan eskisi butunlay o'tkazib yuboriladi.
+        oxirgi = oxirgi_malum_sana(XITOY_PARSED_DIR, tarix)
+        soni_oldin = len(yuklar)
+        yuklar = faqat_sanadan_keyingi(yuklar, oxirgi)
+        eskisi_soni = soni_oldin - len(yuklar)
+        if oxirgi and eskisi_soni:
+            await msg.reply_text(
+                f"ℹ️ Tizimdagi eng oxirgi ma'lum sana: {oxirgi.strftime('%d.%m.%Y')}. "
+                f"Shundan OLDINGI (eski) {eskisi_soni} ta yozuv Xitoy faylida "
+                f"topildi va o'tkazib yuborildi."
+            )
+        # 2-QADAM — shundan keyin, qolgan (yangi sanadagi) yozuvlar orasida
+        # HAR BIR ISO alohida tekshiriladi: shu ISO ushbu sanadan avvalroq
+        # allaqachon xuddi shu (yoki keyingi) sana bilan qayd etilgan bo'lsa
+        # — qayta o'tkazib yuboriladi.
         yangilar = iso_boyicha_yangilarini_ajrat(yuklar, XITOY_PARSED_DIR, tarix)
         if not yangilar:
             await msg.reply_text(t(lang, "kont_barchasi_bor"), parse_mode="Markdown")

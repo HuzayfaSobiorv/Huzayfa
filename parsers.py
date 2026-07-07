@@ -79,6 +79,58 @@ def _get_inventar_set() -> set:
     return _inventar_set_cache
 
 
+# ── Kanonik (bo'shliq-farqiga chidamli) inventar moslashtirish ──────────────
+# TOPILGAN MUAMMO (2026-07-06): inventarning o'zida ba'zi qatorlar noodatiy
+# bo'shliq bilan yozilgan — masalan haqiqiy qator "Лист- 2,0 (1500х3000)
+# (Глянцевый) (304 марка)" (chiziqchadan KEYIN bo'shliq bor), lekin bizning
+# generator har doim "Лист-2,0..." (bo'shliqsiz) hosil qiladi — natijada bu
+# ANIQ mavjud tovar "notanish" (⚠️) deb noto'g'ri belgilanardi, chunki aniq
+# satr solishtirish (`nom in inventar_set`) muvaffaqiyatsiz bo'lardi.
+#
+# Yechim: solishtirish uchun "kanonik" (barcha bo'shliqlar bittaga siqilgan,
+# chiziqchadan keyingi bo'shliq olib tashlangan) shaklga o'tkaziladi — LEKIN
+# moslik topilganda ASL (inventardagi, o'zgarishsiz — hatto g'alati bo'shliq
+# bilan bo'lsa ham) matn qaytariladi, chunki chiqishda biz DOIM inventarda
+# qanday yozilgan bo'lsa xuddi shundayligicha ko'rsatishimiz kerak.
+_inventar_kanonik_cache: dict | None = None
+
+
+def _kanonik_nom(s: str) -> str:
+    """Solishtirish uchun — ketma-ket bo'shliqlarni bittaga siqadi va
+    chiziqchadan keyingi bo'shliqni olib tashlaydi. FAQAT solishtirishda
+    ishlatiladi, asl inventar matnini o'zgartirmaydi."""
+    s = re.sub(r'\s+', ' ', str(s).strip())
+    s = re.sub(r'-\s+', '-', s)
+    return s
+
+
+def _get_inventar_kanonik_map() -> dict:
+    """kanonik_nom → inventardagi ASL (o'zgarishsiz) matn."""
+    global _inventar_kanonik_cache
+    if _inventar_kanonik_cache is None:
+        _inventar_kanonik_cache = {}
+        for orig in _get_inventar_set():
+            _inventar_kanonik_cache.setdefault(_kanonik_nom(orig), orig)
+    return _inventar_kanonik_cache
+
+
+def _inventardan_moslashtir(nom: str, inventar_set: set | None = None) -> str:
+    """
+    Nomni inventar bilan ANIQ solishtiradi; topilmasa — kanonik (bo'shliqqa
+    chidamli) solishtiradi. Ikkalasida ham topilsa — inventardagi ASL matn
+    qaytariladi (hatto g'alati bo'shliq bilan bo'lsa ham); aks holda
+    o'zgarishsiz `nom` qaytariladi.
+    """
+    if inventar_set is None:
+        inventar_set = _get_inventar_set()
+    if not nom:
+        return nom
+    if nom in inventar_set:
+        return nom
+    kmap = _get_inventar_kanonik_map()
+    return kmap.get(_kanonik_nom(nom), nom)
+
+
 def _inventar_snap(nom: str, inventar_set: set) -> str:
     """
     Xitoy tovar nomini inventar to'plamiga snap qiladi.
@@ -445,6 +497,16 @@ def _fix_oddiy_nom(nom: str, inventar_set: set) -> str:
         found = _prefix_search(candidate_nom)
         if found:
             return found
+
+    # SO'NGGI CHORA: aniq/stenka-kandidat qidiruvlarning barchasi
+    # muvaffaqiyatsiz bo'lsa ham, inventarning O'ZIDA g'alati bo'shliq bilan
+    # yozilgan bo'lishi mumkin (masalan "Лист- 2,0..." chiziqchadan keyin
+    # bo'shliq bilan, 2026-07-06'da haqiqiy inventardan topilgan) — kanonik
+    # (bo'shliqqa chidamli) solishtirish shuni ham ushlab qoladi. Topilsa —
+    # INVENTARDAGI ASL matn qaytariladi, biznikidan tuzatilgani emas.
+    kanonik_topilgan = _inventardan_moslashtir(nom, inventar_set)
+    if kanonik_topilgan != nom:
+        return kanonik_topilgan
 
     return nom
 

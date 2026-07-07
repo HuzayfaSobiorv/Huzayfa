@@ -105,24 +105,29 @@ def _inventarga_moslashtir(nom: str | None) -> str | None:
     if not nom:
         return nom
     try:
-        from parsers import _fix_oddiy_nom, _get_inventar_set
+        from parsers import _fix_oddiy_nom, _get_inventar_set, _inventardan_moslashtir
         inv_set = _get_inventar_set()
 
-        # DIQQAT: Лист nomlari bu yerdan ALOHIDA (to'g'ridan-to'g'ri)
-        # o'tkaziladi — _fix_oddiy_nom() birinchi qadami sifatida
-        # common.normalize_product_name() ni chaqiradi, u esa
-        # "Лист-3,0" kabi nomlarni "Лист- 3,0" ga aylantirib (raqamdan
-        # oldin bo'shliq qo'shib) yuboradi. Bu Труба/Профиль nomlariga
-        # ta'sir qilmaydi (ularda bunday almashtirish yo'q), lekin Лист
-        # uchun HAQIQIY inventar yozuvi bo'shliqsiz ("Лист-0,6...") bo'lgani
-        # sababli bu normalize qadami tovar nomini ANIQ moslikdan
-        # abadiy chiqarib qo'yardi. Лист uchun _fix_oddiy_nom'ning
-        # stenka-snap mexanizmi ("ст \\d+" patterniga mo'ljallangan) baribir
-        # ishlamaydi, shuning uchun to'g'ridan-to'g'ri to'plamga solishtirish
-        # kifoya — mos kelmasa nom o'zgarishsiz qoldiriladi (keyin admin
-        # Excelda ⚠️ belgisi orqali ko'radi).
+        # DIQQAT: Лист nomlari bu yerdan ALOHIDA o'tkaziladi — _fix_oddiy_nom()
+        # birinchi qadami sifatida common.normalize_product_name() ni
+        # chaqiradi, u esa "Лист-3,0" kabi nomlarni "Лист- 3,0" ga aylantirib
+        # (raqamdan oldin bo'shliq qo'shib) yuboradi. Bu Труба/Профиль
+        # nomlariga ta'sir qilmaydi, lekin Лист uchun ko'pchilik inventar
+        # yozuvlari bo'shliqsiz ("Лист-0,6...") bo'lgani sababli bu normalize
+        # qadami tovar nomini ANIQ moslikdan abadiy chiqarib qo'yardi.
+        #
+        # MUHIM QO'SHIMCHA (2026-07-06): inventarning O'ZIDA ba'zi qatorlar
+        # noodatiy bo'shliq bilan yozilgan (masalan haqiqiy "Лист- 2,0
+        # (1500х3000) (Глянцевый) (304 марка)" — chiziqchadan keyin
+        # bo'shliq bilan). Bunday hollarda aniq solishtirish (`nom in
+        # inv_set`) muvaffaqiyatsiz bo'lib, ANIQ MAVJUD tovar "notanish"
+        # deb noto'g'ri belgilanardi. `_inventardan_moslashtir()` avval aniq,
+        # keyin bo'shliqqa CHIDAMLI (kanonik) solishtiradi va topilsa —
+        # inventardagi ASL matnni (g'alati bo'shligi bilan) qaytaradi —
+        # chunki chiqishda biz DOIM inventarda qanday yozilgan bo'lsa xuddi
+        # shundayligicha ko'rsatishimiz kerak, o'zimiznikini emas.
         if nom.startswith("Лист-"):
-            return nom
+            return _inventardan_moslashtir(nom, inv_set)
 
         return _fix_oddiy_nom(nom, inv_set)
     except Exception:
@@ -922,13 +927,18 @@ def faqat_sanadan_keyingi(yuklar: list[dict], oxirgi: "date | None") -> list[dic
     o'tkaziladi. Sanasi aniqlanmagan ("?") yozuvlar ham o'tkaziladi — admin
     ko'rib chiqsin.
 
-    DIQQAT: bu funksiya GLOBAL chegara ishlatadi — barcha ISO'lar uchun bitta
-    umumiy "oxirgi sana". Bu eski (masalan yetkazib beruvchining kumulyativ
-    master fayllaridan kelgan) lekin HECH QACHON tizimga qo'shilmagan
-    konteynerlarni ham noto'g'ri "eski" deb ko'rsatib, abadiy yashirib
-    qo'yishi mumkin. Shu sababli asosiy filtr sifatida endi
-    `iso_boyicha_yangilarini_ajrat()` ishlatiladi — bu funksiya faqat
-    ma'lumot/ko'rsatish (preview) uchun qoldirilgan.
+    DIQQAT (2026-07-06 YANGILANDI): bu funksiya GLOBAL chegara ishlatadi —
+    barcha ISO'lar uchun bitta umumiy "oxirgi sana". Ilgari bu "eski-lekin-
+    hech-qachon-qoshilmagan" konteynerlarni abadiy yashirib qo'yishi mumkin
+    degan xavotir bilan asosiy filtrdan chetlashtirilgan edi. Lekin amalda
+    teskari muammo chiqdi: Xitoy fayli kumulyativ (mart/aprel kabi juda
+    eski yozuvlarni ham saqlab qoladi) va ayrim eski yozuvlar (masalan
+    yangi payqalgan mashina-raqam psevdo-ID'lari) ISO sifatida "hech qachon
+    uchramagan" bo'lib chiqib, sanasidan qat'iy nazar noto'g'ri "yangi" deb
+    qo'shilib ketardi. Shu sababli endi bu funksiya `handlers.py`da BIRINCHI
+    QADAM sifatida qayta ishga tushirildi (kont_list bosqichida, xom Xitoy
+    faylini o'qigandan keyin, `iso_boyicha_yangilarini_ajrat()`dan OLDIN) —
+    tizimdagi eng oxirgi ma'lum sanadan eskilarini butunlay kesib tashlaydi.
     """
     if oxirgi is None:
         return yuklar
@@ -961,8 +971,9 @@ def _mavjud_sanalar_iso_boyicha(kont_dir: Path, tarix: set = None) -> dict:
 
 def iso_boyicha_yangilarini_ajrat(yuklar: list[dict], kont_dir: Path, tarix: set = None) -> list[dict]:
     """
-    Asosiy "yangi konteyner"ni aniqlash filtri — HAR BIR ISO alohida
-    tekshiriladi (global sana chegarasi emas):
+    IKKINCHI QADAM filtr — HAR BIR ISO alohida tekshiriladi (2026-07-06:
+    endi bu `handlers.py`da `faqat_sanadan_keyingi()` GLOBAL sana filtridan
+    KEYIN chaqiriladi, undan oldin emas — qarang shu funksiya haqidagi izoh):
 
       • Bu ISO tizimda (fayllar + tarix) UMUMAN uchramagan bo'lsa → YANGI
         (masalan avval unutilib qolgan/hech qachon qo'shilmagan konteyner —
