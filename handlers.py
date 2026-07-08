@@ -1601,6 +1601,7 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text(
             t(lang, "xitoy_fayl_qabul").format(n=n, jami=jami),
             parse_mode="Markdown",
+            reply_markup=xitoy_yana_ikb(lang, kanal, jami),
         )
 
 

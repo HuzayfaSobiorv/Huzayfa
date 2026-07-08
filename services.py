@@ -895,5 +895,5 @@ def buyurtma_tekshir(fayl_bytes: bytes, kanal: str = "asosiy"):
             "Hech qaysi varaqda 'Tovar' ustuni topilmadi.\n"
             "Faylda quyidagi varaqlar bor: "
             + ", ".join(str(s) for s in wb.sheetnames)
-        )
-    return True, None
+        ), None
+    return True, None, items
