@@ -10,3 +10,8 @@ bot_holat/
 # Generated output fayllar
 chiqish/
 
+# Har bir kompyuter (asosiy va server) o'zi qayta yaratadi — git orqali
+# kuzatilsa, git pull har safar "local changes overwritten" xatosi beradi
+# (2026-07-08 topildi va tuzatildi).
+NEJAVIYKA_POWER_BI.xlsx
+
