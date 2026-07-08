@@ -231,4 +231,16 @@ STR: dict[str, dict[str, str]] = {
     "b_yolda_excel":    "🚛 Yo'ldagi yuklar",
     "settings_title_user": "⚙️ *Sozlamalar*",
         "b_boglanish":      "📞 Admin bilan bog'lanish",
-    "boglanish_p
+    "boglanish_phone":  "📞 Qo'ng'iroq qilish",
+    "boglanish_tg":     "💬 Telegramdan bog'lanish",
+    "yolda_excel_yoq":  "ℹ️ Hozircha yo'lda konteyner yo'q.",
+    "b_konteyner":   "♻️ Konteynerlar",
+    "konteyner_title": "📦 *Konteynerlar bilan ishlash*",
+    "b_keldi_belgi": "🔄 Konteyner holatini o'zgartirish",
+},
+}
+
+
+def t(lang: str, key: str) -> str:
+    """Tarjima olish. Topilmasa — kalitning o'zi qaytadi."""
+    return STR.get(lang, STR["cyr"]).get(key, key)
