@@ -18,6 +18,23 @@ _DIR = Path(__file__).resolve().parent
 if str(_DIR) not in sys.path:
     sys.path.insert(0, str(_DIR))
 
+# DIQQAT (2026-07-08 qo'shildi): Windows serverda (pm2/pythonw.exe orqali
+# ishga tushirilganda) Python stdout/stderr kodировкasi standart ravishda
+# tizim konsolining kodировkasiga (masalan kirillcha Windows'da cp1251)
+# tushib qoladi — bu UTF-8 emoji (✅, ⚠️ va h.k.) bor har qanday print()
+# chaqiruvida "UnicodeEncodeError: 'charmap' codec can't encode character"
+# xatosiga olib keladi (masalan Generate_Asosiy_order.py'dagi
+# print(f"✅ Real ma'lumot...") shu sababli butun "Buyurtma Excel olish"
+# jarayonini qulatib qo'ygan edi). Kodda emoji bilan print() qiluvchi ko'p
+# joy bor (main.py, Generate_Asosiy_order.py va h.k.), shuning uchun buni
+# BIR MARTA, dasturning eng boshida, butun jarayon uchun tuzatamiz —
+# har bir print() joyini alohida qidirib tuzatishga hojat qolmaydi.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters,
