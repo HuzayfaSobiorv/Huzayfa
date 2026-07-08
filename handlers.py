@@ -1783,4 +1783,75 @@ async def _kg_yuborish_guruhga(msg, context, iso: str, file_id: str, caption: st
         )
     else:
         try:
-    
+            await context.bot.send_photo(
+                chat_id=config.KELGAN_YUKLAR_CHAT_ID,
+                photo=file_id,
+                caption=caption,
+                message_thread_id=config.KELGAN_YUKLAR_TOPIC_ID,
+            )
+            await msg.reply_text(
+                f"✅ *{iso}* — \"Kelgan yuklar\" guruhiga yuborildi!",
+                parse_mode="Markdown",
+            )
+        except Exception as e:
+            await msg.reply_text(f"❌ Guruhga yuborishda xato: {e}")
+
+    context.user_data["screen"] = "keldi_menu"
+    await kont_holat_royhat(msg, context)
+
+
+async def _kg_yuborish_guruhga_multi(msg, context, isos: list, file_ids: list, caption: str):
+    """Bir nechta KELDI bo'lgan konteyner rasmlarini bitta albom (media group)
+    sifatida 'Kelgan yuklar' guruhi/mavzusiga yuboradi. Har biri alohida rasm
+    bo'lib qoladi, faqat bitta xabar ichida birga ketadi."""
+    if not file_ids:
+        await msg.reply_text("❌ Yuboriladigan rasm topilmadi.")
+    elif not config.KELGAN_YUKLAR_CHAT_ID:
+        await msg.reply_text(
+            "⚠️ Guruh sozlanmagan. .env faylida KELGAN_YUKLAR_CHAT_ID "
+            "(va kerak bo'lsa KELGAN_YUKLAR_TOPIC_ID) qiymatini kiriting."
+        )
+    else:
+        try:
+            media = [InputMediaPhoto(media=fid) for fid in file_ids]
+            await context.bot.send_media_group(
+                chat_id=config.KELGAN_YUKLAR_CHAT_ID,
+                media=media,
+                caption=caption,
+                message_thread_id=config.KELGAN_YUKLAR_TOPIC_ID,
+            )
+            await msg.reply_text(
+                f"✅ {len(isos)} ta konteyner (" + ", ".join(isos) + ") — "
+                "\"Kelgan yuklar\" guruhiga yuborildi!",
+            )
+        except Exception as e:
+            await msg.reply_text(f"❌ Guruhga yuborishda xato: {e}")
+
+    context.user_data["screen"] = "keldi_menu"
+    await kont_holat_royhat(msg, context)
+
+
+async def kont_holat_royhat(msg, context, change_kb: bool = False):
+    """Konteynerlar holati inline menyusi.
+    change_kb=True bo'lsa, avval faqat Orqaga klaviatura yuboriladi.
+    """
+    lang = context.user_data.get("lang", "cyr")
+    if change_kb:
+        from telegram import ReplyKeyboardMarkup as _RKM
+        only_back = _RKM([[t(lang, "back")]], resize_keyboard=True)
+        await msg.reply_text("\U0001f504", reply_markup=only_back)
+    yolda, _ = _kont_parse(XITOY_PARSED_DIR)
+    n_y = len(yolda)
+    buttons = [
+        [InlineKeyboardButton(
+            "\U0001f69a Yo'lda \u2192 \u2705 Keldiga o'zgartirish",
+            callback_data="kont_keldi_ask")],
+        [InlineKeyboardButton(
+            "\u21a9\ufe0f KELDI ni qaytarish",
+            callback_data="kont_qaytarish_ask")],
+    ]
+    await msg.reply_text(
+        f"\U0001f69a Yo'lda: *{n_y}* ta",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
