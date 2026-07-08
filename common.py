@@ -24,7 +24,12 @@ warnings.filterwarnings('ignore')
 
 KELISH_KUNI     = 55    # ◄ ASOSIY: konteyner yetib kelish vaqti (kun) — FAQAT SHU YERDA O'ZGARTIR
 YOLDA_KUN       = KELISH_KUNI   # alias (eski kod uchun)
-FAST_KUN        = 20    # tezkor konteyner yetib kelish vaqti (kun)
+FAST_KUN        = 20    # tezkor (fayl nomi "F_" bilan boshlanadigan) konteyner yetib kelish vaqti (kun)
+# "12 metrlik" konteyner — ISO'siz, ko'pincha mashina-raqami (masalan
+# "ME5312") bilan yozilgan, tarkibidagi tovarlarning KO'PCHILIGI 6 metrlik
+# (Труба/Профиль uzunligi "(6 м)") bo'lgan yetkazmalar (2026-07-08 qo'shildi
+# — qarang main.py::_konteyner_12m_mi()).
+M12_KUN         = 45
 TREND_KUN       = KELISH_KUNI   # necha kun barqaror bo'lsa min oshiriladi
 SLIDING_WINDOW  = 30    # oxirgi necha kunni kuzatish
 SEZON_OYNA      = 7     # sezon taqqoslash oynasi (kun)

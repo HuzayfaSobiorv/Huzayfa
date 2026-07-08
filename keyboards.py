@@ -85,7 +85,6 @@ def order_kb(lang: str) -> ReplyKeyboardMarkup:
 
 def order_channel_kb(lang: str) -> ReplyKeyboardMarkup:
     return rkb(
-        [t(lang, "b_kamomat")],
         [t(lang, "b_excel")],
         [t(lang, "b_tasdiq")],
         [t(lang, "back")],

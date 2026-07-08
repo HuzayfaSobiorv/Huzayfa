@@ -192,7 +192,6 @@ def get_action(lang: str, screen: str, text: str):
             t(lang, "ch_osh"):    ("order_channel", "osh"),
         },
         "order_channel": {
-            t(lang, "b_kamomat"): "kamomat",
             t(lang, "b_excel"):   "excel",
             t(lang, "b_tasdiq"):  "tasdiq",
         },

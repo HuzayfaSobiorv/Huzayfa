@@ -35,7 +35,7 @@ from services import (
     pending_saqlash, pending_yuklash, pending_tozala,
     draft_saqlash, draft_yuklash,
     xitoy_yuklash, xitoy_saqlash, buyurtma_tekshir,
-    kamomat_olish, zakaz_preview_text, kamomat_stats,
+    zakaz_preview_text,
     grafik_qidirish, vazn_lookup_yangilash,
     qidiruv_olish, qidiruv_text,
     konteyner_tarix_olish, konteyner_tarix_qoshish, konteyner_tarix_kalit,
@@ -46,7 +46,7 @@ from keyboards import grafik_tovar_ikb
 from ui import (
     build_screen, go_screen, get_action,
     yuklash_animatsiya, grafik_ko_rsatish,
-    kamomat_ko_rish, draft_buyurtma_yubor, yolda_ko_rish,
+    draft_buyurtma_yubor, yolda_ko_rish,
 )
 from yuklatish_rejasi import main_with_data
 
@@ -1012,6 +1012,7 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["kutilmoqda"]    = ("xitoy_fayl", kanal)
             context.user_data["xitoy_akkum"]   = {}   # akkumulyator reset
             context.user_data["ombor_akkum"]   = {}   # ombor akkumulyator reset
+            context.user_data["vazn_akkum"]    = {}   # vazn akkumulyator reset
         return
 
     # Oddiy navigatsiya
@@ -1022,10 +1023,7 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Buyurtma amallari
     kanal = context.user_data.get("kanal","asosiy")
 
-    if action == "kamomat":
-        await kamomat_ko_rish(msg, context, kanal, lang)
-
-    elif action == "excel":
+    if action == "excel":
         # Avval Xitoy ostatka haqida so'raymiz.
         # Mavjud JSON bor bo'lsa — uni ishlatish/yangilash/hisobsiz tanlash.
         mavjud = xitoy_yuklash(kanal)
@@ -1083,6 +1081,7 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["kutilmoqda"]  = ("xitoy_fayl", kanal)
         context.user_data["xitoy_akkum"] = {}
         context.user_data["ombor_akkum"] = {}
+        context.user_data["vazn_akkum"]  = {}
         context.user_data["kanal"]       = kanal
         ch = t(lang, CH_KEY[kanal])
         await msg.reply_text(
@@ -1115,7 +1114,8 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         _sp.loader.exec_module(_m)
                 main_with_data = sys.modules["yuklatish_rejasi"].main_with_data
                 ombor_akkum = context.user_data.get("ombor_akkum", {})
-                xlsx_path = main_with_data(kanal, ombor_akkum)
+                vazn_akkum  = context.user_data.get("vazn_akkum", {})
+                xlsx_path = main_with_data(kanal, ombor_akkum, xitoy_vazn=vazn_akkum)
             except Exception as e:
                 await msg.reply_text(
                     f"❌ Yuklatish rejasi yaratishda xato:\n{str(e)[:300]}"
@@ -1123,6 +1123,7 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
         context.user_data.pop("xitoy_akkum", None)
         context.user_data.pop("ombor_akkum", None)
+        context.user_data.pop("vazn_akkum", None)
         context.user_data.pop("kutilmoqda", None)
 
         # STATS:konteyner|yuklangan_kg|yuklangan_xil|qolgan_xil|qolgan_kg|path
@@ -1575,7 +1576,32 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await draft_buyurtma_yubor(msg, context, kanal, lang, xitoy_ostatka=final_map)
 
     elif kut[0] == "xitoy_fayl":
-        pass
+        # DIQQAT (2026-07-08 topilgan va tuzatilgan JIDDIY XATO): bu
+        # bo'lim avval BO'SH edi ("pass") — "Konteyner yuklash" →
+        # "Yuklash rejasi" oqimida fayl yuborilganda, u yuqorida
+        # (1536-qatorda) allaqachon o'qib bo'lingan (xitoy_ostatka_oqi)
+        # bo'lsa ham, natija HECH QAYERGA yozilmasdi va foydalanuvchiga
+        # HECH QANDAY javob (na xato, na tasdiq) qaytarilmasdi — bot
+        # "abadiy jim" bo'lib qolganday tuyulardi. Endi natija
+        # xitoy_akkum/ombor_akkum/vazn_akkum ga QO'SHILADI (bir nechta
+        # fayl ketma-ket yuborilsa hammasi birlashadi) va tasdiq
+        # xabari yuboriladi.
+        akkum       = context.user_data.get("xitoy_akkum", {})
+        ombor_akkum = context.user_data.get("ombor_akkum", {})
+        vazn_akkum  = context.user_data.get("vazn_akkum", {})
+        akkum.update(xitoy_map or {})
+        ombor_akkum.update(ombor_map or {})
+        vazn_akkum.update(vazn_map or {})
+        context.user_data["xitoy_akkum"] = akkum
+        context.user_data["ombor_akkum"] = ombor_akkum
+        context.user_data["vazn_akkum"]  = vazn_akkum
+
+        n = len(ombor_map or {}) or len(xitoy_map or {})
+        jami = len(ombor_akkum) or len(akkum)
+        await msg.reply_text(
+            t(lang, "xitoy_fayl_qabul").format(n=n, jami=jami),
+            parse_mode="Markdown",
+        )
 
 
 # ── Konteyner holati ─────────────────────────────────────────────────
@@ -1757,75 +1783,4 @@ async def _kg_yuborish_guruhga(msg, context, iso: str, file_id: str, caption: st
         )
     else:
         try:
-            await context.bot.send_photo(
-                chat_id=config.KELGAN_YUKLAR_CHAT_ID,
-                photo=file_id,
-                caption=caption,
-                message_thread_id=config.KELGAN_YUKLAR_TOPIC_ID,
-            )
-            await msg.reply_text(
-                f"✅ *{iso}* — \"Kelgan yuklar\" guruhiga yuborildi!",
-                parse_mode="Markdown",
-            )
-        except Exception as e:
-            await msg.reply_text(f"❌ Guruhga yuborishda xato: {e}")
-
-    context.user_data["screen"] = "keldi_menu"
-    await kont_holat_royhat(msg, context)
-
-
-async def _kg_yuborish_guruhga_multi(msg, context, isos: list, file_ids: list, caption: str):
-    """Bir nechta KELDI bo'lgan konteyner rasmlarini bitta albom (media group)
-    sifatida 'Kelgan yuklar' guruhi/mavzusiga yuboradi. Har biri alohida rasm
-    bo'lib qoladi, faqat bitta xabar ichida birga ketadi."""
-    if not file_ids:
-        await msg.reply_text("❌ Yuboriladigan rasm topilmadi.")
-    elif not config.KELGAN_YUKLAR_CHAT_ID:
-        await msg.reply_text(
-            "⚠️ Guruh sozlanmagan. .env faylida KELGAN_YUKLAR_CHAT_ID "
-            "(va kerak bo'lsa KELGAN_YUKLAR_TOPIC_ID) qiymatini kiriting."
-        )
-    else:
-        try:
-            media = [InputMediaPhoto(media=fid) for fid in file_ids]
-            await context.bot.send_media_group(
-                chat_id=config.KELGAN_YUKLAR_CHAT_ID,
-                media=media,
-                caption=caption,
-                message_thread_id=config.KELGAN_YUKLAR_TOPIC_ID,
-            )
-            await msg.reply_text(
-                f"✅ {len(isos)} ta konteyner (" + ", ".join(isos) + ") — "
-                "\"Kelgan yuklar\" guruhiga yuborildi!",
-            )
-        except Exception as e:
-            await msg.reply_text(f"❌ Guruhga yuborishda xato: {e}")
-
-    context.user_data["screen"] = "keldi_menu"
-    await kont_holat_royhat(msg, context)
-
-
-async def kont_holat_royhat(msg, context, change_kb: bool = False):
-    """Konteynerlar holati inline menyusi.
-    change_kb=True bo'lsa, avval faqat Orqaga klaviatura yuboriladi.
-    """
-    lang = context.user_data.get("lang", "cyr")
-    if change_kb:
-        from telegram import ReplyKeyboardMarkup as _RKM
-        only_back = _RKM([[t(lang, "back")]], resize_keyboard=True)
-        await msg.reply_text("\U0001f504", reply_markup=only_back)
-    yolda, _ = _kont_parse(XITOY_PARSED_DIR)
-    n_y = len(yolda)
-    buttons = [
-        [InlineKeyboardButton(
-            "\U0001f69a Yo'lda \u2192 \u2705 Keldiga o'zgartirish",
-            callback_data="kont_keldi_ask")],
-        [InlineKeyboardButton(
-            "\u21a9\ufe0f KELDI ni qaytarish",
-            callback_data="kont_qaytarish_ask")],
-    ]
-    await msg.reply_text(
-        f"\U0001f69a Yo'lda: *{n_y}* ta",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(buttons),
-    )
+    

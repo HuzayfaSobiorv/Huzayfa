@@ -14,6 +14,7 @@ Arxitektura:
 """
 
 import sys
+import re
 import pandas as pd
 import numpy as np
 import glob
@@ -30,7 +31,7 @@ from common import (
     get_category, get_marka, get_category_with_marka, get_category_order,
     get_himoya_foiz, yaxlitla_50, hisobla_min_zaxira, min_dan_kunlik_chiqar,
     load_qoldiq_file, keraksizmi, fayl_sanasi,
-    YOLDA_KUN, FAST_KUN,
+    YOLDA_KUN, FAST_KUN, M12_KUN,
 )
 
 
@@ -143,11 +144,45 @@ except Exception as e:
 
 print("\n4. KONTEYNERLARNI YUKLASH...")
 
+def _konteyner_12m_mi(mahsulot_qatorlari: list) -> bool:
+    """
+    "12 metrlik" konteyner (2026-07-08 qo'shildi) — ISO raqamisiz,
+    ko'pincha mashina-raqami (masalan "ME5312") bilan yozilgan, tarkibida
+    ASOSAN 6 metrlik Труба/Профиль bo'lgan yetkazma. Fayl nomidan EMAS,
+    balki tarkibidagi tovar nomlaridan aniqlanadi — chunki nomi ba'zida
+    mashina raqami, ba'zida haqiqiy konteyner raqami bo'lib qolishi mumkin
+    (Huzayfa aniqligi bilan tasdiqladi). Qoida: tovar qatorlarining
+    YARMIDAN KO'PI nomida aniq "(6 м)" bo'lsa → 12 metrlik.
+
+    Xato yoki noaniq holatda XAVFSIZ False qaytaradi (ya'ni oddiy 55
+    kunlik hisoblanadi) — noto'g'ri tezlashtirib yuborishdan ko'ra,
+    noto'g'ri sekinlashtirib qo'yish xavfsizroq (admin "Кечикди"
+    ogohlantirishini ko'rib, qo'lda tekshirib chiqishi mumkin).
+    """
+    try:
+        if not mahsulot_qatorlari:
+            return False
+        olti_m_soni = sum(
+            1 for m in mahsulot_qatorlari
+            if re.search(r'\(6\s*м\)', str(m))
+        )
+        return olti_m_soni > len(mahsulot_qatorlari) / 2
+    except Exception:
+        return False
+
+
 def _parse_konteyner_fayli(file_path: str) -> list[dict]:
     """
     Bir konteyner faylini o'qib, tovar qatorlari ro'yxatini qaytaradi.
     Fayl nomi formatlar: 'K001_15.04.2025.xlsx' yoki 'F_K001_15.04.2025.xlsx'
     _D suffiks: yetib kelgan konteyner.
+
+    Yetib kelish muddati UCH XIL bo'lishi mumkin (2026-07-08):
+      • FAST_KUN (fayl nomi "F_" bilan boshlansa) — eng ustuvor, tarkibidan
+        qat'iy nazar.
+      • M12_KUN ("12 metrlik" — tarkibida ko'pchilik tovar 6 metrlik,
+        qarang _konteyner_12m_mi()).
+      • YOLDA_KUN — aks holda, oddiy dengiz konteyneri.
     """
     filename = os.path.basename(file_path)
     name     = filename.replace('.xlsx', '')
@@ -162,8 +197,7 @@ def _parse_konteyner_fayli(file_path: str) -> list[dict]:
     if is_done:
         name = name[:-2]
 
-    transit_days = FAST_KUN if is_fast else YOLDA_KUN
-    parts        = name.split('_')
+    parts = name.split('_')
     if len(parts) < 2:
         print(f"  ⚠️  Fayl nomi formati noto'g'ri (o'tkazib yuborildi): {filename}")
         return []
@@ -182,20 +216,6 @@ def _parse_konteyner_fayli(file_path: str) -> list[dict]:
     if departure_date is None:
         print(f"  ⚠️  Sana aniqlanmadi (o'tkazib yuborildi): {filename}")
         return []
-
-    arrival_date = departure_date + timedelta(days=transit_days)
-    bugun        = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-
-    # Kechikish hisobi
-    if not is_done and arrival_date < bugun:
-        kechikkan_kun  = (bugun - arrival_date).days
-        current_status = 'КЕЧИКДИ ⚠️'
-    elif is_done:
-        kechikkan_kun  = 0
-        current_status = 'КЕЛДИ ✅'
-    else:
-        kechikkan_kun  = 0
-        current_status = 'ЙЎЛДА 🚢'
 
     rows = []
     try:
@@ -220,6 +240,38 @@ def _parse_konteyner_fayli(file_path: str) -> list[dict]:
              ('vazn_kg', 'вазн_кг', 'vazn (kg)', 'vazn')),
             None
         )
+
+        # 12-metrlik aniqlash uchun avval barcha tovar nomlarini yig'ib
+        # olamiz (transit_days'ni belgilashdan OLDIN kerak).
+        mahsulot_qatorlari = [
+            str(m).strip() for m in df[mahsulot_col].tolist()
+            if pd.notna(m) and str(m).strip()
+        ]
+        is_12m = (not is_fast) and _konteyner_12m_mi(mahsulot_qatorlari)
+
+        if is_fast:
+            transit_days = FAST_KUN
+            turi         = 'FAST'
+        elif is_12m:
+            transit_days = M12_KUN
+            turi         = '12M'
+        else:
+            transit_days = YOLDA_KUN
+            turi         = 'STANDART'
+
+        arrival_date = departure_date + timedelta(days=transit_days)
+        bugun        = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # Kechikish hisobi
+        if not is_done and arrival_date < bugun:
+            kechikkan_kun  = (bugun - arrival_date).days
+            current_status = 'КЕЧИКДИ ⚠️'
+        elif is_done:
+            kechikkan_kun  = 0
+            current_status = 'КЕЛДИ ✅'
+        else:
+            kechikkan_kun  = 0
+            current_status = 'ЙЎЛДА 🚢'
 
         for _, row in df.iterrows():
             mahsulot = row[mahsulot_col]
@@ -250,7 +302,7 @@ def _parse_konteyner_fayli(file_path: str) -> list[dict]:
                         'Chiqish_Sana':       departure_date,
                         'Kelish_Sana':        arrival_date,
                         'Transit_Kun':        transit_days,
-                        'Konteyner_Turi':     'FAST' if is_fast else 'STANDART',
+                        'Konteyner_Turi':     turi,
                         'Holat':              current_status,
                         'Kechikish_Kun':      kechikkan_kun,
                     })
@@ -337,6 +389,17 @@ if not containers.empty:
                .reset_index()
                .rename(columns={'Mahsulot_Normalized': 'Mahsulot_Key'}))
 
+    # "12 metrlik" (M12_KUN) — 2026-07-08 qo'shildi. Avval faqat FAST/
+    # STANDART ikkita bo'lak bor edi — M12_KUN qatorlar hech biriga mos
+    # kelmasdi va butunlay "Йўлда_Жами"dan tushib qolardi (jiddiy xato).
+    m12_df = (yolda[yolda['Transit_Kun'] == M12_KUN]
+              .groupby('Mahsulot_Normalized')
+              .agg(M12_Miqdor=('Konteyner_Miqdor', 'sum'),
+                   M12_Kelish_Kun=('Kun_Qoldi', 'min'),
+                   M12_Kelish_Sana=('Kelish_Sana', 'min'))
+              .reset_index()
+              .rename(columns={'Mahsulot_Normalized': 'Mahsulot_Key'}))
+
     standart_df = (yolda[yolda['Transit_Kun'] == YOLDA_KUN]
                    .groupby('Mahsulot_Normalized')
                    .agg(Standart_Miqdor=('Konteyner_Miqdor', 'sum'),
@@ -347,13 +410,15 @@ if not containers.empty:
 
     result = (result
               .merge(fast_df,     on='Mahsulot_Key', how='left')
+              .merge(m12_df,      on='Mahsulot_Key', how='left')
               .merge(standart_df, on='Mahsulot_Key', how='left'))
 else:
     for col in ['Fast_Miqdor', 'Fast_Kelish_Kun', 'Fast_Kelish_Sana',
+                'M12_Miqdor', 'M12_Kelish_Kun', 'M12_Kelish_Sana',
                 'Standart_Miqdor', 'Standart_Kelish_Kun', 'Standart_Kelish_Sana']:
         result[col] = None
 
-for col in ['Fast_Miqdor', 'Standart_Miqdor', 'Qoldiq_Dona', 'Qoldiq_Summa',
+for col in ['Fast_Miqdor', 'M12_Miqdor', 'Standart_Miqdor', 'Qoldiq_Dona', 'Qoldiq_Summa',
             'Sotuv_Min', 'Cex_Min']:
     result[col] = result[col].fillna(0)
 
@@ -367,7 +432,8 @@ result['Mahsulot'] = result['Mahsulot'].fillna(result['Mahsulot_Key'])
 print("\n7. TAHLIL...")
 
 result['Yolda_Jami'] = (
-    result['Fast_Miqdor'].fillna(0) + result['Standart_Miqdor'].fillna(0)
+    result['Fast_Miqdor'].fillna(0) + result['M12_Miqdor'].fillna(0)
+    + result['Standart_Miqdor'].fillna(0)
 )
 result['Umumiy_Zaxira']      = result['Qoldiq_Dona'] + result['Yolda_Jami']
 result['Kategoriya']         = result['Mahsulot'].apply(get_category)
@@ -387,6 +453,7 @@ def _simulatsiya(row) -> tuple:
     if kunlik <= 0:
         jami = (float(row.get('Qoldiq_Dona', 0) or 0) +
                 float(row.get('Fast_Miqdor', 0) or 0) +
+                float(row.get('M12_Miqdor', 0) or 0) +
                 float(row.get('Standart_Miqdor', 0) or 0))
         return None, jami, False
 
@@ -396,6 +463,11 @@ def _simulatsiya(row) -> tuple:
             and (row.get('Fast_Kelish_Kun') or 0) > 0):
         konteynerlar.append({'kun': float(row['Fast_Kelish_Kun']),
                              'miqdor': float(row['Fast_Miqdor'])})
+    if (row.get('M12_Miqdor', 0) > 0
+            and pd.notna(row.get('M12_Kelish_Kun'))
+            and (row.get('M12_Kelish_Kun') or 0) > 0):
+        konteynerlar.append({'kun': float(row['M12_Kelish_Kun']),
+                             'miqdor': float(row['M12_Miqdor'])})
     if (row.get('Standart_Miqdor', 0) > 0
             and pd.notna(row.get('Standart_Kelish_Kun'))
             and (row.get('Standart_Kelish_Kun') or 0) > 0):
@@ -457,6 +529,7 @@ final_df = result[[
     'Mahsulot', 'Holat', 'Tur', 'Kategoriya', 'Kategoriya_Display',
     'Qoldiq_Dona',
     'Fast_Miqdor', 'Fast_Kelish_Kun', 'Fast_Kelish_Sana',
+    'M12_Miqdor', 'M12_Kelish_Kun', 'M12_Kelish_Sana',
     'Standart_Miqdor', 'Standart_Kelish_Kun', 'Standart_Kelish_Sana',
     'Yolda_Jami', 'Umumiy_Zaxira', 'Min_Zaxira', 'Sotuv_Min', 'Cex_Min',
     'Kunlik_Istemol', 'Kun_Yetadi', 'Yakuniy_Qoldiq',
@@ -472,7 +545,7 @@ final_df['Kategoriya_Ierarxiya']= final_df.apply(
 )
 
 # Sana ustunlarini formatlash
-for sana_col in ['Fast_Kelish_Sana', 'Standart_Kelish_Sana']:
+for sana_col in ['Fast_Kelish_Sana', 'M12_Kelish_Sana', 'Standart_Kelish_Sana']:
     final_df[sana_col] = (pd.to_datetime(final_df[sana_col], errors='coerce')
                           .dt.strftime('%d.%m.%Y')
                           .fillna('—'))
@@ -489,6 +562,9 @@ final_df = final_df.rename(columns={
     'Fast_Miqdor':          'Тез_Миқдор',
     'Fast_Kelish_Kun':      'Тез_Кун',
     'Fast_Kelish_Sana':     'Тез_Сана',
+    'M12_Miqdor':           '12М_Миқдор',
+    'M12_Kelish_Kun':       '12М_Кун',
+    'M12_Kelish_Sana':      '12М_Сана',
     'Standart_Miqdor':      'Стандарт_Миқдор',
     'Standart_Kelish_Kun':  'Стандарт_Кун',
     'Standart_Kelish_Sana': 'Стандарт_Сана',
@@ -709,7 +785,13 @@ if not containers.empty:
         print(f"\n    KECHIKKAN KONTEYNERLAR:")
         for _, r in kechikdi.drop_duplicates('Konteyner_Raqam').iterrows():
             chiqish   = pd.to_datetime(r['Chiqish_Sana']).strftime('%d.%m.%Y')
-            kelish_k  = (pd.to_datetime(r['Chiqish_Sana']) + timedelta(days=YOLDA_KUN)).strftime('%d.%m.%Y')
+            # DIQQAT (2026-07-08 tuzatildi): avval bu yerda har doim
+            # YOLDA_KUN (55) qattiq yozilgan edi — FAST (20) yoki 12M (45)
+            # konteyner kechiksa ham noto'g'ri "kelishi kerak edi" sanasi
+            # ko'rsatilardi. Endi HAR BIR konteynerning O'Z Transit_Kun
+            # qiymati ishlatiladi.
+            transit_k = int(r['Transit_Kun']) if pd.notna(r.get('Transit_Kun')) else YOLDA_KUN
+            kelish_k  = (pd.to_datetime(r['Chiqish_Sana']) + timedelta(days=transit_k)).strftime('%d.%m.%Y')
             print(f"      • {r['Konteyner_Raqam']} — {chiqish} yuklangan, "
                   f"{kelish_k} kelishi kerak edi, {r['Kechikish_Kun']} kun kechikmoqda")
 

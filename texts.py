@@ -15,7 +15,6 @@ STR: dict[str, dict[str, str]] = {
     "ch_sex":        "🏭 Цех (ишлаб чиқариш)",
     "ch_osh":        "🇰🇬 Ўш (Қирғизистон)",
     "order_ch_title":"Амални танланг:",
-    "b_kamomat":     "📊 Камоматни кўриш",
     "b_excel":       "📄 Буюртма Excel олиш",
     "b_tasdiq":      "✅ Тасдиқланган буюртмани юбориш",
     "kamomat_title": "📊 *{ch}* — камомат:",
@@ -78,6 +77,7 @@ STR: dict[str, dict[str, str]] = {
     "xitoy_fayl_kut_tp":  "📎 *1/2 — Труба/Профиль Хитой файлини юборинг.*\n\n_(Excel .xlsx формат)_",
     "xitoy_fayl_kut_list":"📎 *2/2 — Лист Хитой файлини юборинг.*\n\n_(Excel .xlsx формат)_",
     "xitoy_tp_qabul": "✅ Труба/Профиль қабул қилинди: *{n}* та товар.",
+    "xitoy_fayl_qabul": "✅ Файл қабул қилинди: *{n}* та товар (жами тўпланган: *{jami}* та).\n\nЯна файл юборишингиз мумкин, ёки тайёр бўлса — *▶️ Ҳисоблаш* тугмасини босинг.",
     "xitoy_qabul":   "✅ Хитой остатка қабул қилинди: *{n}* та товар.\nБуюртма Excel тайёрланмоқда...",
     "xitoy_ishlatsin":"✅ Мавжудни ишлатсин",
     "xitoy_yangi":   "🔄 Янги юклаш",
@@ -131,7 +131,6 @@ STR: dict[str, dict[str, str]] = {
     "ch_sex":        "🏭 Tsex (ishlab chiqarish)",
     "ch_osh":        "🇰🇬 O'sh (Qirg'iziston)",
     "order_ch_title":"Amalni tanlang:",
-    "b_kamomat":     "📊 Kamomatni ko'rish",
     "b_excel":       "📄 Buyurtma Excel olish",
     "b_tasdiq":      "✅ Tasdiqlangan buyurtmani yuborish",
     "kamomat_title": "📊 *{ch}* — kamomat:",
@@ -194,6 +193,7 @@ STR: dict[str, dict[str, str]] = {
     "xitoy_fayl_kut_tp":  "📎 *1/2 — Truба/Profil Xitoy faylini yuboring.*\n\n_(Excel .xlsx format)_",
     "xitoy_fayl_kut_list":"📎 *2/2 — List Xitoy faylini yuboring.*\n\n_(Excel .xlsx format)_",
     "xitoy_tp_qabul": "✅ Truба/Profil qabul qilindi: *{n}* ta tovar.",
+    "xitoy_fayl_qabul": "✅ Fayl qabul qilindi: *{n}* ta tovar (jami to'plangan: *{jami}* ta).\n\nYana fayl yuborishingiz mumkin, yoki tayyor bo'lsa — *▶️ Hisoblash* tugmasini bosing.",
     "xitoy_qabul":   "✅ Qabul qilindi: *{n}* ta tovar.\nBuyurtma Excel tayyorlanmoqda...",
     "xitoy_ishlatsin":"✅ Mavjudni ishlatsin",
     "xitoy_yangi":   "🔄 Yangi yuklash",
@@ -231,16 +231,4 @@ STR: dict[str, dict[str, str]] = {
     "b_yolda_excel":    "🚛 Yo'ldagi yuklar",
     "settings_title_user": "⚙️ *Sozlamalar*",
         "b_boglanish":      "📞 Admin bilan bog'lanish",
-    "boglanish_phone":  "📞 Qo'ng'iroq qilish",
-    "boglanish_tg":     "💬 Telegramdan bog'lanish",
-    "yolda_excel_yoq":  "ℹ️ Hozircha yo'lda konteyner yo'q.",
-    "b_konteyner":   "♻️ Konteynerlar",
-    "konteyner_title": "📦 *Konteynerlar bilan ishlash*",
-    "b_keldi_belgi": "🔄 Konteyner holatini o'zgartirish",
-},
-}
-
-
-def t(lang: str, key: str) -> str:
-    """Tarjima olish. Topilmasa — kalitning o'zi qaytadi."""
-    return STR.get(lang, STR["cyr"]).get(key, key)
+    "boglanish_p
