@@ -1220,7 +1220,30 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text_lat="Ma'lumotlar yangilanmoqda",
         ):
             try:
-                await loop.run_in_executor(None, lambda: _xlsx_refresh(force=True))
+                # DIQQAT (2026-07-08 qo'shildi): Huzayfa kunlik qoldiqni faqat
+                # o'z ish kompyuterida tarix/ ga qo'shib, git'ga push qiladi —
+                # serverga jismonan/AnyDesk orqali kirmasdan, Telegram'dan
+                # "Yangilash" tugmasi orqali serverdagi eng so'nggi ma'lumotni
+                # (git pull) tortib olib, shu yerda hisoblashi kerak. Shuning
+                # uchun main.py'dan OLDIN avval "git pull" qilinadi. Bu FAQAT
+                # ma'lumot (tarix/) yangilanishlari uchun — kod (.py fayllar)
+                # o'zgarishlari BUNDAN keyin ham pm2 restart talab qiladi
+                # (server_yangilash.bat), chunki Python allaqachon xotiraga
+                # yuklangan kodni o'zi qayta yuklay olmaydi.
+                git_proc = await asyncio.create_subprocess_exec(
+                    "git", "pull", "origin", "main",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=str(BASE_DIR),
+                )
+                git_out, git_err = await git_proc.communicate()
+                if git_proc.returncode != 0:
+                    xato = (git_err or git_out).decode("utf-8", errors="replace")[-300:]
+                    await msg.reply_text(
+                        t(lang, "yangilash_err").format(xato=f"git pull xato: {xato}")
+                    )
+                    return
+
                 main_py = str(BASE_DIR / "main.py")
                 env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONLEGACYWINDOWSSTDIO": "0"}
                 proc = await asyncio.create_subprocess_exec(
@@ -1232,6 +1255,13 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 _, stderr = await proc.communicate()
                 if proc.returncode == 0:
+                    # DIQQAT (2026-07-08 tuzatildi): kesh FAQAT main.py
+                    # muvaffaqiyatli tugagandan KEYIN yangilanishi kerak —
+                    # avval edi (main.py'dan OLDIN), shuning uchun tugma
+                    # bosilgandan keyin ham bot xotirasi ESKI faylni ko'rsatib
+                    # turardi (yangi fayl diskka yozilgach ham, keshga
+                    # qayta o'qilmasdi, keyingi 5 daqiqalik TTL tugagunicha).
+                    await loop.run_in_executor(None, lambda: _xlsx_refresh(force=True))
                     await msg.reply_text(t(lang, "yangilash_ok"))
                 else:
                     xato = stderr.decode("utf-8", errors="replace")[-300:]
