@@ -1390,6 +1390,85 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Yo'lga konteyner qo'shish: 1/2 — Труба/Профиль装箱单 ────────────────────
     if kut[0] == "kont_tp":
+        # ── AKSESSUAR fayl tekshiruvi (2026-07-08 qo'shildi) ────────────────
+        # Баласина/Чашка/Шар/Сокка kabi tovarlar Труба/Профиль/Лист kabi
+        # ikki-faylli (装箱单+出货清单) formatda EMAS — bitta oddiy jadval
+        # (T/r | Tovar nomi | Soni). Bunday fayl aniqlansa, "2-fayl kut"
+        # bosqichi butunlay o'tkazib yuboriladi — konteyner shu bitta fayldan
+        # to'g'ridan-to'g'ri tayyorlanadi va odatdagi tasdiqlash oqimiga
+        # (qisqa_xulosa + draft Excel + tasdiqlash tugmasi) uzatiladi.
+        import re as _re
+        from datetime import datetime as _dt
+        from konteyner_qosh import aksessuar_fayl_mi
+        if aksessuar_fayl_mi(raw):
+            from konteyner_qosh import (
+                aksessuar_fayl_oqi, draft_excel_yarat, qisqa_xulosa,
+                iso_boyicha_yangilarini_ajrat, notanish_soni,
+                oxirgi_malum_sana, faqat_sanadan_keyingi,
+            )
+            await msg.reply_text("⏳ Aksessuar fayli o'qilmoqda, biroz kuting...")
+            fname = (doc.file_name or "Aksessuar").rsplit(".", 1)[0]
+            m = _re.search(r'(\d{1,2}[.\-]\d{1,2}[.\-]\d{4})', fname)
+            if m:
+                sana_s = m.group(1).replace('-', '.')
+                iso = fname[:m.start()].strip('_- ') or "Aksessuar"
+            else:
+                sana_s = _dt.now().strftime("%d.%m.%Y")
+                iso = fname
+            try:
+                kont = aksessuar_fayl_oqi(raw, iso, sana_s)
+            except Exception as e:
+                await msg.reply_text(t(lang, "kont_xato").format(xato=str(e)[:300]), parse_mode="Markdown")
+                context.user_data.pop("kutilmoqda", None)
+                return
+            if not kont["items"]:
+                await msg.reply_text(
+                    "⚠️ Faylda 'Tovar nomi'/'Soni' ustunlaridan hech qanday "
+                    "to'g'ri qator topilmadi — qaytadan tekshiring."
+                )
+                context.user_data.pop("kutilmoqda", None)
+                return
+            tarix = konteyner_tarix_olish()
+            oxirgi = oxirgi_malum_sana(XITOY_PARSED_DIR, tarix)
+            yangilar = faqat_sanadan_keyingi([kont], oxirgi)
+            yangilar = iso_boyicha_yangilarini_ajrat(yangilar, XITOY_PARSED_DIR, tarix)
+            if not yangilar:
+                await msg.reply_text(t(lang, "kont_barchasi_bor"), parse_mode="Markdown")
+                context.user_data.pop("kutilmoqda", None)
+                return
+            context.user_data["kont_yangilar"] = yangilar
+            context.user_data["kutilmoqda"] = ("kont_tasdiq_fayl", None)
+            await msg.reply_text(qisqa_xulosa(yangilar), parse_mode="Markdown")
+            bio = draft_excel_yarat(yangilar)
+            await msg.reply_document(
+                document=bio, filename="Yangi_konteynerlar.xlsx",
+                caption=(
+                    "📋 Aksessuar ro'yxati shu faylda. Xato bo'lsa tahrirlab "
+                    "qayta shu yerga yuboring. Hammasi to'g'ri bo'lsa — "
+                    "pastdagi tugmani bosing."
+                ),
+            )
+            n_nomos = notanish_soni(yangilar)
+            if n_nomos:
+                await msg.reply_text(
+                    f"⚠️ *DIQQAT: {n_nomos} ta tovar hali ham inventarda "
+                    f"NOTANISH* (faylda ⚠️ belgi bilan ajratilgan). Iltimos, "
+                    f"yuqoridagi Excel faylni oching, shu qatorlarni TO'G'IRLAB "
+                    f"qayta shu yerga yuboring — aks holda ular xato/noaniq nom "
+                    f"bilan saqlanib qoladi.",
+                    parse_mode="Markdown",
+                )
+                await msg.reply_text(
+                    "✅ Baribir tasdiqlaysizmi?",
+                    reply_markup=kont_tasdiq_ikb(lang),
+                )
+            else:
+                await msg.reply_text(
+                    "✅ Tasdiqlaysizmi?",
+                    reply_markup=kont_tasdiq_ikb(lang),
+                )
+            return
+
         # DIQQAT: bu yerda hali og'ir tekshirish/parslash YO'Q — faqat
         # xotiraga saqlanadi, haqiqiy o'qish ikkala fayl ham kelgach
         # ("kont_list" bosqichida) bajariladi. Shuning uchun qo'shimcha

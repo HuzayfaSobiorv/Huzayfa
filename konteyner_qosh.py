@@ -800,6 +800,95 @@ def _parse_list_chuhuo(raw: bytes) -> dict:
     return result
 
 
+# ── Aksessuar (Баласина/Чашка/Шар/Сокка va h.k.) konteyner fayli ────────────
+# Bu tovarlar uchun Труба/Профиль/Лист kabi qat'iy formula (ст/уzunlik/规格)
+# YO'Q — har bir nom o'ziga xos ("Баласина-18", "Найза №-05" kabi), Xitoy
+# 装箱单/出货清单 formatidagi 柜号/规格/长度 ustunlari ham yo'q. Shuning uchun
+# xodim tomonidan tayyorlanadigan JUDA SODDA jadval ishlatiladi:
+#   T/r (No.) | Tovar nomi (Product Name) | Soni (Quantity, pcs)
+# 2026-07-08: Huzayfa bilan kelishilgan — nom inventarda ANIQ topilmasa ham
+# BLOKLANMAYDI, o'sha nom bilan "notanish" (⚠️) sifatida qo'shiladi (admin
+# draft Excelda ko'rib to'g'irlashi yoki "baribir tasdiqlash"i mumkin) —
+# xuddi Труба/Профиль oqimidagi kabi yumshoq ogohlantirish tartibi.
+
+_AKSESSUAR_NOM_SIGNALS  = ('tovar', 'mahsulot', 'nomi', 'name', 'товар')
+_AKSESSUAR_SONI_SIGNALS = ('soni', 'miqdor', 'quantity', 'qty', 'кол', 'сон')
+
+
+def aksessuar_fayl_mi(raw: bytes) -> bool:
+    """Fayl aksessuar (oddiy T/r|Tovar nomi|Soni) formatidami — TEZ tekshirish.
+    Труба/Профиль/Лист fayllarida har doim Xitoycha ustun nomlari (柜号/规格/
+    长度/库存 va h.k.) bo'ladi — aksessuar faylida esa faqat lotin/o'zbekcha
+    sarlavhalar bo'ladi. Shu farq orqali ikkalasi bir-biridan ajratiladi.
+    """
+    try:
+        wb = openpyxl.load_workbook(BytesIO(raw), data_only=True)
+        ws = wb.active
+        nom_ok = False
+        soni_ok = False
+        for row in ws.iter_rows(min_row=1, max_row=min(10, ws.max_row), values_only=True):
+            for c in row:
+                if not c:
+                    continue
+                s = str(c).strip().lower()
+                if any(sig in s for sig in _AKSESSUAR_NOM_SIGNALS):
+                    nom_ok = True
+                if any(sig in s for sig in _AKSESSUAR_SONI_SIGNALS):
+                    soni_ok = True
+                # Xitoycha 装箱单/出货清单 signali topilsa — bu AKSESSUAR EMAS
+                if any(sig in str(c) for sig in ('柜号', '车号', '车牌', '规格', '长度', '库存', '品号', '颜色')):
+                    return False
+        return nom_ok and soni_ok
+    except Exception:
+        return False
+
+
+def aksessuar_fayl_oqi(raw: bytes, iso: str, sana_s: str) -> dict:
+    """Oddiy aksessuar konteyner faylini o'qib, xitoy_yuklar_oqi() bilan BIR
+    XIL strukturadagi 'kont' dict qaytaradi (draft_excel_yarat/konteyner_xlsx_yarat
+    kabi umumiy funksiyalar bilan to'g'ridan-to'g'ri ishlatilishi uchun).
+    iso    — konteynerni ajratib turadigan nom (odatda yuborilgan fayl nomi).
+    sana_s — 'DD.MM.YYYY' formatidagi sana (fayl nomida bo'lmasa — bugun).
+    """
+    wb = openpyxl.load_workbook(BytesIO(raw), data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+
+    nom_i = None
+    soni_i = None
+    hdr_row = 0
+    for ri, row in enumerate(rows[:10]):
+        cand = [str(c).strip().lower() if c else "" for c in row]
+        n_i = next((i for i, h in enumerate(cand)
+                    if any(sig in h for sig in _AKSESSUAR_NOM_SIGNALS)), None)
+        s_i = next((i for i, h in enumerate(cand)
+                    if any(sig in h for sig in _AKSESSUAR_SONI_SIGNALS)), None)
+        if n_i is not None and s_i is not None:
+            nom_i, soni_i, hdr_row = n_i, s_i, ri
+            break
+    if nom_i is None or soni_i is None:
+        return {"iso": iso, "sana": sana_s, "items": [], "manba": "aksessuar", "tonna": 0.0}
+
+    items = []
+    for row in rows[hdr_row + 1:]:
+        if nom_i >= len(row) or soni_i >= len(row):
+            continue
+        nom_raw = row[nom_i]
+        soni_raw = row[soni_i]
+        if not nom_raw or str(nom_raw).strip() == "":
+            continue
+        try:
+            miqdor = float(soni_raw) if soni_raw is not None else 0
+        except (ValueError, TypeError):
+            continue
+        if miqdor <= 0:
+            continue
+        nom = _inventarga_moslashtir(str(nom_raw).strip()) or str(nom_raw).strip()
+        items.append((nom, miqdor))
+
+    return {"iso": iso, "sana": sana_s, "items": items, "manba": "aksessuar", "tonna": 0.0}
+
+
 # ── Asosiy birlashtirish funksiyasi ──────────────────────────────────────────
 
 def xitoy_yuklar_oqi(truba_raw: bytes, list_raw: bytes) -> list[dict]:
