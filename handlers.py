@@ -1034,11 +1034,11 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if b_data and b_data.get("buyurtmalar"):
             b_n    = len(b_data["buyurtmalar"])
             b_sana = b_data.get("sana", "?")
-            b_line_cyr = f"\n\n📋 *Тасдиқланган буюртма:* {b_n} та\n🗓 Буюртма санаси: *{b_sana}*"
-            b_line_lat = f"\n\n📋 *Tasdiqlangan buyurtma:* {b_n} ta\n🗓 Buyurtma sanasi: *{b_sana}*"
+            b_line_cyr = f"\n📋 Тасдиқ: {b_n} та ({b_sana})"
+            b_line_lat = f"\n📋 Tasdiq: {b_n} ta ({b_sana})"
         else:
-            b_line_cyr = "\n\n📋 *Тасдиқланган буюртма:* йўқ"
-            b_line_lat = "\n\n📋 *Tasdiqlangan buyurtma:* yo'q"
+            b_line_cyr = "\n📋 Тасдиқ: йўқ"
+            b_line_lat = "\n📋 Tasdiq: yo'q"
         b_line = b_line_cyr if lang == "cyr" else b_line_lat
 
         if mavjud is not None and mavjud.get("tovarlar"):
@@ -1059,11 +1059,11 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # "ISHLATADIGAN" hech qanday mavjud ma'lumot yo'q. Endi xuddi
             # "hech narsa yo'q" holatidagi kabi ANIQ savol beriladi:
             # "Ha, bor" / "Yo'q — shundayicha ber" (xitoy_sorash_ikb).
-            hdr_cyr = f"📦 *{ch}*\n\n⚠️ Хитой охирги маълумот: *Захирасиз* юборилган (олдин «Йўқ» деб танланган эди)."
-            hdr_lat = f"📦 *{ch}*\n\n⚠️ Xitoy oxirgi ma'lumot: *Zahirasiz* yuborilgan (avval «Yo'q» deb tanlangan edi)."
+            hdr_cyr = f"📦 *{ch}* — ⚠️ Хитой: захирасиз юборилган"
+            hdr_lat = f"📦 *{ch}* — ⚠️ Xitoy: zahirasiz yuborilgan"
             hdr = hdr_cyr if lang == "cyr" else hdr_lat
             await msg.reply_text(
-                hdr + b_line + "\n\n" + t(lang, "xitoy_sorash"),
+                hdr + b_line + "\n" + t(lang, "xitoy_sorash"),
                 parse_mode="Markdown",
                 reply_markup=xitoy_sorash_ikb(lang, kanal),
             )
