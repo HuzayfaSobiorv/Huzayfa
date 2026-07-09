@@ -354,16 +354,30 @@ else:
 print("\n6. MA'LUMOTLARNI BIRLASHTIRISH...")
 
 today  = datetime.now()
-result = qoldiq.copy().rename(columns={'Mahsulot_Normalized': 'Mahsulot_Key'})
 
-# Min zaxirani ulash
+# 2026-07-09 MUHIM TUZATISH: asos endi Min_Zaxira (to'liq katalog),
+# Tarix qoldiq fayli EMAS. Eski kodda asos Tarix fayli edi -- agar tovar
+# qoldig'i 0 bo'lib, ombor eksporti (Tarix) uni faylga UMUMAN yozmasa,
+# o'sha tovar butun Inventar jadvalidan (demak kamomat/buyurtma
+# hisobidan ham) tushib qolardi -- aynan eng kerakli paytda "unutilardi".
+# Endi HAR BIR Min_Zaxira'dagi tovar doim natijada bo'ladi; qoldig'i
+# Tarix faylida topilmasa 0 deb olinadi.
+qoldiq_key = qoldiq.rename(columns={'Mahsulot_Normalized': 'Mahsulot_Key'})
+
 if not min_zaxira.empty:
+    # OUTER birlashtirish -- ikkala tomonni ham to'liq saqlaydi:
+    #  - Min_Zaxira'da bor, Tarix'da yo'q (qoldiq=0, eksportda ko'rsatilmagan)
+    #  - Tarix'da bor, Min_Zaxira'da hali yo'q (katalogga qo'shilmagan tovar)
+    # Faqat min_zaxira asosida (how='left') qilinsa 373 ta haqiqiy tovar
+    # (masalan "Пр. 30х30 ст 2,0 (304 марка)") yo'qolib qolgani aniqlandi --
+    # shu sabab 'outer' tanlandi.
     result = pd.merge(
-        result,
-        min_zaxira[['Mahsulot_Normalized', 'Sotuv_Min', 'Kunlik_Istemol', 'Cex_Min']],
-        left_on='Mahsulot_Key', right_on='Mahsulot_Normalized', how='left'
-    ).drop(columns=['Mahsulot_Normalized'])
+        min_zaxira.rename(columns={'Mahsulot_Normalized': 'Mahsulot_Key'}),
+        qoldiq_key[['Mahsulot_Key', 'Mahsulot', 'Qoldiq_Dona', 'Qoldiq_Summa']],
+        on='Mahsulot_Key', how='outer'
+    )
 else:
+    result = qoldiq_key.copy()
     result['Sotuv_Min']      = 0
     result['Kunlik_Istemol'] = 0
     result['Cex_Min']        = 0
