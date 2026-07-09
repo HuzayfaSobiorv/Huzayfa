@@ -1298,6 +1298,11 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         restart_boshlandi = await loop.run_in_executor(None, _pm2_qayta_ishga_tushir)
                         if restart_boshlandi:
                             await msg.reply_text(t(lang, "yangilash_restart"))
+                        else:
+                            # DIQQAT: aniq xabar shart — aks holda foydalanuvchi
+                            # "hammasi yangilandi" deb o'ylaydi, aslida .py kod
+                            # ESKI holicha xotirada qolgan bo'ladi (pm2 topilmadi).
+                            await msg.reply_text(t(lang, "yangilash_pm2_yoq"))
                 else:
                     xato = stderr.decode("utf-8", errors="replace")[-300:]
                     await msg.reply_text(
