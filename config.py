@@ -111,7 +111,12 @@ CAT_SHEET = {
 }
 AKSESSUAR_KATS = {"ШАР", "ОТВОД", "СОККА", "ЧАШКА", "СОВУН", "КУЗИКОРИН", "БОШКА"}
 
-CH_KEY = {"asosiy": "ch_asosiy", "sex": "ch_sex", " osh": "ch_osh"}
+CH_KEY = {"asosiy": "ch_asosiy", "sex": "ch_sex", "osh": "ch_osh"}
+
+# server_yangilash.bat dagi bilan bir xil bo'lishi shart — "Ma'lumotlarni
+# yangilash" tugmasi bosilganda (agar serverda pm2 topilsa) botni pm2 orqali
+# qayta ishga tushirish uchun ishlatiladi (yangi .py kodni yuklash uchun).
+PM2_PROCESS_NAME = os.getenv("PM2_PROCESS_NAME", "nejaviyka-bot").strip()
 
 # Navigatsiya: qaysi ekrandan "Orqaga" qayerga boradi
 BACK_MAP = {

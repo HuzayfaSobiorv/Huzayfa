@@ -1270,6 +1270,34 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     # qayta o'qilmasdi, keyingi 5 daqiqalik TTL tugagunicha).
                     await loop.run_in_executor(None, lambda: _xlsx_refresh(force=True))
                     await msg.reply_text(t(lang, "yangilash_ok"))
+
+                    # DIQQAT (qo'shildi): serverda (pm2 mavjud bo'lsa) .py
+                    # kod o'zgarishlari ham shu yerdan, qo'lda AnyDesk/konsol
+                    # orqali server_yangilash.bat ishga tushirmasdan, avtomatik
+                    # yuklanishi uchun — botni pm2 orqali qayta ishga
+                    # tushiramiz. Xabarni RESTART buyrug'idan OLDIN yuboramiz,
+                    # chunki bu buyruqdan keyin joriy jarayon istalgan payt
+                    # pm2 tomonidan o'chirilishi mumkin. Mahalliy kompyuterda
+                    # (pm2 yo'q joyda) bu qadam jimgina o'tkazib yuboriladi —
+                    # tugma xuddi avvalgidek (faqat ma'lumot yangilash) ishlaydi.
+                    # DIQQAT (xavfsizlik): pm2 restart qilishdan OLDIN yangi
+                    # kodni sintaksis bo'yicha tekshiramiz. Agar push qilingan
+                    # kodda xato/kesilish bo'lsa (bu loyihada avval bir necha
+                    # marta yuz bergan holat), botni SHU BUZUQ kod bilan qayta
+                    # ishga tushirish uni butunlay o'chirib qo'yishi mumkin —
+                    # va bot o'chgach, Telegram orqali qayta tugma bosib bo'lmaydi
+                    # (serverga qo'lda kirishga to'g'ri keladi). Shuning uchun
+                    # xato bo'lsa, ESKI (hozir xotirada ishlab turgan, ishonchli)
+                    # kod bilan davom etamiz — faqat ma'lumot yangilangan bo'ladi.
+                    kod_ok, kod_xato = await loop.run_in_executor(None, _kod_sintaksisi_togrimi)
+                    if not kod_ok:
+                        await msg.reply_text(
+                            t(lang, "yangilash_kod_xato").format(xato=kod_xato[:500])
+                        )
+                    else:
+                        restart_boshlandi = await loop.run_in_executor(None, _pm2_qayta_ishga_tushir)
+                        if restart_boshlandi:
+                            await msg.reply_text(t(lang, "yangilash_restart"))
                 else:
                     xato = stderr.decode("utf-8", errors="replace")[-300:]
                     await msg.reply_text(
@@ -1764,6 +1792,62 @@ def _main_py_ishga_tushir():
         )
     except Exception:
         pass
+
+
+def _kod_sintaksisi_togrimi() -> tuple:
+    """BASE_DIR ildizidagi barcha *.py fayllarni sintaksis bo'yicha tekshiradi
+    (`python -m py_compile`, real import qilmasdan — tashqi paketlar
+    o'rnatilmagan bo'lsa ham ishlaydi). (True, "") — hammasi toza;
+    (False, xato_matni) — kamida bittasida sintaksis xatosi bor.
+    `_pm2_qayta_ishga_tushir()` chaqirilishidan OLDIN, "yangilash" oqimida
+    ishlatiladi — buzuq kod bilan botni qayta ishga tushirib qo'ymaslik uchun.
+    """
+    import subprocess
+    py_fayllar = [str(p) for p in BASE_DIR.glob("*.py")]
+    if not py_fayllar:
+        return True, ""
+    proc = subprocess.run(
+        [sys.executable, "-m", "py_compile", *py_fayllar],
+        cwd=str(BASE_DIR),
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        return False, (proc.stderr or proc.stdout or "noma'lum xato")
+    return True, ""
+
+
+def _pm2_qayta_ishga_tushir() -> bool:
+    """Agar shu muhitda `pm2` topilsa (server), botni pm2 orqali qayta ishga
+    tushiradi — shunda yangi .py kod ham yuklanadi (main.py ma'lumotlarni
+    yangilaydi, lekin allaqachon xotiraga yuklangan kodni o'zi qayta yuklay
+    olmaydi — buning uchun jarayonning o'zi qayta tushishi kerak).
+    Mahalliy kompyuterda (pm2 o'rnatilmagan joyda) jimgina hech narsa
+    qilmaydi — False qaytaradi, xatoga olib kelmaydi.
+
+    DIQQAT: bu chaqiruv fire-and-forget (natijasini kutmaydi) — chunki pm2
+    aynan shu jarayonni (joriy Bot.py ni) to'xtatib qayta ishga tushiradi,
+    shuning uchun bu funksiya tugagach process istalgan payt o'chib qolishi
+    mumkin. Shu sabab chaqiruvchi tomon xabarni RESTART buyrug'idan OLDIN
+    yuborishi kerak.
+    """
+    import shutil
+    import subprocess
+    if not shutil.which("pm2"):
+        return False
+    try:
+        # shell=True — Windows'da npm global skriptlar (pm2.cmd) to'g'ri
+        # topilishi uchun; Linux serverda ham xuddi shunday ishlaydi.
+        subprocess.Popen(
+            f"pm2 restart {config.PM2_PROCESS_NAME}",
+            shell=True,
+            cwd=str(BASE_DIR),
+            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+        )
+        return True
+    except Exception as e:
+        logger.warning(f"pm2 restart urinishi muvaffaqiyatsiz: {e}")
+        return False
 
 
 
