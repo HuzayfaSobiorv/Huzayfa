@@ -1051,15 +1051,21 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=xitoy_mavjud_ikb(lang, kanal),
             )
         elif mavjud is not None:
-            # xitoy_saqlash({}) chaqirilgan — "shundaylicha" tanlangan edi
-            # Yana shundaylicha yoki yangi xitoy yuklash
-            hdr_cyr = f"📦 *{ch}*\n\n⚠️ Хитой охирги маълумот: *Захирасиз* юборилган."
-            hdr_lat = f"📦 *{ch}*\n\n⚠️ Xitoy oxirgi ma'lumot: *Zahirasiz* yuborilgan."
+            # xitoy_saqlash({}) chaqirilgan — oxirgi safar "Yo'q — shundayicha
+            # ber" tanlangan edi, hech qanday haqiqiy ma'lumot SAQLANMAGAN.
+            # DIQQAT (2026-07-09 tuzatilgan XATO): bu holatda avval
+            # "Mavjudni ishlatsin"/"Yangi yuklash" (xitoy_mavjud_ikb)
+            # tugmalari ko'rsatilardi — bu chalkash edi, chunki
+            # "ISHLATADIGAN" hech qanday mavjud ma'lumot yo'q. Endi xuddi
+            # "hech narsa yo'q" holatidagi kabi ANIQ savol beriladi:
+            # "Ha, bor" / "Yo'q — shundayicha ber" (xitoy_sorash_ikb).
+            hdr_cyr = f"📦 *{ch}*\n\n⚠️ Хитой охирги маълумот: *Захирасиз* юборилган (олдин «Йўқ» деб танланган эди)."
+            hdr_lat = f"📦 *{ch}*\n\n⚠️ Xitoy oxirgi ma'lumot: *Zahirasiz* yuborilgan (avval «Yo'q» deb tanlangan edi)."
             hdr = hdr_cyr if lang == "cyr" else hdr_lat
             await msg.reply_text(
-                hdr + b_line,
+                hdr + b_line + "\n\n" + t(lang, "xitoy_sorash"),
                 parse_mode="Markdown",
-                reply_markup=xitoy_mavjud_ikb(lang, kanal),
+                reply_markup=xitoy_sorash_ikb(lang, kanal),
             )
         else:
             # Birinchi marta — hech qanday xitoy ma'lumot yo'q
