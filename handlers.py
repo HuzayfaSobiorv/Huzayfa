@@ -1629,9 +1629,10 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Xitoy-parser kodi (pastda, xitoy_ostatka_oqi) BUTUNLAY tegilmagan
     # qoladi — bu faqat QO'SHIMCHA, muqobil kirish yo'li.
     is_ai_format = ai_ostatka_fayl_mi(raw)
+    diqqat_list: list = []
     try:
         if is_ai_format:
-            ok, xato, xitoy_map, unknown_list, ombor_map, vazn_map = ai_ostatka_fayl_oqi(raw)
+            ok, xato, xitoy_map, unknown_list, ombor_map, vazn_map, diqqat_list = ai_ostatka_fayl_oqi(raw)
         else:
             ok, xato, xitoy_map, unknown_list, ombor_map, vazn_map = xitoy_ostatka_oqi(raw)
     except Exception as e:
@@ -1649,13 +1650,29 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kut = ("xitoy_ostatka_fayl", kut[1])
 
     async def _unknown_xabar_yubor():
-        if is_ai_format and unknown_list:
+        # DIQQAT (2026-07-09 tuzatilgan XATO): avval "nomi topilmadi" va
+        # "DIQQAT/NOANIQ belgisi bor, lekin nomi TO'G'RI" bitta ro'yxatga
+        # aralashtirilib yuborilardi — shuning uchun tekshirganda "nomi
+        # bor-ku" degan chalkashlik chiqardi. Endi ikkalasi ALOHIDA.
+        if not is_ai_format:
+            return
+        if unknown_list:
             qator = "\n".join(f"• {n}" for n in unknown_list[:25])
             qoldi = f"\n… va yana {len(unknown_list) - 25} ta" if len(unknown_list) > 25 else ""
             await msg.reply_text(
-                f"ℹ️ *Diqqat:* {len(unknown_list)} ta tovar nomi inventarda aniq "
-                f"mos topilmadi (bular haqiqatan ham YANGI tovar bo'lishi mumkin "
-                f"— bu normal, lekin nomlarni bir tekshirib chiqing):\n{qator}{qoldi}",
+                f"ℹ️ *Diqqat:* {len(unknown_list)} ta tovar nomi inventarda "
+                f"HAQIQATAN topilmadi (bular haqiqatan ham YANGI tovar "
+                f"bo'lishi mumkin — bu normal, lekin nomlarni bir tekshirib "
+                f"chiqing):\n{qator}{qoldi}",
+                parse_mode="Markdown",
+            )
+        if diqqat_list:
+            qator2 = "\n".join(f"• {n}" for n in diqqat_list[:25])
+            qoldi2 = f"\n… va yana {len(diqqat_list) - 25} ta" if len(diqqat_list) > 25 else ""
+            await msg.reply_text(
+                f"⚠️ *Diqqat:* {len(diqqat_list)} ta qatorda nomi TOPILDI, "
+                f"lekin faylda alohida ogohlantirish (masalan L>K yoki "
+                f"noaniq) bor edi — miqdorni tekshiring:\n{qator2}{qoldi2}",
                 parse_mode="Markdown",
             )
 

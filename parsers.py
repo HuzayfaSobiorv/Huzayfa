@@ -96,11 +96,14 @@ _inventar_kanonik_cache: dict | None = None
 
 
 def _kanonik_nom(s: str) -> str:
-    """Solishtirish uchun — ketma-ket bo'shliqlarni bittaga siqadi va
-    chiziqchadan keyingi bo'shliqni olib tashlaydi. FAQAT solishtirishda
-    ishlatiladi, asl inventar matnini o'zgartirmaydi."""
+    """Solishtirish uchun — ketma-ket bo'shliqlarni bittaga siqadi,
+    chiziqchadan keyingi bo'shliqni va yopuvchi qavs oldidan kelgan nuqtani
+    (masalan "(Голд.)" vs "(Голд)", "(12 мм.)" vs "(12 мм)" — inventarning
+    o'zida ba'zan nuqta bilan, ba'zan nuqtasiz yozilgan) olib tashlaydi.
+    FAQAT solishtirishda ishlatiladi, asl inventar matnini o'zgartirmaydi."""
     s = re.sub(r'\s+', ' ', str(s).strip())
     s = re.sub(r'-\s+', '-', s)
+    s = re.sub(r'\.(?=\))', '', s)
     return s
 
 
@@ -552,30 +555,37 @@ def ai_ostatka_fayl_oqi(fayl_bytes: bytes) -> tuple:
       - Bir xil nom bir necha qatorda uchrasa (turli partiya/narx/sana) —
         BU XATO EMAS, K/L QO'SHIB (summalab) olinadi.
       - "Jami"/"Итого" kabi jamlovchi qatorlar o'tkazib yuboriladi.
-      - NOANIQ (nom ichida "NOANIQ:" yoki Izoh ustunida "NOANIQ"/"DIQQAT")
-        belgilangan qatorlar HAM qabul qilinadi (bloklanmaydi), lekin
-        unknown_list ga qo'shiladi — foydalanuvchiga alohida ogohlantirish
-        sifatida ko'rsatiladi.
       - Har bir nom HAQIQIY inventar bilan _fix_oddiy_nom() orqali
         solishtiriladi (AI tarjimasiga ko'r-ko'rona ishonilmaydi) — bu
         bo'shliq/format farqlarini (masalan "Лист- 0,8" vs "Лист-0,8")
         avtomatik tuzatadi. Inventarda topilmasa — YANGI TOVAR bo'lishi
         mumkin (bloklanmaydi), faqat unknown_list ga qo'shiladi.
+      - NOANIQ (nom ichida "NOANIQ:" yoki Izoh ustunida "NOANIQ"/"DIQQAT")
+        belgilangan qatorlar HAM qabul qilinadi (bloklanmaydi). MUHIM
+        (2026-07-09 tuzatilgan XATO): bu DIQQAT/NOANIQ belgisi va "nom
+        inventarda topilmadimi" degani IKKI XIL narsa — avval ular bitta
+        unknown_list ga aralashtirilib yuborilardi, natijada nomi ANIQ
+        inventarda mavjud (masalan "L>K" nomuvofiqligi tufayli belgilangan)
+        qatorlar ham "yangi tovar bo'lishi mumkin" deb noto'g'ri ko'rsatilar
+        edi. Endi ikkalasi ALOHIDA ro'yxatda qaytariladi:
+          unknown_list — nomi inventarda HAQIQATAN topilmadi (yangi tovar)
+          diqqat_list  — nomi TOPILDI, lekin qatorda DIQQAT/NOANIQ belgisi
+                         bor edi (masalan L>K, miqdorni tekshirish kerak)
 
-    Qaytaradi: (ok, xato, xitoy_map, unknown_list, ombor_map, vazn_map)
-      — xitoy_ostatka_oqi() bilan AYNAN BIR XIL shakl (drop-in almashtirish).
+    Qaytaradi: (ok, xato, xitoy_map, unknown_list, ombor_map, vazn_map, diqqat_list)
     """
     import openpyxl
     try:
         wb = openpyxl.load_workbook(BytesIO(fayl_bytes), data_only=True)
     except Exception as e:
-        return False, f"Faylni ochishda xato: {type(e).__name__}: {e}", {}, [], {}, {}
+        return False, f"Faylni ochishda xato: {type(e).__name__}: {e}", {}, [], {}, {}, []
 
     inv_set = _get_inventar_set()
     xitoy_map: dict = {}
     ombor_map: dict = {}
     vazn_map: dict = {}
     unknown: list = []
+    diqqat: list = []
 
     for ws in wb.worksheets:
         rows = list(ws.iter_rows(values_only=True))
@@ -637,9 +647,16 @@ def ai_ostatka_fayl_oqi(fayl_bytes: bytes) -> tuple:
 
             # Inventar bilan solishtirish — bo'shliq/format farqlariga chidamli
             nom_final = _fix_oddiy_nom(nom_clean, inv_set)
-            if is_noaniq or nom_final not in inv_set:
+            if nom_final not in inv_set:
                 if nom_final not in unknown:
                     unknown.append(nom_final)
+            elif is_noaniq:
+                # Nomi TOPILDI — faqat DIQQAT/NOANIQ belgisi tufayli
+                # foydalanuvchi tekshirishi kerak (masalan L>K nomuvofiqligi)
+                sabab = izoh_val if izoh_val else "NOANIQ"
+                entry = f"{nom_final} ({sabab})"
+                if entry not in diqqat:
+                    diqqat.append(entry)
 
             if k_val > 0:
                 xitoy_map[nom_final] = xitoy_map.get(nom_final, 0) + k_val
@@ -652,9 +669,9 @@ def ai_ostatka_fayl_oqi(fayl_bytes: bytes) -> tuple:
         return False, (
             "Faylda tovar topilmadi. Ustunlarni tekshiring: 'Tovar nomi' "
             "+ 'Zakaz (K)'/'Tayyor (L)' bo'lishi shart."
-        ), {}, [], {}, {}
+        ), {}, [], {}, {}, []
 
-    return True, None, xitoy_map, unknown, ombor_map, vazn_map
+    return True, None, xitoy_map, unknown, ombor_map, vazn_map, diqqat
 
 
 def xitoy_ostatka_oqi(fayl_bytes: bytes) -> tuple:
