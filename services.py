@@ -748,7 +748,8 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
         if mavjud and mavjud.get("tovarlar"):
             xitoy_ostatka = mavjud["tovarlar"]
 
-    df_calc = calculate(load_data(kanal=kanal))
+    _df, _kont_map = load_data(kanal=kanal)
+    df_calc = calculate(_df, _kont_map)
 
     # 1. Xitoy ostatka K ustuni ayiriladi (Xitoyda buyurtma berilgan + tayyorlanayotgan)
     if xitoy_ostatka and not df_calc.empty:

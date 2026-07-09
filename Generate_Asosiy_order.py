@@ -264,8 +264,28 @@ def load_data(kanal: str = "asosiy"):
     # Keraksiz tovarlarni olib tashlash
     df = df[~df["tovar"].apply(keraksizmi)].copy()
 
+    # 2026-07-09: zanjir-simulyatsiya (kamomat_engine.zanjir_sim) uchun —
+    # har tovarning hali KELMAGAN konteynerlari, ANIQ kelish kuni bilan.
+    # Eski kod faqat "yoldagi" JAMI sonini bilardi, aniq qachon kelishini
+    # bilmasdi — shu sabab konteynerlar orasidagi bo'shliqni (masalan 40 kun
+    # ichida 2-3 kun kelmay qolgan oraliqni) hisobga olmas edi.
+    kont_map: dict[str, list] = {}
+    PB_SHEET_KONT = "Контейнерлар"
+    if PB_SHEET_KONT in pb:
+        kdf = pb[PB_SHEET_KONT].copy()
+        if "Холат" in kdf.columns:
+            kdf = kdf[kdf["Холат"] != "КЕЛДИ ✅"]
+        if {"Товар", "Кун_Қолди", "Миқдор"}.issubset(kdf.columns):
+            kdf["Кун_Қолди"] = pd.to_numeric(kdf["Кун_Қолди"], errors="coerce").fillna(0)
+            kdf["Миқдор"]    = pd.to_numeric(kdf["Миқдор"], errors="coerce").fillna(0)
+            for _, r in kdf.iterrows():
+                if r["Миқдор"] > 0:
+                    kont_map.setdefault(str(r["Товар"]).strip(), []).append(
+                        (float(r["Кун_Қолди"]), float(r["Миқдор"]))
+                    )
+
     print(f"✅ Real ma'lumot ({kanal}): {len(df)} tovar")
-    return df
+    return df, kont_map
 
 def demo_data():
     rows = [
@@ -306,23 +326,36 @@ def demo_data():
 # ============================================================
 # 6. HISOB
 # ============================================================
-def kunlik_istemol(min_zaxira: float) -> float:
+def calculate(df, kont_map: dict | None = None):
     """
-    Kunlik sotuv tezligi = min_zaxira / 30.
-    Power BI dagi 'Кунлик_Истеъмол' ustuni ISHLATILMAYDI — ishonchsiz.
+    2026-07-09: buyurtma miqdori endi zanjir-simulyatsiya bilan hisoblanadi
+    (kamomat_engine.zanjir_sim) — har tovarning YO'LDAGI konteynerlari ANIQ
+    kelish kuni bilan hisobga olinadi, faqat jami son emas. Eski statik
+    formula (min_zaxira/30 * 55 kun) konteynerlar orasidagi bo'shliqlarni
+    (masalan real misolda 23-42 kun oralig'ida yangi yuk kelmasligini)
+    umuman hisobga olmas edi — shu sabab almashtirildi.
+    Kunlik sotuv qoidasi (yagona, hamma joyda bir xil): min_zaxira /
+    common.KUNLIK_SOTUV_BOLISH (30) — kamomat_engine.zanjir_sim ichida.
     """
-    return min_zaxira / 30
-
-
-def calculate(df):
+    from kamomat_engine import zanjir_sim
     df = df.copy()
     for col in ["qoldiq","yoldagi","min_zaxira"]:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    df["kunlik"]   = df["min_zaxira"].apply(kunlik_istemol)
-    df["sotuv55"]  = (df["kunlik"] * DELIVERY_DAYS).round(0)
-    future         = df["qoldiq"] + df["yoldagi"] - df["sotuv55"]
-    df["buyurtma"] = (df["min_zaxira"] - future).clip(lower=0).round(0).astype(int)
+    kont_map = kont_map or {}
+
+    def _buyurtma(row):
+        konts = kont_map.get(str(row["tovar"]).strip())
+        if konts is None:
+            # kont_map berilmagan/tovar topilmagan holat uchun (masalan
+            # demo_data() bilan qo'lda test qilinganda) — "yoldagi" jamini
+            # bitta konteyner sifatida DELIVERY_DAYS kunda keladi deb faraz
+            # qilamiz, shunda ham funksiya ishlayveradi.
+            konts = [(DELIVERY_DAYS, row["yoldagi"])] if row["yoldagi"] > 0 else []
+        sim = zanjir_sim(row["qoldiq"], row["min_zaxira"], konts)
+        return sim["taklif"]
+
+    df["buyurtma"] = df.apply(_buyurtma, axis=1).astype(int)
     df             = df[df["buyurtma"] > 0].copy()
 
     df["kategoriya"] = df["tovar"].apply(get_category)

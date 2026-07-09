@@ -3,7 +3,7 @@ kamomat_engine.py — Kamomat tahlili motori
 ==========================================
 Mantiq:
   - KRITIK + PAST tovarlarni aniqlash
-  - Kunlik sotuv = min_zaxira / KELISH_KUNI  (common.py dan olinadi)
+  - Kunlik sotuv = min_zaxira / KUNLIK_SOTUV_BOLISH (common.py dan olinadi, 2026-07-09)
   - Zanjir simulyatsiyasi: konteynerlar sana bilan hisobga olinadi
   - Tartibli Excel: kategoriya -> o'lcham -> qalinlik -> uzunlik -> marka
   - Rangli Excel: har kategoriya o'z rang oilasida, juft/toq qatorlar
@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # KONSTANTALAR — kelish kunini common.py dan olamiz
 # ============================================================
-from common import KELISH_KUNI
-KUNLAR = KELISH_KUNI  # alias (eski kod o'zgarmasin)
+from common import KELISH_KUNI, KUNLIK_SOTUV_BOLISH
+KUNLAR = KUNLIK_SOTUV_BOLISH  # 2026-07-09: endi 30 (eski kod o'zgarmasin, nomi qoldi)
 
 CAT_ORDER = {
     "ТРУБА": 1, "ПРОФИЛЬ": 2, "ЛИСТ": 3, "ЛИСТ РУЛОН": 4,
@@ -430,7 +430,7 @@ def kamomat_excel_v2(data_file: Path, kanal: str,
         f"Sana: {datetime.now().strftime('%d.%m.%Y %H:%M')}  |  "
         f"Kanal: {kanal}  |  "
         f"Jami: {n} ta  |  "
-        f"Kunlik = min/{KELISH_KUNI}"
+        f"Kunlik = min/{KUNLIK_SOTUV_BOLISH}"
     )
     ws.append([info_text])
     ws.merge_cells(
@@ -476,7 +476,7 @@ def grafik_chiz(tovar: str, qoldiq: float, min_z: float,
     except ImportError:
         return None
 
-    kunlik = min_z / float(KELISH_KUNI) if min_z > 0 else 1.0
+    kunlik = min_z / float(KUNLIK_SOTUV_BOLISH) if min_z > 0 else 1.0
 
     # ── Konteynerlarni kun bo'yicha guruhlash ──────────────────
     kont_sorted = sorted(konteynerlar, key=lambda x: x[0])

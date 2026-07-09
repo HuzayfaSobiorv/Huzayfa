@@ -24,6 +24,13 @@ warnings.filterwarnings('ignore')
 
 KELISH_KUNI     = 55    # ◄ ASOSIY: konteyner yetib kelish vaqti (kun) — FAQAT SHU YERDA O'ZGARTIR
 YOLDA_KUN       = KELISH_KUNI   # alias (eski kod uchun)
+
+# 2026-07-09: Huzayfa bilan kelishilgan yagona qoida — "kunlik sotuv"ni
+# min_zaxiradan qayta chiqarishda HAMMA YERDA shu songa bo'linadi (buyurtma,
+# kamomat holat, qidiruv/grafik — bittasi ham boshqacha son ishlatmasin).
+# DIQQAT: bu KELISH_KUNI (55, haqiqiy yetib kelish vaqti) bilan ADASHTIRILMASIN
+# — u alohida, jismoniy konstanta, o'zgarishsiz qoladi.
+KUNLIK_SOTUV_BOLISH = 30
 FAST_KUN        = 20    # tezkor (fayl nomi "F_" bilan boshlanadigan) konteyner yetib kelish vaqti (kun)
 # "12 metrlik" konteyner — ISO'siz, ko'pincha mashina-raqami (masalan
 # "ME5312") bilan yozilgan, tarkibidagi tovarlarning KO'PCHILIGI 6 metrlik
