@@ -41,7 +41,7 @@ from services import (
     konteyner_tarix_olish, konteyner_tarix_qoshish, konteyner_tarix_kalit,
     kirish_ruxsati, whitelist_qosh, whitelist_ochir, whitelist_yuklash,
 )
-from parsers import xitoy_ostatka_oqi
+from parsers import xitoy_ostatka_oqi, ai_ostatka_fayl_mi, ai_ostatka_fayl_oqi
 from keyboards import grafik_tovar_ikb
 from ui import (
     build_screen, go_screen, get_action,
@@ -1616,14 +1616,42 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # ── Xitoy / Yuklatish fayllari uchun parse ───────────────────────────────
+    # AI (Claude yordamchi, "Chat 1") oldindan tarjima qilgan ostatka fayli
+    # bo'lsa — u xom Xitoycha ierogliflarsiz, lotin sarlavhali (Tovar nomi |
+    # Zakaz (K) | Tayyor (L)) formatda keladi va BITTA faylda Труба/Профиль
+    # + Лист ikkalasi ham bo'lishi mumkin (ikki varaq). Native murakkab
+    # Xitoy-parser kodi (pastda, xitoy_ostatka_oqi) BUTUNLAY tegilmagan
+    # qoladi — bu faqat QO'SHIMCHA, muqobil kirish yo'li.
+    is_ai_format = ai_ostatka_fayl_mi(raw)
     try:
-        ok, xato, xitoy_map, kont_rows, ombor_map, vazn_map = xitoy_ostatka_oqi(raw)
+        if is_ai_format:
+            ok, xato, xitoy_map, unknown_list, ombor_map, vazn_map = ai_ostatka_fayl_oqi(raw)
+        else:
+            ok, xato, xitoy_map, unknown_list, ombor_map, vazn_map = xitoy_ostatka_oqi(raw)
     except Exception as e:
         await msg.reply_text(f"❌ Fayl o'qishda xato: {str(e)[:300]}")
         return
     if not ok:
         await msg.reply_text(f"❌ {xato}")
         return
+
+    # AI formatidagi fayl Труба/Профиль VA Лист ma'lumotini BIRGA olib
+    # keladi — shuning uchun "xitoy_tp" holatida ham ikkinchi faylni
+    # KUTMASDAN, to'g'ridan-to'g'ri yakuniy (xitoy_ostatka_fayl bilan bir
+    # xil) qayta ishlashga o'tamiz.
+    if is_ai_format and kut[0] == "xitoy_tp":
+        kut = ("xitoy_ostatka_fayl", kut[1])
+
+    async def _unknown_xabar_yubor():
+        if is_ai_format and unknown_list:
+            qator = "\n".join(f"• {n}" for n in unknown_list[:25])
+            qoldi = f"\n… va yana {len(unknown_list) - 25} ta" if len(unknown_list) > 25 else ""
+            await msg.reply_text(
+                f"ℹ️ *Diqqat:* {len(unknown_list)} ta tovar nomi inventarda aniq "
+                f"mos topilmadi (bular haqiqatan ham YANGI tovar bo'lishi mumkin "
+                f"— bu normal, lekin nomlarni bir tekshirib chiqing):\n{qator}{qoldi}",
+                parse_mode="Markdown",
+            )
 
     if kut[0] == "xitoy_tp":
         context.user_data["xitoy_tp_data"] = {"tovarlar": xitoy_map or {}, "ombor": ombor_map or {}, "vazn": vazn_map or {}}
@@ -1652,6 +1680,7 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             t(lang, "xitoy_qabul").format(n=n),
             parse_mode="Markdown",
         )
+        await _unknown_xabar_yubor()
         await draft_buyurtma_yubor(msg, context, kanal, lang, xitoy_ostatka=final_map)
 
     elif kut[0] == "xitoy_fayl":
@@ -1682,6 +1711,7 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=xitoy_yana_ikb(lang, kanal, jami),
         )
+        await _unknown_xabar_yubor()
 
 
 # ── Konteyner holati ─────────────────────────────────────────────────

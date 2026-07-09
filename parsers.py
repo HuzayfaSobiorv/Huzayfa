@@ -511,6 +511,152 @@ def _fix_oddiy_nom(nom: str, inventar_set: set) -> str:
     return nom
 
 
+_AI_NOM_SIGNALS  = ('tovar', 'mahsulot')
+_AI_ZAKAZ_SIGNALS = ('zakaz', '(k)')
+_AI_TAYYOR_SIGNALS = ('tayyor', '(l)')
+_AI_JAMI_SIGNALS = ('jami', 'итого', 'всего', 'total', 'сумма')
+
+
+def ai_ostatka_fayl_mi(fayl_bytes: bytes) -> bool:
+    """
+    Fayl Claude (AI yordamchi) tomonidan OLDINDAN TARJIMA qilingan ostatka
+    formatidami? Belgisi: har qanday varaqda "Tovar nomi" + ("Zakaz"/"(K)"
+    yoki "Tayyor"/"(L)") lotin sarlavhalari bor — xom Xitoycha ierogliflar
+    (品号/规格/库存/订单 va h.k.) YO'Q, chunki AI ularni allaqachon inventar
+    formatiga o'tkazib bergan.
+    """
+    import openpyxl
+    try:
+        wb = openpyxl.load_workbook(BytesIO(fayl_bytes), data_only=True)
+        for ws in wb.worksheets:
+            for row in ws.iter_rows(min_row=1, max_row=min(5, ws.max_row), values_only=True):
+                if not row:
+                    continue
+                cand = [str(c).strip().lower() if c else "" for c in row]
+                has_nom = any(any(sig in h for sig in _AI_NOM_SIGNALS) for h in cand)
+                has_kl  = any(any(sig in h for sig in _AI_ZAKAZ_SIGNALS + _AI_TAYYOR_SIGNALS) for h in cand)
+                if has_nom and has_kl:
+                    return True
+        return False
+    except Exception:
+        return False
+
+
+def ai_ostatka_fayl_oqi(fayl_bytes: bytes) -> tuple:
+    """
+    Claude (AI yordamchi Chat 1) tomonidan tarjima qilingan ostatka faylini
+    o'qiydi — bitta yoki bir nechta varaq (mas. "Труба-Профиль" + "Лист"),
+    ustunlar: Tovar nomi | Zakaz (K) | Tayyor (L) | 1 dona vazni (kg) | Izoh.
+
+    Qoidalar (Huzayfa 2026-07-09 tasdiqlagan):
+      - Bir xil nom bir necha qatorda uchrasa (turli partiya/narx/sana) —
+        BU XATO EMAS, K/L QO'SHIB (summalab) olinadi.
+      - "Jami"/"Итого" kabi jamlovchi qatorlar o'tkazib yuboriladi.
+      - NOANIQ (nom ichida "NOANIQ:" yoki Izoh ustunida "NOANIQ"/"DIQQAT")
+        belgilangan qatorlar HAM qabul qilinadi (bloklanmaydi), lekin
+        unknown_list ga qo'shiladi — foydalanuvchiga alohida ogohlantirish
+        sifatida ko'rsatiladi.
+      - Har bir nom HAQIQIY inventar bilan _fix_oddiy_nom() orqali
+        solishtiriladi (AI tarjimasiga ko'r-ko'rona ishonilmaydi) — bu
+        bo'shliq/format farqlarini (masalan "Лист- 0,8" vs "Лист-0,8")
+        avtomatik tuzatadi. Inventarda topilmasa — YANGI TOVAR bo'lishi
+        mumkin (bloklanmaydi), faqat unknown_list ga qo'shiladi.
+
+    Qaytaradi: (ok, xato, xitoy_map, unknown_list, ombor_map, vazn_map)
+      — xitoy_ostatka_oqi() bilan AYNAN BIR XIL shakl (drop-in almashtirish).
+    """
+    import openpyxl
+    try:
+        wb = openpyxl.load_workbook(BytesIO(fayl_bytes), data_only=True)
+    except Exception as e:
+        return False, f"Faylni ochishda xato: {type(e).__name__}: {e}", {}, [], {}, {}
+
+    inv_set = _get_inventar_set()
+    xitoy_map: dict = {}
+    ombor_map: dict = {}
+    vazn_map: dict = {}
+    unknown: list = []
+
+    for ws in wb.worksheets:
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            continue
+
+        hdr_row = nom_i = k_i = l_i = vazn_i = izoh_i = None
+        for ri in range(min(5, len(rows))):
+            row = rows[ri]
+            if not row:
+                continue
+            cand = [str(c).strip().lower() if c else "" for c in row]
+            n_i = next((i for i, h in enumerate(cand) if any(sig in h for sig in _AI_NOM_SIGNALS)), None)
+            kk_i = next((i for i, h in enumerate(cand) if any(sig in h for sig in _AI_ZAKAZ_SIGNALS)), None)
+            ll_i = next((i for i, h in enumerate(cand) if any(sig in h for sig in _AI_TAYYOR_SIGNALS)), None)
+            if n_i is not None and (kk_i is not None or ll_i is not None):
+                hdr_row, nom_i, k_i, l_i = ri, n_i, kk_i, ll_i
+                vazn_i = next((i for i, h in enumerate(cand) if 'vazn' in h or 'kg' in h), None)
+                izoh_i = next((i for i, h in enumerate(cand) if 'izoh' in h or 'comment' in h), None)
+                break
+        if hdr_row is None:
+            continue  # bu varaq AI-ostatka formatiga mos emas — o'tkazib yuboriladi
+
+        for row in rows[hdr_row + 1:]:
+            if not row or nom_i >= len(row):
+                continue
+            nom_raw = row[nom_i]
+            if not nom_raw or not str(nom_raw).strip():
+                continue
+            nom_s = str(nom_raw).strip()
+            low = nom_s.lower()
+            if any(k in low for k in _AI_JAMI_SIGNALS):
+                continue  # "Jami"/"Итого" qatori
+
+            izoh_val = ""
+            if izoh_i is not None and izoh_i < len(row) and row[izoh_i]:
+                izoh_val = str(row[izoh_i]).strip()
+            is_noaniq = 'NOANIQ' in nom_s.upper() or 'NOANIQ' in izoh_val.upper() or 'DIQQAT' in izoh_val.upper()
+
+            # "NOANIQ: {xom matn}" yoki "[NOANIQ ...]" qismini nomdan tozalash
+            nom_clean = re.sub(r'^NOANIQ:\s*', '', nom_s, flags=re.IGNORECASE).strip()
+            nom_clean = re.sub(r'\s*[\[\(]NOANIQ.*?[\]\)]\s*', '', nom_clean, flags=re.IGNORECASE).strip()
+            if not nom_clean:
+                nom_clean = nom_s
+
+            def _to_float(v):
+                if v is None or v == "":
+                    return 0.0
+                try:
+                    return float(str(v).replace(',', '.').replace(' ', ''))
+                except (ValueError, TypeError):
+                    return 0.0
+
+            k_val = _to_float(row[k_i]) if k_i is not None and k_i < len(row) else 0.0
+            l_val = _to_float(row[l_i]) if l_i is not None and l_i < len(row) else 0.0
+            if k_val <= 0 and l_val <= 0:
+                continue
+            v_val = _to_float(row[vazn_i]) if vazn_i is not None and vazn_i < len(row) else 0.0
+
+            # Inventar bilan solishtirish — bo'shliq/format farqlariga chidamli
+            nom_final = _fix_oddiy_nom(nom_clean, inv_set)
+            if is_noaniq or nom_final not in inv_set:
+                if nom_final not in unknown:
+                    unknown.append(nom_final)
+
+            if k_val > 0:
+                xitoy_map[nom_final] = xitoy_map.get(nom_final, 0) + k_val
+            if l_val > 0:
+                ombor_map[nom_final] = ombor_map.get(nom_final, 0) + l_val
+            if v_val and nom_final not in vazn_map:
+                vazn_map[nom_final] = v_val
+
+    if not xitoy_map and not ombor_map:
+        return False, (
+            "Faylda tovar topilmadi. Ustunlarni tekshiring: 'Tovar nomi' "
+            "+ 'Zakaz (K)'/'Tayyor (L)' bo'lishi shart."
+        ), {}, [], {}, {}
+
+    return True, None, xitoy_map, unknown, ombor_map, vazn_map
+
+
 def xitoy_ostatka_oqi(fayl_bytes: bytes) -> tuple:
     """
     Xitoy ostatka Excel faylini o'qiydi.
