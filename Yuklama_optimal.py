@@ -60,20 +60,39 @@ def _yangi_yuk(turi: str) -> dict:
 
 
 def abc_map_yuklash() -> dict:
+    """
+    2026-07-10: ABC manbasi endi YAGONA -- Minimal_zaxiralar/Min_Zaxira.xlsx
+    ning "ABC" ustuni (Huzayfa bilan kelishilgan: u yerni qo'lda tahrirlaydi,
+    boshliq bilan ko'rib chiqadi). Eski alohida abc_lookup.xlsx endi
+    ishlatilmaydi -- ikki fayl orasida farq/eskirish xavfi bo'lmasin.
+    """
     try:
         import openpyxl
-        f = _THIS_DIR / "abc_lookup.xlsx"
+        f = _THIS_DIR / "Minimal_zaxiralar" / "Min_Zaxira.xlsx"
         if not f.exists():
-            logger.warning("abc_lookup.xlsx topilmadi"); return {}
+            logger.warning("Min_Zaxira.xlsx topilmadi: %s", f); return {}
         wb = openpyxl.load_workbook(f, data_only=True, read_only=True)
+        ws = wb["Min_Zaxira"] if "Min_Zaxira" in wb.sheetnames else wb.active
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            return {}
+        header = [str(h).strip() if h else "" for h in rows[0]]
+        tovar_i = next((i for i, h in enumerate(header) if "Товар" in h or "tovar" in h.lower()), None)
+        abc_i   = next((i for i, h in enumerate(header) if h.strip().upper() == "ABC"), None)
+        if tovar_i is None or abc_i is None:
+            logger.warning("Min_Zaxira.xlsx: Товар/ABC ustunlari topilmadi (%s)", header)
+            return {}
         res = {}
-        for sheet in wb.sheetnames:
-            ws = wb[sheet]
-            for row in ws.iter_rows(min_row=2, values_only=True):
-                if row and len(row) >= 3 and isinstance(row[1], str) and row[2] in ("A","B","C"):
-                    res[row[1].strip()] = row[2]
+        for row in rows[1:]:
+            if not row or tovar_i >= len(row) or abc_i >= len(row):
+                continue
+            tovar = row[tovar_i]
+            abc   = row[abc_i]
+            if not tovar or not isinstance(tovar, str) or abc not in ("A", "B", "C"):
+                continue
+            res[tovar.strip()] = abc
         wb.close()
-        logger.info("abc_map: %d ta tovar", len(res))
+        logger.info("abc_map (Min_Zaxira dan): %d ta tovar", len(res))
         return res
     except Exception as e:
         logger.error("abc_map_yuklash: %s", e); return {}
@@ -85,6 +104,59 @@ def tovar_vazni(tovar_nomi: str) -> float | None:
         return tovar_vazni_pb(tovar_nomi)
     except Exception:
         return None
+
+
+def _truba_diametr(name: str) -> float | None:
+    m = re.search(r'\u0424-([\d,\.]+)', str(name))
+    if not m:
+        return None
+    try:
+        return float(m.group(1).replace(',', '.'))
+    except ValueError:
+        return None
+
+
+def _profil_min_dim(name: str) -> float | None:
+    m = re.search(r'(\d+)[\u0445x](\d+)', str(name))
+    if not m:
+        return None
+    return min(float(m.group(1)), float(m.group(2)))
+
+
+def _list_qalinlik(name: str) -> float | None:
+    m = re.match(r'^\u041b\u0438\u0441\u0442-?\s*([\d,\.]+)', str(name).strip())
+    if not m:
+        return None
+    try:
+        return float(m.group(1).replace(',', '.'))
+    except ValueError:
+        return None
+
+
+def _kichikmi(tovar: str, cat: str) -> bool:
+    """
+    2026-07-10 (Huzayfa bilan kelishilgan qoida): mayda-chuda tovarlar
+    bo'lib-bo'lib, kam miqdorda (hatto 1 dona) yuklanib "uyalarli" ko'rinish
+    bermasin -- katta/qalin tovarlar uchun kam miqdor (20-50 dona) esa
+    normal (ular og'ir/qimmat, kam sonda ham katta hajm/qiymat beradi).
+      Труба:   diametr <= 51mm       -> kichik
+      Профиль: eng kichik tomoni <50mm -> kichik
+      Лист:    qalinlik <5.0mm        -> kichik
+    """
+    if cat == "\u0422\u0440\u0443\u0431\u0430":
+        d = _truba_diametr(tovar)
+        return d is not None and d <= 51
+    if cat == "\u041f\u0440\u043e\u0444\u0438\u043b\u044c":
+        d = _profil_min_dim(tovar)
+        return d is not None and d < 50
+    if cat == "\u041b\u0438\u0441\u0442":
+        q = _list_qalinlik(tovar)
+        return q is not None and q < 5.0
+    return False
+
+
+MIN_KICHIK_DONA = 2  # kichik tovar shundan kam bo'lsa (masalan 1 dona) -- yuklanmaydi
+MIN_KICHIK_PARCHA = 20  # qisman joylashtirishda bundan kichik "bo'lak" qabul qilinmaydi
 
 
 def optimallashtir(
@@ -126,10 +198,21 @@ def optimallashtir(
         turi = yuk_turi(tovar, cat)
         if cat in ("\u0411\u043e\u0448\u049b\u0430",):
             continue
+        kichik = _kichikmi(tovar, cat)
+        if kichik and bor_dona < MIN_KICHIK_DONA:
+            # 2026-07-10: mayda tovar juda oz (masalan 1 dona) -- yuklanmaydi,
+            # "qolgan" ro'yxatiga tushadi (keyingi safar to'planganda yuklanadi)
+            qolgan.append({"tovar": tovar, "dona": bor_dona,
+                           "vazn_kg": round(bor_dona * vazn_dona, 2)})
+            continue
         key     = "list_kg"          if cat == "\u041b\u0438\u0441\u0442" else "truba_profil_kg"
         lim_key = "list"             if cat == "\u041b\u0438\u0441\u0442" else "truba_profil"
         abc_s   = abc_map.get(str(tovar).strip(), "C")
-        cap_pct = ABC_CAP_PCT[abc_s]
+        # 2026-07-10: mayda-chuda tovar (kichik=True) bo'lib-bo'lib ko'p
+        # konteynerga sochilib ketmasin -- ABC diversifikatsiya cheklovi
+        # (cap_pct) bunga qo'llanilmaydi, birinchi joy topilgan konteynerga
+        # HAMMASI bir yo'lda joylashadi (agar sig'sa).
+        cap_pct = 1.0 if kichik else ABC_CAP_PCT[abc_s]
         # Xitoyda nechta bo'lsa, hammasi yuklanadi (kerak formulasi faqat tartib uchun)
         qoldi   = bor_dona
 
@@ -147,6 +230,18 @@ def optimallashtir(
                 sig_kg      = min(qolgan_cap, qolgan_slot, qolgan_jami)
                 sig_dona    = int(sig_kg // vazn_dona)
                 if sig_dona <= 0:
+                    continue
+                if kichik and sig_dona < qoldi and sig_dona < MIN_KICHIK_PARCHA:
+                    # 2026-07-10: kichik tovar uchun -- bu konteynerda
+                    # (boshqa tovarlar tomonidan joy allaqachon band
+                    # qilingani sababli) faqat MAYDA bo'lak (masalan 1-2
+                    # dona) sig'sa -- bu yerga tashlab qo'yilmaydi, boshqa
+                    # (yoki yangi) konteyner qidiriladi. Agar sig'adigan
+                    # miqdor SEZILARLI bo'lsa (>= MIN_KICHIK_PARCHA), bu
+                    # konteynerga "to'liq bag'ishlangan ulush" sifatida
+                    # qabul qilinadi -- katta hajm shunday ko'p konteynerga
+                    # yirik bo'laklarda taqsimlanadi, mayda qirindilar bilan
+                    # emas.
                     continue
                 dona = min(qoldi, sig_dona)
                 og   = round(dona * vazn_dona, 2)
