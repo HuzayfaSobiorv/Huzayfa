@@ -208,11 +208,14 @@ def optimallashtir(
         key     = "list_kg"          if cat == "\u041b\u0438\u0441\u0442" else "truba_profil_kg"
         lim_key = "list"             if cat == "\u041b\u0438\u0441\u0442" else "truba_profil"
         abc_s   = abc_map.get(str(tovar).strip(), "C")
-        # 2026-07-10: mayda-chuda tovar (kichik=True) bo'lib-bo'lib ko'p
-        # konteynerga sochilib ketmasin -- ABC diversifikatsiya cheklovi
-        # (cap_pct) bunga qo'llanilmaydi, birinchi joy topilgan konteynerga
-        # HAMMASI bir yo'lda joylashadi (agar sig'sa).
-        cap_pct = 1.0 if kichik else ABC_CAP_PCT[abc_s]
+        # 2026-07-10 (tuzatildi): ABC diversifikatsiya cheklovi (cap_pct)
+        # BARCHA tovar uchun o'chirildi -- avval faqat "kichik" tovarlarga
+        # qo'llanilgandi, lekin "katta" tovarlarda ham xuddi shu muammo
+        # chiqdi (masalan jami 30 dona "Лист-5,95" 1+2+27 bo'lib uch joyga
+        # bo'linib ketgan edi). Endi HAMMA tovar uchun cheklovsiz (1.0) --
+        # mayda bo'lak yaratmaslik MIN_KICHIK_PARCHA tekshiruvi orqali
+        # ta'minlanadi (pastda), diversifikatsiya emas.
+        cap_pct = 1.0
         # Xitoyda nechta bo'lsa, hammasi yuklanadi (kerak formulasi faqat tartib uchun)
         qoldi   = bor_dona
 
@@ -231,17 +234,16 @@ def optimallashtir(
                 sig_dona    = int(sig_kg // vazn_dona)
                 if sig_dona <= 0:
                     continue
-                if kichik and sig_dona < qoldi and sig_dona < MIN_KICHIK_PARCHA:
-                    # 2026-07-10: kichik tovar uchun -- bu konteynerda
-                    # (boshqa tovarlar tomonidan joy allaqachon band
-                    # qilingani sababli) faqat MAYDA bo'lak (masalan 1-2
-                    # dona) sig'sa -- bu yerga tashlab qo'yilmaydi, boshqa
-                    # (yoki yangi) konteyner qidiriladi. Agar sig'adigan
-                    # miqdor SEZILARLI bo'lsa (>= MIN_KICHIK_PARCHA), bu
+                if sig_dona < qoldi and sig_dona < MIN_KICHIK_PARCHA:
+                    # 2026-07-10 (tuzatildi, endi BARCHA tovarga tegishli):
+                    # bu konteynerda (boshqa tovarlar joy egallagani sababli)
+                    # faqat MAYDA bo'lak (masalan 1-2-3 dona) sig'sa -- bu
+                    # yerga tashlab qo'yilmaydi, boshqa (yoki yangi)
+                    # konteyner qidiriladi. Agar sig'adigan miqdor
+                    # SEZILARLI bo'lsa (>= MIN_KICHIK_PARCHA), shu
                     # konteynerga "to'liq bag'ishlangan ulush" sifatida
-                    # qabul qilinadi -- katta hajm shunday ko'p konteynerga
-                    # yirik bo'laklarda taqsimlanadi, mayda qirindilar bilan
-                    # emas.
+                    # qabul qilinadi -- katta hajm shunday yirik
+                    # bo'laklarda taqsimlanadi, mayda qirindilar bilan emas.
                     continue
                 dona = min(qoldi, sig_dona)
                 og   = round(dona * vazn_dona, 2)
