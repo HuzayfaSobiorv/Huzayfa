@@ -234,9 +234,11 @@ def sana_belgi(yuklar: list[dict], start_date: datetime) -> list[dict]:
 
 
 # ── Excel yozish ──────────────────────────────────────────────────────────────
-COLS   = ["Товар номи", "Узунлик", "Миқдор", "Вазн (кг)", "Холат"]
-WIDTHS = [50, 10, 10, 12, 14]
+# 2026-07-11: F -- bo'sh ajratuvchi ustun, G/H -- Қолдиқ/Йўлда (Power BI dan)
+COLS   = ["Товар номи", "Узунлик", "Миқдор", "Вазн (кг)", "Холат", "", "Қолдиқ", "Йўлда"]
+WIDTHS = [50, 10, 10, 12, 14, 3, 11, 11]
 NC     = len(COLS)
+SEP_COL = 6   # F ustun -- faqat vizual ajratuvchi
 
 
 def _set_widths(ws):
@@ -289,9 +291,12 @@ def _yuk_header(ws, row: int, num: int, yuk: dict) -> int:
     # ── 3-qator: ustun sarlavhalari ─────────────────────────────────────────
     for i, name in enumerate(COLS, 1):
         c3 = ws.cell(row=row, column=i, value=name)
-        c3.font      = _font(bold=True, size=11, color=C_WHITE)
-        c3.fill      = _fill(C_COL_HDR)
-        c3.alignment = _align(h="center" if i > 1 else "left", indent=1 if i == 1 else 0)
+        if i == SEP_COL:
+            c3.fill = _fill("BDC3C7")   # ajratuvchi ustun -- boshqacha rang
+        else:
+            c3.font      = _font(bold=True, size=11, color=C_WHITE)
+            c3.fill      = _fill(C_COL_HDR)
+            c3.alignment = _align(h="center" if i > 1 else "left", indent=1 if i == 1 else 0)
         c3.border    = _border()
         ws.row_dimensions[row].height = 24
     row += 1
@@ -317,8 +322,11 @@ def _kat(name: str) -> str:
     return "_other"
 
 
-def _product_row(ws, row: int, item: dict, holat: str, bg: str = "") -> int:
-    """Bitta tovar satri. bg berilmasa kategoriya rangidan olinadi."""
+def _product_row(ws, row: int, item: dict, holat: str, bg: str = "",
+                 qoldiq_yolda: tuple | None = None) -> int:
+    """Bitta tovar satri. bg berilmasa kategoriya rangidan olinadi.
+    qoldiq_yolda: (qoldiq, yolda) -- Power BI Инвентар'dan (G/H ustunlari uchun).
+    """
     name  = xitoy_nomi(item["tovar"])
     uzunl = get_uzunlik(name)
     base  = strip_uzunlik(name)
@@ -361,6 +369,27 @@ def _product_row(ws, row: int, item: dict, holat: str, bg: str = "") -> int:
     ce.fill      = _fill(bg)
     ce.border    = brd
     ce.alignment = _align(h="center")
+
+    # F — bo'sh ajratuvchi (kulrang ingichka chiziq ko'rinishi)
+    cf = ws.cell(row=row, column=SEP_COL, value="")
+    cf.fill   = _fill("BDC3C7")
+    cf.border = Border()
+
+    qoldiq, yolda = qoldiq_yolda if qoldiq_yolda else (None, None)
+
+    # G — Қолдиқ
+    cg = ws.cell(row=row, column=7, value=int(qoldiq) if qoldiq is not None else "")
+    cg.font      = _font(bold=False, size=10, color="444444")
+    cg.fill      = _fill(bg)
+    cg.border    = brd
+    cg.alignment = _align(h="center")
+
+    # H — Йўлда
+    ch = ws.cell(row=row, column=8, value=int(yolda) if yolda is not None else "")
+    ch.font      = _font(bold=False, size=10, color="444444")
+    ch.fill      = _fill(bg)
+    ch.border    = brd
+    ch.alignment = _align(h="center")
 
     ws.row_dimensions[row].height = 24
     return row + 1
@@ -492,11 +521,14 @@ def _xulosa_varaq(wb: Workbook, yuklar: list[dict], qolgan: list[dict],
 
 
 def excel_yaz(yuklar: list[dict], qolgan: list[dict],
-              holat_map: dict, kanal: str = "asosiy") -> Path:
+              holat_map: dict, kanal: str = "asosiy",
+              qoldiq_yolda_map: dict | None = None) -> Path:
     """
     Yuklatish rejasi Excel faylini yozadi.
     holat_map: {tovar_nomi: holat_str}  (Power BI dan)
+    qoldiq_yolda_map: {tovar_nomi: (qoldiq, yolda)}  (Power BI dan, G/H ustunlari)
     """
+    qoldiq_yolda_map = qoldiq_yolda_map or {}
     wb = Workbook()
     ws = wb.active
     ws.title = "Yuklatish Rejasi"
@@ -537,7 +569,8 @@ def excel_yaz(yuklar: list[dict], qolgan: list[dict],
             holat = holat_map.get(item["tovar"], "🟢 НОРМА")
             bg    = ROW_CLR_DARK if row_counter % 2 == 0 else ROW_CLR_LIGHT
             row_counter += 1
-            row = _product_row(ws, row, item, holat, bg=bg)
+            qy    = qoldiq_yolda_map.get(item["tovar"])
+            row   = _product_row(ws, row, item, holat, bg=bg, qoldiq_yolda=qy)
 
         jami_row_num = row
         row = _jami_row(ws, row, yuk, len(yuk["items"]))
@@ -592,6 +625,18 @@ def main_with_data(kanal: str, ombor_map: dict,
     holat_map = dict(zip(kerak_df["Товар"], kerak_df["Холат"])) if not kerak_df.empty else {}
     kerak_set = set(kerak_df["Товар"]) if not kerak_df.empty else set()
 
+    # 2026-07-11: G/H ustunlari (Қолдиқ/Йўлда) uchun -- pb_df dan (kerak_hisob
+    # bu ustunlarni tashlab yuboradi, shu sabab alohida map qurilyapti).
+    # Nom normalize qilinadi -- kerak_df/mavjud_df bilan bir xil kalit bo'lsin.
+    qoldiq_yolda_map = {}
+    if not pb_df.empty:
+        for _, _r in pb_df.iterrows():
+            _key = _norm(_r.get("tovar"))
+            qoldiq_yolda_map[_key] = (
+                float(_r.get("qoldiq", 0) or 0),
+                float(_r.get("yolda", 0) or 0),
+            )
+
     # Xitoy ombor → mavjud_df (nomlar allaqachon normalize qilingan)
     mavjud_df = pd.DataFrame(list(ombor_map.items()), columns=["Товар", "Миқдор"])
     mavjud_df["Миқдор"] = pd.to_numeric(mavjud_df["Миқдор"], errors="coerce").fillna(0)
@@ -633,7 +678,7 @@ def main_with_data(kanal: str, ombor_map: dict,
     yuklar = sana_belgi(yuklar, start_date)
 
     print(f"Excel yozilmoqda ({len(yuklar)} konteyner)...")
-    out = excel_yaz(yuklar, qolgan, holat_map, kanal)
+    out = excel_yaz(yuklar, qolgan, holat_map, kanal, qoldiq_yolda_map=qoldiq_yolda_map)
 
     n_konteyner    = len(yuklar)
     yuklangan_kg   = sum(y["jami_kg"] for y in yuklar)
