@@ -506,11 +506,26 @@ def _fix_oddiy_nom(nom: str, inventar_set: set) -> str:
         pp    = after.find('(')
         prefix = test_nom[:m3.end() + pp].rstrip() if pp >= 0 else test_nom[:m3.end()].rstrip()
         if marka_sfx:
-            return next((x for x in inventar_set
+            found = next((x for x in inventar_set
                          if x.startswith(prefix + ' (') and x.endswith(marka_sfx)), None)
         else:
-            return next((x for x in inventar_set
+            found = next((x for x in inventar_set
                          if x.startswith(prefix + ' (')), None)
+        if found:
+            return found
+        # 2026-07-11: AI-tarjima "Бесшовный" so'zini bilmasligi mumkin (bu
+        # so'z Xitoy xom spec ichida alohida belgi bilan kelmaydi -- shu
+        # sabab parsers.py::BESHOVNY_KOMBO orqali ANIQLANADI, AI tarjimon
+        # buni bilmay oddiy nom yozadi). Prefix + "Бесшовный (" bilan ham
+        # sinab ko'ramiz -- masalan "Ф-32 ст 3,0 (304 марка)" (AI'dan) endi
+        # inventardagi "Ф-32 ст 3,0 Бесшовный (6 м) (304 марка)" bilan mos
+        # keladi.
+        if marka_sfx:
+            return next((x for x in inventar_set
+                         if x.startswith(prefix + ' Бесшовный (') and x.endswith(marka_sfx)), None)
+        else:
+            return next((x for x in inventar_set
+                         if x.startswith(prefix + ' Бесшовный (')), None)
 
     for c in cands:
         candidate_nom = nom if not m_st2 else (
