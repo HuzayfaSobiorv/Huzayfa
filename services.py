@@ -422,13 +422,22 @@ def grafik_qidirish(query: str, kat: str, kanal: str) -> pd.DataFrame:
     def _q(s):
         return re.escape(s)  # allaqachon vergul formatida
 
+    # 2026-07-11 (tuzatildi): raqamli qidiruvlar oldin ANCHOR'siz substring
+    # edi -- "0,6" qidirilsa "0,65"/"0,61" ham, "Ф-19" qidirilsa "Ф-190" ham
+    # (bo'lsa) aralashib chiqardi, chunki "0,6" harfma-harf "0,65" ichida
+    # ham bor. Endi raqamdan keyin YANA raqam kelmasligi tekshiriladi
+    # (?!\d) -- shunda "0,6" faqat "0,6" bilan tugagan joyda mos keladi,
+    # "0,65" ga mos kelmaydi.
+    def _qn(s):
+        return re.escape(s.strip()) + r'(?!\d)'
+
     if kat == "truba":
         if len(parts) >= 1:
-            mask &= names.str.contains(f'Ф-{parts[0].strip()}', na=False, case=False)
+            mask &= names.str.contains(f'Ф-{_qn(parts[0])}', na=False, case=False)
         if len(parts) >= 2:
-            mask &= names.str.contains(f'ст {_q(parts[1])}', na=False, case=False)
+            mask &= names.str.contains(f'ст {_qn(parts[1])}', na=False, case=False)
         if len(parts) >= 3:
-            mask &= names.str.contains(_q(parts[2]), na=False, case=False)
+            mask &= names.str.contains(_qn(parts[2]), na=False, case=False)
         if len(parts) >= 4:
             mask &= names.str.contains(parts[3].strip(), na=False, case=False)
 
@@ -451,17 +460,17 @@ def grafik_qidirish(query: str, kat: str, kanal: str) -> pd.DataFrame:
         else:
             olcham = ""
         if olcham:
-            mask &= names.str.contains(re.escape(olcham), na=False, case=False)
+            mask &= names.str.contains(_qn(olcham), na=False, case=False)
         if len(parts) > idx:
-            mask &= names.str.contains(f'ст {_q(parts[idx])}', na=False, case=False)
+            mask &= names.str.contains(f'ст {_qn(parts[idx])}', na=False, case=False)
         if len(parts) > idx + 1:
-            mask &= names.str.contains(_q(parts[idx + 1]), na=False, case=False)
+            mask &= names.str.contains(_qn(parts[idx + 1]), na=False, case=False)
         if len(parts) > idx + 2:
             mask &= names.str.contains(parts[idx + 2].strip(), na=False, case=False)
 
     elif kat == "list":
         if len(parts) >= 1:
-            mask &= names.str.contains(f'Лист.*{_q(parts[0])}', na=False, case=False)
+            mask &= names.str.contains(f'Лист.*{_qn(parts[0])}', na=False, case=False)
         if len(parts) >= 2:
             mask &= names.str.contains(parts[1].strip(), na=False, case=False)
         if len(parts) >= 3:
