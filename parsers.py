@@ -100,10 +100,17 @@ def _kanonik_nom(s: str) -> str:
     chiziqchadan keyingi bo'shliqni va yopuvchi qavs oldidan kelgan nuqtani
     (masalan "(Голд.)" vs "(Голд)", "(12 мм.)" vs "(12 мм)" — inventarning
     o'zida ba'zan nuqta bilan, ba'zan nuqtasiz yozilgan) olib tashlaydi.
-    FAQAT solishtirishda ishlatiladi, asl inventar matnini o'zgartirmaydi."""
+    2026-07-11 (Huzayfa: "10.0 1500 3000 304 list bor bizda ammo dastur
+    tanimayapti -- . va , ni ahamiyatsiz qilib qo'y"): inventarning o'zida
+    ba'zi qalin Лист qatorlari NUQTA bilan yozilgan (masalan "Лист-10.0",
+    "Лист-8.0"), boshqalari VERGUL bilan ("Лист-8,0") — shu sabab raqamlar
+    orasidagi nuqta ham vergulga aylantiriladi, ikkisi bir xil deb
+    solishtiriladi. FAQAT solishtirishda ishlatiladi, asl inventar matnini
+    o'zgartirmaydi."""
     s = re.sub(r'\s+', ' ', str(s).strip())
     s = re.sub(r'-\s+', '-', s)
     s = re.sub(r'\.(?=\))', '', s)
+    s = re.sub(r'(?<=\d)\.(?=\d)', ',', s)
     return s
 
 
