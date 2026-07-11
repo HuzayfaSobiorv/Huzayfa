@@ -235,10 +235,15 @@ def sana_belgi(yuklar: list[dict], start_date: datetime) -> list[dict]:
 
 # ── Excel yozish ──────────────────────────────────────────────────────────────
 # 2026-07-11: F -- bo'sh ajratuvchi ustun, G/H -- Қолдиқ/Йўлда (Power BI dan)
-COLS   = ["Товар номи", "Узунлик", "Миқдор", "Вазн (кг)", "Холат", "", "Қолдиқ", "Йўлда"]
-WIDTHS = [50, 10, 10, 12, 14, 3, 11, 11]
-NC     = len(COLS)
+COLS    = ["Товар номи", "Узунлик", "Миқдор", "Вазн (кг)", "Холат", "", "Қолдиқ", "Йўлда"]
+WIDTHS  = [50, 10, 10, 12, 14, 3, 11, 11]
+NC      = len(COLS)
 SEP_COL = 6   # F ustun -- faqat vizual ajratuvchi
+# 2026-07-11 (tuzatildi): sarlavha/жами satrlari va blok bordери ESKI
+# holatdagidek FAQAT A:E (5 ustun) bilan tugashi kerak -- F butunlay
+# bo'm-bo'sh qoladi, G/H alohida (mishka bilan A:E tortib ko'chirish
+# ishi buzilmasin -- Huzayfa talabi).
+CORE_NC = 5   # A..E -- eski "asosiy blok" kengligi
 
 
 def _set_widths(ws):
@@ -256,7 +261,7 @@ def _yuk_header(ws, row: int, num: int, yuk: dict) -> int:
     turi_l = "📦  6m Контейнер" if yuk["turi"] == "6m" else "🚛  12m Машина"
 
     # ── 1-qator: asosiy sarlavha (sticker) ──────────────────────────────────
-    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NC)
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=CORE_NC)
     c = ws.cell(row=row, column=1)
     c.value = (
         f"  ■  ЮК №{num}  —  {turi_l}"
@@ -271,7 +276,7 @@ def _yuk_header(ws, row: int, num: int, yuk: dict) -> int:
     row += 1
 
     # ── 2-qator: vazn tafsiloti ──────────────────────────────────────────────
-    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NC)
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=CORE_NC)
     c2 = ws.cell(row=row, column=1)
     _lims = LIMITS_BY_TYPE.get(yuk["turi"], LIMITS_BY_TYPE["6m"])
     _tp_lim  = _lims["truba_profil"]
@@ -397,7 +402,7 @@ def _product_row(ws, row: int, item: dict, holat: str, bg: str = "",
 
 def _jami_row(ws, row: int, yuk: dict, n_items: int) -> int:
     """Jami qatori."""
-    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NC)
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=CORE_NC)
     c = ws.cell(row=row, column=1)
     c.value = (
         f"  ✅  Жами: {n_items} хил товар"
@@ -422,7 +427,7 @@ def _empty_rows(ws, row: int, count: int = 2) -> int:
 def _separator(ws, row: int) -> int:
     """Konteyner bloklari orasiga ingichka chiziq + bo'sh qator."""
     sep_fill = PatternFill("solid", fgColor="BDC3C7")
-    for col_i in range(1, NC + 1):
+    for col_i in range(1, CORE_NC + 1):
         cell = ws.cell(row=row, column=col_i, value="")
         cell.fill = sep_fill
     ws.row_dimensions[row].height = 3
@@ -577,7 +582,7 @@ def excel_yaz(yuklar: list[dict], qolgan: list[dict],
         blok_end = row - 1
 
         # Blok atrofini medium border bilan o'rash
-        _blok_border(ws, blok_start - 3, blok_end, NC)
+        _blok_border(ws, blok_start - 3, blok_end, CORE_NC)
 
         row = _separator(ws, row)
 
