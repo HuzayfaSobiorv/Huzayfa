@@ -117,6 +117,13 @@ def normalize_product_name(name: str) -> str:
         return match.group(0)
 
     name = re.sub(r'\(([0-9,\.]+)\)(?!\s*марка)', _add_m, name)
+    # 2026-07-11 (Huzayfa: "51 0.9 304 bizda bor, bot tanimayapti"): Tarix
+    # qatorlarida ba'zan uzunlik "м" raqamga YOPISHIB yoziladi (masalan
+    # "(6м)" -- bo'shliqsiz), yuqoridagi _add_m buni ko'rmaydi ('м' allaqachon
+    # bor deb hisoblab o'zgartirmaydi) -- natijada bu nom haqiqiy inventar
+    # ("6 м", bo'shliq bilan) bilan mos kelmay, ЯНГИ deb noto'g'ri
+    # belgilanardi. Endi raqam bilan "м" orasiga bo'shliq qo'yiladi.
+    name = re.sub(r'(\d)м\)', r'\1 м)', name)
     name = re.sub(r'м\s+\)', 'м)', name)
     name = re.sub(r'Лист-(\d)', r'Лист- \1', name)
     name = ' '.join(name.split())
