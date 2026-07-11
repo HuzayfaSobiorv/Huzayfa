@@ -728,14 +728,29 @@ def main_with_data(kanal: str, ombor_map: dict,
 
     print("🔢 Kerak miqdori hisoblanmoqda...")
     from common import normalize_product_name as _norm
+    from parsers import _inventardan_moslashtir, _get_inventar_set
 
     kerak_df = kerak_hisob(pb_df)
     # Barcha Power BI tovarlarni saqlaymiz — Кам=0 bo'lsa ham.
     # Buning sababi: Xitoydan kelgan tovar inventarda bo'lsa ЯНГИ bo'lmasin,
     # to'g'ri holat (НОРМА/ПАСТ/КРИТИК) ko'rsatilsin.
-    # Inventar nomlarini ham normalize qilamiz (Лист-0,8 → Лист- 0,8)
+    # 2026-07-11 (tuzatildi, Huzayfa: "hali ham yangi hisoblanyapti, qoldiq
+    # yolda bo'sh"): oddiy _norm() (normalize_product_name) Лист nomlariga
+    # har doim bo'shliq qo'shardi ("Лист-0,8" -> "Лист- 0,8"), LEKIN
+    # inventar (aynan shu Power BI Инвентар varag'i!) ba'zi qatorlarda
+    # bo'shliqsiz saqlaydi (tarixiy formatlash nomuvofiqligi). Natijada
+    # kerak_df (shu yerda) va mavjud_df (ombor, _fix_oddiy_nom orqali --
+    # inventar bilan ANIQ moslashadigan) o'rtasida SOXTA farq paydo
+    # bo'lardi -- xuddi shu tovar ikki xil satr (bo'shliqli/bo'shliqsiz)
+    # sifatida ko'rinib, mos kelmay, ЯНГИ deb chiqib ketardi va
+    # Қолдиқ/Йўлда bo'sh qolardi. Endi kanonik (bo'shliqqa chidamli)
+    # moslashtirish orqali inventardagi ANIQ shaklga qaytariladi -- ombor
+    # tomoni bilan bir xil kalit hosil bo'lsin.
+    _inv_set = _get_inventar_set()
     if not kerak_df.empty:
-        kerak_df["Товар"] = kerak_df["Товар"].apply(_norm)
+        kerak_df["Товар"] = kerak_df["Товар"].apply(
+            lambda t: _inventardan_moslashtir(_norm(t), _inv_set)
+        )
 
     holat_map = dict(zip(kerak_df["Товар"], kerak_df["Холат"])) if not kerak_df.empty else {}
     kerak_set = set(kerak_df["Товар"]) if not kerak_df.empty else set()
