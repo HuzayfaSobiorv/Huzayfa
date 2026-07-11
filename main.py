@@ -471,20 +471,26 @@ def _simulatsiya(row) -> tuple:
                 float(row.get('Standart_Miqdor', 0) or 0))
         return None, jami, False
 
+    # 2026-07-10 (tuzatildi): Кун >= 0 (avval > 0 edi -- shu sabab BUGUN
+    # (Кун=0) keladigan konteyner simulyatsiyadan butunlay TASHLAB
+    # YUBORILARDI, xuddi u yo'lda yo'qdek. Natijada masalan Ф-51 ст 0,9
+    # (5,8м)(201): Қолдиқ=3186, Йўлда=8003 (Кун=0) bo'lsa ham 8003
+    # hisobga olinmay, noto'g'ri КРИТИК chiqardi (to'g'risi: 3186+8003=
+    # 11189 >> Мин_Захира=7500 -> НОРМА bo'lishi kerak edi).
     konteynerlar = []
     if (row.get('Fast_Miqdor', 0) > 0
             and pd.notna(row.get('Fast_Kelish_Kun'))
-            and (row.get('Fast_Kelish_Kun') or 0) > 0):
+            and (row.get('Fast_Kelish_Kun') or 0) >= 0):
         konteynerlar.append({'kun': float(row['Fast_Kelish_Kun']),
                              'miqdor': float(row['Fast_Miqdor'])})
     if (row.get('M12_Miqdor', 0) > 0
             and pd.notna(row.get('M12_Kelish_Kun'))
-            and (row.get('M12_Kelish_Kun') or 0) > 0):
+            and (row.get('M12_Kelish_Kun') or 0) >= 0):
         konteynerlar.append({'kun': float(row['M12_Kelish_Kun']),
                              'miqdor': float(row['M12_Miqdor'])})
     if (row.get('Standart_Miqdor', 0) > 0
             and pd.notna(row.get('Standart_Kelish_Kun'))
-            and (row.get('Standart_Kelish_Kun') or 0) > 0):
+            and (row.get('Standart_Kelish_Kun') or 0) >= 0):
         konteynerlar.append({'kun': float(row['Standart_Kelish_Kun']),
                              'miqdor': float(row['Standart_Miqdor'])})
     konteynerlar.sort(key=lambda x: x['kun'])
