@@ -59,6 +59,13 @@ DELIVERY_DAYS = 55      # kunalik sotuv hisobi uchun
 # (to'liq to'lmagan) deb alohida ro'yxatga chiqariladi, asosiy
 # (to'liq) konteynerlar ro'yxatiga aralashtirilmaydi.
 FULL_FILL_PCT = 0.85    # LIMIT_TOTAL (28000 kg)ning shu foizidan yuqori -- "to'liq"
+# 2026-07-11 (tuzatildi, Huzayfa: "3 ta chala konteynerni 1 ta qilib bo'lmaydimi"):
+# faqat jami_kg/28000 foizidan foydalanish TP-only konteynerlarni (List
+# juftlanmagan) noto'g'ri "chala" deb belgilardi -- garchi ular o'z TP
+# slotida ~100% to'lgan bo'lsa ham (mas. 10997/11000 kg = 99.97% TP, lekin
+# jami 28000ning atigi 39%i). Shu sabab pastda _yuk_toliqmi() slot-asosli
+# tekshiruv qo'shildi.
+SLOT_FULL_PCT = 0.97    # o'z slotining (TP yoki List) shu foizidan yuqori -- "slot maksimal to'lgan"
 
 PB_SHEET = "Инвентар"
 PB_COLS  = {
@@ -549,6 +556,31 @@ def _kerak_yoq_blok(ws, row: int, kerak_yoq: list[dict]) -> int:
     return row
 
 
+
+def _yuk_toliqmi(yuk: dict) -> bool:
+    """
+    Konteyner "to'liq" hisoblanadi, agar:
+      - umumiy vazni LIMIT_TOTAL(28000)ning FULL_FILL_PCT dan yuqori bo'lsa, YOKI
+      - o'ziga tegishli slot(lar)dan (Труба/Профиль va/yoki Лист) BIRI o'z
+        maksimal hajmiga yaqin (SLOT_FULL_PCT) to'lgan bo'lsa.
+    2026-07-11 (tuzatildi, Huzayfa: "3 ta chala konteynerni 1 ta qilib
+    bo'lmaydimi"): faqat jami_kg/28000 foizidan foydalanish TP-only
+    konteynerlarni (List juftlanmagan, chunki List taqsimlashda navbat
+    kelmagan yoki List tugab qolgan) noto'g'ri "chala" deb belgilardi --
+    garchi ular o'z TP-slotida ~100% to'lgan bo'lsa ham (mas. 10997/11000 kg
+    = 99.97% TP, lekin jami 28000ning atigi 39%i). Slot-asosli tekshiruv shu
+    holatlarni to'g'ri "to'liq" deb tanib oladi.
+    """
+    limits   = LIMITS_BY_TYPE.get(yuk.get("turi", ""), {})
+    tp_cap   = limits.get("truba_profil", 0)
+    list_cap = limits.get("list", 0)
+    if tp_cap and yuk.get("truba_profil_kg", 0) >= tp_cap * SLOT_FULL_PCT:
+        return True
+    if list_cap and yuk.get("list_kg", 0) >= list_cap * SLOT_FULL_PCT:
+        return True
+    return yuk.get("jami_kg", 0) >= LIMIT_TOTAL * FULL_FILL_PCT
+
+
 def _xulosa_varaq(wb: Workbook, yuklar: list[dict], qolgan: list[dict],
                   kanal: str, start_date: str):
     """Xulosa varaqi."""
@@ -618,8 +650,8 @@ def excel_yaz(yuklar: list[dict], qolgan: list[dict],
     # 2026-07-11: to'liq (>=85%) va chala (to'liq to'lmagan) konteynerlar
     # alohida-alohida ko'rsatiladi -- chala aralashib, "hammasi tayyor"
     # degan taassurot bermasin.
-    full_yuklar  = [y for y in yuklar if y["jami_kg"] >= LIMIT_TOTAL * FULL_FILL_PCT]
-    chala_yuklar = [y for y in yuklar if y["jami_kg"] <  LIMIT_TOTAL * FULL_FILL_PCT]
+    full_yuklar  = [y for y in yuklar if _yuk_toliqmi(y)]
+    chala_yuklar = [y for y in yuklar if not _yuk_toliqmi(y)]
 
     def _render_bir_yuk(row: int, num: int, yuk: dict) -> int:
         row = _yuk_header(ws, row, num, yuk)
