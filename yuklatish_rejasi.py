@@ -502,6 +502,49 @@ def _qolgan_blok(ws, row: int, qolgan: list[dict]) -> int:
     return row
 
 
+def _kerak_yoq_blok(ws, row: int, kerak_yoq: list[dict]) -> int:
+    """2026-07-11: Xitoyda tayyor bor, lekin hozir Кам=0 (zanjir-hisobda
+    yetarli) bo'lgani uchun yuklanmagan tovarlar bloki -- foydalanuvchi
+    o'zi qo'lda tekshirib, kerak bo'lsa qo'shib oladi."""
+    if not kerak_yoq:
+        return row
+    row = _empty_rows(ws, row, 3)
+
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NC)
+    c = ws.cell(row=row, column=1,
+                value="  🗄️   HOZIRCHA KERAK EMAS — Xitoyda tayyor, lekin zanjir-hisobda yetarli (qo'lda tekshiring)")
+    c.font      = _font(bold=True, size=12, color=C_WHITE)
+    c.fill      = _fill("5D6D7E")
+    c.alignment = _align(h="left", indent=1)
+    c.border    = _border()
+    ws.row_dimensions[row].height = 28
+    row += 1
+
+    for it in sorted(kerak_yoq, key=lambda x: x["tovar"]):
+        marka = get_marka(it["tovar"])
+        bg    = MARKA_BG.get(marka, "F0F0F0")
+
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+        c1 = ws.cell(row=row, column=1, value=f"  {it['tovar']}")
+        c1.font  = _font(bold=False, size=10, color="555555")
+        c1.fill  = _fill(bg)
+        c1.border = _border()
+        c1.alignment = _align(h="left", indent=1)
+
+        cd = ws.cell(row=row, column=3, value=int(it["dona"]))
+        cd.font  = _font(bold=False, size=10, color="555555")
+        cd.fill  = _fill(bg); cd.border = _border(); cd.alignment = _align(h="center")
+
+        cv = ws.cell(row=row, column=4, value=round(it["vazn_kg"], 1))
+        cv.font  = _font(bold=False, size=10, color="555555")
+        cv.fill  = _fill(bg); cv.border = _border(); cv.alignment = _align(h="center")
+
+        ws.row_dimensions[row].height = 20
+        row += 1
+
+    return row
+
+
 def _xulosa_varaq(wb: Workbook, yuklar: list[dict], qolgan: list[dict],
                   kanal: str, start_date: str):
     """Xulosa varaqi."""
@@ -533,12 +576,15 @@ def _xulosa_varaq(wb: Workbook, yuklar: list[dict], qolgan: list[dict],
 
 def excel_yaz(yuklar: list[dict], qolgan: list[dict],
               holat_map: dict, kanal: str = "asosiy",
-              qoldiq_yolda_map: dict | None = None) -> Path:
+              qoldiq_yolda_map: dict | None = None,
+              kerak_yoq: list[dict] | None = None) -> Path:
     """
     Yuklatish rejasi Excel faylini yozadi.
     holat_map: {tovar_nomi: holat_str}  (Power BI dan)
     qoldiq_yolda_map: {tovar_nomi: (qoldiq, yolda)}  (Power BI dan, G/H ustunlari)
+    kerak_yoq: Xitoyda tayyor bor, lekin Кам=0 bo'lgani uchun yuklanmagan ro'yxat
     """
+    kerak_yoq = kerak_yoq or []
     qoldiq_yolda_map = qoldiq_yolda_map or {}
     wb = Workbook()
     ws = wb.active
@@ -592,7 +638,8 @@ def excel_yaz(yuklar: list[dict], qolgan: list[dict],
 
         row = _separator(ws, row)
 
-    _qolgan_blok(ws, row, qolgan)
+    row = _qolgan_blok(ws, row, qolgan)
+    _kerak_yoq_blok(ws, row, kerak_yoq)
 
     # Xulosa varaqi
     _xulosa_varaq(wb, yuklar, qolgan, kanal, start_sana_str)
@@ -678,8 +725,8 @@ def main_with_data(kanal: str, ombor_map: dict,
         return "KERAK_YOQ"
 
     print(f"Kerak: {len(kerak_df)} ta, Xitoyda tayyor: {len(mavjud_set)} ta, Yangi: {len(yangi_tovarlar)} ta")
-    yuklar, qolgan = optimallashtir(kerak_df, mavjud_df, max_yuklar=MAX_PER_MONTH,
-                                     xitoy_vazn=xitoy_vazn or {})
+    yuklar, qolgan, kerak_yoq = optimallashtir(kerak_df, mavjud_df, max_yuklar=MAX_PER_MONTH,
+                                                xitoy_vazn=xitoy_vazn or {})
 
     if not yuklar:
         print("Mos tovar topilmadi yoki xitoyda yetarli tovar yoq.")
@@ -689,7 +736,8 @@ def main_with_data(kanal: str, ombor_map: dict,
     yuklar = sana_belgi(yuklar, start_date)
 
     print(f"Excel yozilmoqda ({len(yuklar)} konteyner)...")
-    out = excel_yaz(yuklar, qolgan, holat_map, kanal, qoldiq_yolda_map=qoldiq_yolda_map)
+    out = excel_yaz(yuklar, qolgan, holat_map, kanal,
+                    qoldiq_yolda_map=qoldiq_yolda_map, kerak_yoq=kerak_yoq)
 
     n_konteyner    = len(yuklar)
     yuklangan_kg   = sum(y["jami_kg"] for y in yuklar)
@@ -701,7 +749,9 @@ def main_with_data(kanal: str, ombor_map: dict,
     print(f"Saqlandi: {out}")
     print(f"   {n_konteyner} konteyner | {yuklangan_kg:,.0f} kg | {yuklangan_xil} xil")
     if qolgan_xil:
-        print(f"   Yuklanmadi: {qolgan_xil} xil | {qolgan_kg:,.0f} kg")
+        print(f"   Yuklanmadi (limit): {qolgan_xil} xil | {qolgan_kg:,.0f} kg")
+    if kerak_yoq:
+        print(f"   Hozircha kerak emas: {len(kerak_yoq)} xil (Excel oxirida ro'yxat)")
 
     # STATS:konteyner|yuklangan_kg|yuklangan_xil|qolgan_xil|qolgan_kg|path
     return f"STATS:{n_konteyner}|{yuklangan_kg:.0f}|{yuklangan_xil}|{qolgan_xil}|{qolgan_kg:.0f}|{out}"

@@ -165,9 +165,13 @@ def optimallashtir(
     abc_map: dict | None = None,
     max_yuklar: int = 20,
     xitoy_vazn: dict | None = None,
-) -> tuple[list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], list[dict]]:
     """kerak_df: Товар|Холат|Кам  mavjud_df: Товар|Миқдор
     xitoy_vazn: {tovar_nomi: 1_dona_kg} — vazn_lookup da yo'q tovarlar uchun fallback
+    Qaytaradi: (yuklar, qolgan, kerak_yoq)
+      qolgan    — kerakli edi, lekin oylik/konteyner limiti yetmadi
+      kerak_yoq — Xitoyda tayyor bor, lekin hozir Кам=0 (zanjir-hisobda
+                  yetarli) -- shu sabab yuklanmadi (2026-07-11)
     """
     if abc_map is None:
         abc_map = abc_map_yuklash()
@@ -179,6 +183,7 @@ def optimallashtir(
 
     yuklar: list[dict] = []
     qolgan: list[dict] = []
+    kerak_yoq: list[dict] = []
 
     for _, row in kerak.iterrows():
         tovar      = row["Товар"]
@@ -186,19 +191,23 @@ def optimallashtir(
         bor_dona   = int(mavjud.get(tovar, 0))
         if bor_dona <= 0:
             continue
-        # 2026-07-11 (tuzatildi, Huzayfa talabi): avval "Xitoyda tayyor
-        # bo'lsa hammasi yuklanadi" edi (Кам=0 bo'lsa ham) -- bu "tugaguncha
-        # yuklash" bo'lib, ehtiyojdan ortiqni ham konteynerga tiqib,
-        # boshqa kerakli tovarga joy qolmasligiga sabab bo'lardi. Endi
-        # Кам=0 (hozir haqiqatan kerak emas -- zanjir-hisobda yetarli)
-        # bo'lsa umuman yuklanmaydi.
-        if kerak_dona <= 0:
-            continue
         vazn_dona = tovar_vazni(tovar)
         # Xitoy faylidan fallback: vazn_lookup da yo'q tovar uchun
         if (not vazn_dona or vazn_dona <= 0) and xitoy_vazn:
             vazn_dona = xitoy_vazn.get(str(tovar).strip())
         if not vazn_dona or vazn_dona <= 0:
+            continue
+        # 2026-07-11 (tuzatildi, Huzayfa talabi): avval "Xitoyda tayyor
+        # bo'lsa hammasi yuklanadi" edi (Кам=0 bo'lsa ham) -- bu "tugaguncha
+        # yuklash" bo'lib, ehtiyojdan ortiqni ham konteynerga tiqib,
+        # boshqa kerakli tovarga joy qolmasligiga sabab bo'lardi. Endi
+        # Кам=0 (hozir haqiqatan kerak emas -- zanjir-hisobda yetarli)
+        # bo'lsa yuklanmaydi -- LEKIN yo'qolib qolmaydi, alohida
+        # "kerak_yoq" ro'yxatiga tushadi (Excel'da ko'rsatiladi, foydalanuvchi
+        # o'zi qo'lda tekshirib kerak bo'lsa qo'shib oladi).
+        if kerak_dona <= 0:
+            kerak_yoq.append({"tovar": tovar, "dona": bor_dona,
+                              "vazn_kg": round(bor_dona * vazn_dona, 2)})
             continue
         cat  = get_category(tovar)
         turi = yuk_turi(tovar, cat)
@@ -272,7 +281,7 @@ def optimallashtir(
                 break
             yuklar.append(_yangi_yuk(turi))
 
-    return yuklar, qolgan
+    return yuklar, qolgan, kerak_yoq
 
 
 def konteyner_xulosa(yuklar: list[dict]) -> dict:
