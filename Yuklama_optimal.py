@@ -186,8 +186,14 @@ def optimallashtir(
         bor_dona   = int(mavjud.get(tovar, 0))
         if bor_dona <= 0:
             continue
-        # Кам=0 bo'lsa (НОРМА/ПАСТ) — Xitoydan kelayotgan bo'lsa ham yuklanadi.
-        # qoldi = bor_dona (barcha mavjud dona yuklanadi)
+        # 2026-07-11 (tuzatildi, Huzayfa talabi): avval "Xitoyda tayyor
+        # bo'lsa hammasi yuklanadi" edi (Кам=0 bo'lsa ham) -- bu "tugaguncha
+        # yuklash" bo'lib, ehtiyojdan ortiqni ham konteynerga tiqib,
+        # boshqa kerakli tovarga joy qolmasligiga sabab bo'lardi. Endi
+        # Кам=0 (hozir haqiqatan kerak emas -- zanjir-hisobda yetarli)
+        # bo'lsa umuman yuklanmaydi.
+        if kerak_dona <= 0:
+            continue
         vazn_dona = tovar_vazni(tovar)
         # Xitoy faylidan fallback: vazn_lookup da yo'q tovar uchun
         if (not vazn_dona or vazn_dona <= 0) and xitoy_vazn:
@@ -216,8 +222,11 @@ def optimallashtir(
         # mayda bo'lak yaratmaslik MIN_KICHIK_PARCHA tekshiruvi orqali
         # ta'minlanadi (pastda), diversifikatsiya emas.
         cap_pct = 1.0
-        # Xitoyda nechta bo'lsa, hammasi yuklanadi (kerak formulasi faqat tartib uchun)
-        qoldi   = bor_dona
+        # 2026-07-11 (tuzatildi): endi "Кам" faqat tartib uchun emas --
+        # yuklanadigan miqdorni ham cheklaydi. Xitoyda ko'proq tayyor
+        # bo'lsa ham, haqiqiy ehtiyojdan (Кам) ortiq yuklanmaydi -- ortig'i
+        # Xitoy omborida qoladi (keyingi safar kerak bo'lganda yuklanadi).
+        qoldi   = min(bor_dona, kerak_dona)
 
         while qoldi > 0:
             for yuk in yuklar:

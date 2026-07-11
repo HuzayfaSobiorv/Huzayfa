@@ -63,6 +63,7 @@ PB_COLS  = {
     "Йўлда_Жами":  "yolda",
     "Мин_Захира":  "min_zaxira",
     "Холат":       "holat",
+    "Етишмайди":   "etishmaydi",   # 2026-07-11: zanjir-hisobdan haqiqiy kerak miqdor
 }
 
 # ── Ranglar ──────────────────────────────────────────────────────────────────
@@ -161,6 +162,8 @@ def power_bi_yuklash() -> pd.DataFrame:
         df["yolda"] = 0
     if "holat" not in df.columns:
         df["holat"] = "🟢 НОРМА"
+    if "etishmaydi" not in df.columns:
+        df["etishmaydi"] = 0
 
     keep = [v for v in PB_COLS.values() if v in df.columns]
     df = df[keep].dropna(subset=["tovar"]).copy()
@@ -170,7 +173,7 @@ def power_bi_yuklash() -> pd.DataFrame:
         print(f"⚠️  (ЯНГИ) prefiksli {_yangi_mask.sum()} ta tovar o'chirildi")
     df = df[~_yangi_mask].copy()
 
-    for col in ["qoldiq", "yolda", "min_zaxira"]:
+    for col in ["qoldiq", "yolda", "min_zaxira", "etishmaydi"]:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
     return df
@@ -201,16 +204,19 @@ def xitoy_ombor_yuklash(kanal: str = "asosiy") -> tuple[dict, dict]:
 # ── Kerak miqdori hisoblash ───────────────────────────────────────────────────
 def kerak_hisob(pb_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Generate_Asosiy_order.py kabi buyurtma miqdorini hisoblaydi.
-    sotuv_kunlik proxy: min_zaxira / 30
-    kerak = max(0, min_zaxira - (qoldiq + yolda - sotuv55))
+    2026-07-11 (tuzatildi): Кам endi ESKI statik "sotuv55" formuladan
+    HISOBLANMAYDI -- to'g'ridan-to'g'ri Power BI Инвентар'ning
+    "Етишмайди" ustunidan olinadi. Bu ustun main.py'ning kun-ma-kun
+    zanjir-simulyatsiyasi natijasi (Мин_Захира - Якуний_Қолдиқ, agar
+    manfiy bo'lmasa 0) -- ya'ni real ravishda "hozirgi qoldiq + yo'ldagi
+    konteynerlar kelguncha kunlik sotuv bilan qancha kamayishi"ni
+    hisobga oladi. Eski statik formula buni yakuniy holatga qarab taxmin
+    qilardi (kamroq aniq, konteynerlar orasidagi bo'shliqni ko'rmasdi).
     """
     df = pb_df.copy()
-    df["sotuv55"] = (df["min_zaxira"] / 30 * DELIVERY_DAYS).round(0)
-    future        = df["qoldiq"] + df["yolda"] - df["sotuv55"]
-    df["Кам"]     = (df["min_zaxira"] - future).clip(lower=0).round(0).astype(int)
+    df["Кам"] = pd.to_numeric(df["etishmaydi"], errors="coerce").fillna(0).round(0).astype(int)
 
-    # Urgentlik: necha kun qoldiq + yolda = min_zaxira ga teng bo'ladi
+    # Urgentlik (faqat axborot/tartib uchun -- hisoblashga ta'sir qilmaydi)
     sotuv_k  = (df["min_zaxira"] / 30).clip(lower=0.1)
     df["urg_kun"] = ((df["qoldiq"] + df["yolda"] - df["min_zaxira"]) / sotuv_k).round(0).astype(int)
 
