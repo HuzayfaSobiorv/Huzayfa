@@ -55,6 +55,10 @@ CHIQISH_DIR.mkdir(exist_ok=True)
 MAX_PER_DAY   = 4       # bir kunda max konteyner
 MAX_PER_MONTH = 20      # bir oyda max konteyner
 DELIVERY_DAYS = 55      # kunalik sotuv hisobi uchun
+# 2026-07-11 (Huzayfa talabi): konteyner shundan kam to'lsa -- "chala"
+# (to'liq to'lmagan) deb alohida ro'yxatga chiqariladi, asosiy
+# (to'liq) konteynerlar ro'yxatiga aralashtirilmaydi.
+FULL_FILL_PCT = 0.85    # LIMIT_TOTAL (28000 kg)ning shu foizidan yuqori -- "to'liq"
 
 PB_SHEET = "Инвентар"
 PB_COLS  = {
@@ -611,14 +615,19 @@ def excel_yaz(yuklar: list[dict], qolgan: list[dict],
 
     start_sana_str = yuklar[0].get("yuklatish_sana", datetime.now().strftime("%d.%m.%Y")) if yuklar else "—"
 
-    for i, yuk in enumerate(yuklar, 1):
-        row = _yuk_header(ws, row, i, yuk)
+    # 2026-07-11: to'liq (>=85%) va chala (to'liq to'lmagan) konteynerlar
+    # alohida-alohida ko'rsatiladi -- chala aralashib, "hammasi tayyor"
+    # degan taassurot bermasin.
+    full_yuklar  = [y for y in yuklar if y["jami_kg"] >= LIMIT_TOTAL * FULL_FILL_PCT]
+    chala_yuklar = [y for y in yuklar if y["jami_kg"] <  LIMIT_TOTAL * FULL_FILL_PCT]
+
+    def _render_bir_yuk(row: int, num: int, yuk: dict) -> int:
+        row = _yuk_header(ws, row, num, yuk)
 
         # Kategoriya bo'yicha tartiblash va alternating rang
         cat_order = {"Лист": 0, "Труба": 1, "Профиль": 2, "Баласина": 3, "Стойка": 4}
         items_sorted = sorted(yuk["items"],
                               key=lambda it: (cat_order.get(_kat(it["tovar"]), 9), it["tovar"]))
-        cat_counters: dict = {}
         row_counter  = 0   # umumiy alternating uchun
         blok_start   = row  # blok border uchun
 
@@ -629,14 +638,30 @@ def excel_yaz(yuklar: list[dict], qolgan: list[dict],
             qy    = qoldiq_yolda_map.get(item["tovar"])
             row   = _product_row(ws, row, item, holat, bg=bg, qoldiq_yolda=qy)
 
-        jami_row_num = row
         row = _jami_row(ws, row, yuk, len(yuk["items"]))
         blok_end = row - 1
 
         # Blok atrofini medium border bilan o'rash
         _blok_border(ws, blok_start - 3, blok_end, CORE_NC)
 
-        row = _separator(ws, row)
+        return _separator(ws, row)
+
+    for i, yuk in enumerate(full_yuklar, 1):
+        row = _render_bir_yuk(row, i, yuk)
+
+    if chala_yuklar:
+        row = _empty_rows(ws, row, 2)
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NC)
+        c_warn = ws.cell(row=row, column=1,
+                         value="  ⚠️   TO'LIQ TO'LMAGAN KONTEYNERLAR — qo'shimcha tovar bilan to'ldirish kerak")
+        c_warn.font      = _font(bold=True, size=12, color=C_WHITE)
+        c_warn.fill      = _fill("C0392B")
+        c_warn.alignment = _align(h="left", indent=1)
+        c_warn.border    = _border()
+        ws.row_dimensions[row].height = 28
+        row += 1
+        for i, yuk in enumerate(chala_yuklar, 1):
+            row = _render_bir_yuk(row, i, yuk)
 
     row = _qolgan_blok(ws, row, qolgan)
     _kerak_yoq_blok(ws, row, kerak_yoq)

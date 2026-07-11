@@ -170,8 +170,9 @@ def optimallashtir(
     xitoy_vazn: {tovar_nomi: 1_dona_kg} — vazn_lookup da yo'q tovarlar uchun fallback
     Qaytaradi: (yuklar, qolgan, kerak_yoq)
       qolgan    — kerakli edi, lekin oylik/konteyner limiti yetmadi
-      kerak_yoq — Xitoyda tayyor bor, lekin hozir Кам=0 (zanjir-hisobda
-                  yetarli) -- shu sabab yuklanmadi (2026-07-11)
+      kerak_yoq — hozircha doim bo'sh ro'yxat (2026-07-11: Кам-cheklovi
+                  bekor qilindi -- Xitoyda tayyor bo'lgan HAMMASI yana
+                  yuklanadi, "juda cheklovchi/qulay emas" bo'lib chiqdi)
     """
     if abc_map is None:
         abc_map = abc_map_yuklash()
@@ -183,7 +184,7 @@ def optimallashtir(
 
     yuklar: list[dict] = []
     qolgan: list[dict] = []
-    kerak_yoq: list[dict] = []
+    kerak_yoq: list[dict] = []   # 2026-07-11: cheklov bekor qilindi, doim bo'sh
 
     for _, row in kerak.iterrows():
         tovar      = row["Товар"]
@@ -196,18 +197,6 @@ def optimallashtir(
         if (not vazn_dona or vazn_dona <= 0) and xitoy_vazn:
             vazn_dona = xitoy_vazn.get(str(tovar).strip())
         if not vazn_dona or vazn_dona <= 0:
-            continue
-        # 2026-07-11 (tuzatildi, Huzayfa talabi): avval "Xitoyda tayyor
-        # bo'lsa hammasi yuklanadi" edi (Кам=0 bo'lsa ham) -- bu "tugaguncha
-        # yuklash" bo'lib, ehtiyojdan ortiqni ham konteynerga tiqib,
-        # boshqa kerakli tovarga joy qolmasligiga sabab bo'lardi. Endi
-        # Кам=0 (hozir haqiqatan kerak emas -- zanjir-hisobda yetarli)
-        # bo'lsa yuklanmaydi -- LEKIN yo'qolib qolmaydi, alohida
-        # "kerak_yoq" ro'yxatiga tushadi (Excel'da ko'rsatiladi, foydalanuvchi
-        # o'zi qo'lda tekshirib kerak bo'lsa qo'shib oladi).
-        if kerak_dona <= 0:
-            kerak_yoq.append({"tovar": tovar, "dona": bor_dona,
-                              "vazn_kg": round(bor_dona * vazn_dona, 2)})
             continue
         cat  = get_category(tovar)
         turi = yuk_turi(tovar, cat)
@@ -231,11 +220,11 @@ def optimallashtir(
         # mayda bo'lak yaratmaslik MIN_KICHIK_PARCHA tekshiruvi orqali
         # ta'minlanadi (pastda), diversifikatsiya emas.
         cap_pct = 1.0
-        # 2026-07-11 (tuzatildi): endi "Кам" faqat tartib uchun emas --
-        # yuklanadigan miqdorni ham cheklaydi. Xitoyda ko'proq tayyor
-        # bo'lsa ham, haqiqiy ehtiyojdan (Кам) ortiq yuklanmaydi -- ortig'i
-        # Xitoy omborida qoladi (keyingi safar kerak bo'lganda yuklanadi).
-        qoldi   = min(bor_dona, kerak_dona)
+        # 2026-07-11 (qaytarildi -- Huzayfa: "juda cheklovchi bo'ldi"):
+        # Кам bilan cheklash sinovdan o'tmadi -- juda ko'p tovar
+        # yuklanmay qolib ketardi. Xitoyda nechta tayyor bo'lsa,
+        # yana hammasi yuklanadi (Кам faqat tartib/ustunlik uchun).
+        qoldi   = bor_dona
 
         while qoldi > 0:
             for yuk in yuklar:
