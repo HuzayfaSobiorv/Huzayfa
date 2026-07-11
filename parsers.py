@@ -470,6 +470,25 @@ def _fix_oddiy_nom(nom: str, inventar_set: set) -> str:
     if nom in inventar_set:
         return nom
 
+    # 2026-07-11 (Huzayfa: "listlarni yangi statusida turibdi"): Xitoy Лист
+    # qalinligini ko'pincha katalogdagidan 0,05mm PAST ko'rsatadi
+    # (0,75→0,8; 0,95→1,0; 1,15→1,2; 1,45→1,5; 2,95→3,0; 5,95→6,0 kabi) --
+    # Труба/Профиль'dagi stenka-siljish bilan bir xil hodisa, lekin "ст"
+    # so'zi bo'lmagani sabab yuqoridagi/quyidagi stenka mantiqi Лист'ga
+    # tegmaydi. Shu sabab alohida +0,05 qiymatini sinab ko'ramiz.
+    m_list = re.match(r'^(Лист-\s*)([\d,\.]+)(.*)$', nom)
+    if m_list:
+        try:
+            qalinlik = float(m_list.group(2).replace(',', '.'))
+            siljigan = round(qalinlik + 0.05, 2)
+            siljigan_s = f"{siljigan:.1f}".replace('.', ',')
+            candidate = f"{m_list.group(1)}{siljigan_s}{m_list.group(3)}"
+            moslashgan = _inventardan_moslashtir(candidate, inventar_set)
+            if moslashgan in inventar_set:
+                return moslashgan
+        except ValueError:
+            pass
+
     # Stenka konvertatsiya: 0.85→0,9 / 2.95→3,0 va hokazo
     m_st = re.search(r'(ст\s+)([\d,\.]+)', nom)
     if m_st:
