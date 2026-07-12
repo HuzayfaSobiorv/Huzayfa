@@ -400,14 +400,17 @@ def _product_row(ws, row: int, item: dict, holat: str, bg: str = "",
     qoldiq, yolda = qoldiq_yolda if qoldiq_yolda else (None, None)
 
     # G — Қолдиқ
-    cg = ws.cell(row=row, column=7, value=int(qoldiq) if qoldiq is not None else "")
+    # 2026-07-11 (Huzayfa: "bo'sh turmasin, 0 tursin"): topilmasa ham "0"
+    # ko'rsatiladi -- bo'sh katak "ma'lumot yo'q"/"tekshirilmagan" deb
+    # noto'g'ri tushunilmasin.
+    cg = ws.cell(row=row, column=7, value=int(qoldiq) if qoldiq is not None else 0)
     cg.font      = _font(bold=False, size=10, color="444444")
     cg.fill      = _fill(bg)
     cg.border    = brd
     cg.alignment = _align(h="center")
 
     # H — Йўлда
-    ch = ws.cell(row=row, column=8, value=int(yolda) if yolda is not None else "")
+    ch = ws.cell(row=row, column=8, value=int(yolda) if yolda is not None else 0)
     ch.font      = _font(bold=False, size=10, color="444444")
     ch.fill      = _fill(bg)
     ch.border    = brd
