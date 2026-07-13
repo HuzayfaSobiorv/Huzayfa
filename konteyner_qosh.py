@@ -243,6 +243,22 @@ def _mashina_raqam(text) -> str | None:
     return m.group(1) if m else None
 
 
+_NOTE_LABEL_RE = re.compile(r'(柜号|车号|车牌|挂车|姓名|封号)[:：]?')
+
+
+def _notadan_pseudo_id(note: str, ri: int) -> str:
+    """2026-07-13 (Huzayfa: "17 ta list qayerdan kelmoqda"): notada na
+    haqiqiy 柜号, na mashina raqami (车号/车牌) topilmasa (masalan faqat
+    "姓名：薛云龙" -- haydovchi ismi) ishlatiladigan OXIRGI CHORA pseudo-ID.
+    ESKI konteynerga ulab qo'yish (avvalgi xato aynan shu edi) o'rniga,
+    ALOHIDA, o'ziga xos ID yasaydi -- notadan (bo'lsa) yoki qator
+    raqamidan (bo'lmasa)."""
+    cleaned = _NOTE_LABEL_RE.sub('', str(note or '')).strip()
+    cleaned = re.sub(r'[\s\n]+', '_', cleaned)
+    cleaned = re.sub(r'[^\w\u4e00-\u9fff-]', '', cleaned)
+    return f"N-{cleaned}" if cleaned else f"N-qator{ri + 1}"
+
+
 def _sana_format(d) -> str:
     """datetime → '21.03.2026'"""
     if isinstance(d, (datetime, date)):
@@ -818,94 +834,114 @@ def _parse_list_chuhuo(raw: bytes) -> dict:
     if ogirlik_i is None:
         ogirlik_i = next((i for i, h in enumerate(hdrs) if '净重' in h), None)
 
-    result    = {}
-    cur_iso   = None
-    cur_sana  = None   # hozirgi bo'limning sanasi — har yangi sana qatorida yangilanadi
+    # 2026-07-13 (Huzayfa: "17 ta list qayerdan kelmoqda" -- ANIQLANDI):
+    # ILGARI kod har bir qatorni STREAM qilib o'qib, "cur_iso" degan bitta
+    # o'zgaruvchida saqlardi -- notada tanish ID (柜号/车号/车牌) topilmasa,
+    # o'sha qator SHUNCHAKI oldingi (ALLAQACHON "合计" bilan yopilgan!)
+    # konteynerga QO'SHIB YUBORILARDI. Haqiqiy holat: bitta yetkazib berish
+    # ko'pincha bir nechta qatordan iborat, lekin ID faqat BIRINCHI qatorida
+    # emas, BALKI O'RTADAGI biror qatorida (masalan haydovchi ismi bilan
+    # boshlanib, keyingi qatorda "车号：晋ME2109" bilan davom etadi) bo'lishi
+    # mumkin. Shu sabab endi 2 BOSQICHLI (blok-asosida) yondashuv qo'llanadi:
+    #   1) qatorlar "合计" bilan CHEGARALANGAN bloklarga ajratiladi (har bir
+    #      blok = bitta yetkazib berish, Xitoyning o'z 合计 yig'indisiga mos)
+    #   2) har bir blok uchun ID BUTUN blok ichidan izlanadi (birinchi
+    #      topilgan haqiqiy 柜号, bo'lmasa birinchi topilgan mashina raqami)
+    #   3) topilmasa -- notaning o'zidan (yoki qator raqamidan) OXIRGI CHORA
+    #      pseudo-ID yasaladi, LEKIN hech qachon OLDINGI (yopilgan) blokka
+    #      ULAB QO'YILMAYDI.
+    blocks: list[dict] = []
+    cur_sana = None
+    cur_block: dict | None = None
+
+    def _blokni_yop():
+        if cur_block is not None and cur_block["rows"]:
+            blocks.append(cur_block)
 
     # DIQQAT: 0-qatordan boshlanadi (hdr_row+1 emas!) — hujjatning ENG
     # BIRINCHI sana qatori (masalan row 1) sarlavha qatoridan OLDIN keladi.
-    # Faqat hdr_row+1 dan boshlasak, shu birinchi sanani o'tkazib yuborib,
-    # birinchi bo'limdagi konteynerlar sanasiz (None) qolib ketardi.
     for ri in range(0, sh.nrows):
         row = sh.row_values(ri)
 
-        # Bo'lim sanasi qatori — yangi jo'natish bo'limi boshlanmoqda
         if _list_sana_qatormi(row):
             yangi_sana = _sana_qator_qiymatini_parse(row[1], datemode)
             if yangi_sana:
                 cur_sana = yangi_sana
             continue
 
-        # Qayta-qayta chiqadigan sarlavha qatori ("材质 | 颜色名称 | 规格 ...")
         if row and str(row[0]).strip() == '材质':
             continue
 
-        # "合计" (jami) qatori — bu bo'limning YAKUNIY (板厂重量/qadoqlash
-        # qo'shilgan) summasi, ENDI ishlatilmaydi — har bir qatorning o'z
-        # og'irligi pastda alohida o'qiladi.
+        # "合计" — shu yetkazib berish YOPILDI, keyingi qator YANGI blok
+        # boshlanishi (hatto notasi tanish ID'ga mos kelmasa ham).
         if row and str(row[0]).strip() == '合计':
+            _blokni_yop()
+            cur_block = None
             continue
 
         if len(row) <= bz_i:
             continue
 
-        # Yangi konteyner bloki? Haqiqiy 柜号 topilmasa — 车号/车牌 (yuk
-        # mashinasi) orqali pseudo-ID FALLBACK qilinadi, aks holda bunday
-        # (konteyner raqamisiz, faqat mashina bilan tashiladigan) bo'lim
-        # butunlay o'tkazib yuborilar edi (2026-07-06'da Труба faylida
-        # topilgan xuddi shu turdagi jiddiy xato — bu yerda ham bir xil
-        # fallback qo'llanadi, izchillik uchun).
-        note = str(row[bz_i]).strip() if row[bz_i] else ''
-        real_iso = _iso(note)
-        pseudo   = None if real_iso else _mashina_raqam(note)
-        iso = real_iso or pseudo
-        if iso:
-            # 2026-07-13 (Huzayfa: "17 ta list qayerdan kelmoqda"): mashina
-            # davlat raqami (车号/车牌) HAQIQIY 柜号 EMAS — bir xil mashina
-            # BOSHQA kunda/bo'limda YANA jo'natish qilishi mumkin (haqiqiy
-            # konteyner raqami esa deyarli takrorlanmaydi). Agar shu
-            # pseudo-ID ALLAQACHON boshqa sanadagi bo'lim uchun ishlatilgan
-            # bo'lsa — bu YANGI, ALOHIDA yetkazib berish, eskisiga
-            # QO'SHILMASLIGI kerak (aks holda ikki xil mashqulot bir
-            # konteynerga "yutilib" ketib, miqdor xato oshib ketardi).
-            if pseudo and iso in result and result[iso]["sana"] != cur_sana:
-                n = 2
-                while f"{iso}-{n}" in result:
-                    n += 1
-                iso = f"{iso}-{n}"
-            cur_iso = iso
-            if cur_iso not in result:
-                result[cur_iso] = {"sana": cur_sana, "items": []}
-
-        if not cur_iso:
-            continue
-
-        spec  = str(row[gg_i]).strip() if row[gg_i] else ''
-        marka = row[mat_i]
-        rang  = str(row[rang_i]).strip() if rang_i < len(row) and row[rang_i] else ''
-
+        spec = str(row[gg_i]).strip() if row[gg_i] else ''
         if not re.match(r'^[\d\.]+[*×x]', spec):
             continue
         if any(k in spec for k in ('合计', '小计', '序号')):
             continue
 
-        try:
-            miqdor = int(float(row[qty_i])) if qty_i < len(row) and row[qty_i] else 0
-        except (ValueError, TypeError):
-            miqdor = 0
-        if miqdor <= 0:
-            continue
+        note = str(row[bz_i]).strip() if row[bz_i] else ''
+        if cur_block is None:
+            cur_block = {"sana": cur_sana, "rows": []}
+        cur_block["rows"].append((ri, row, note))
 
-        xitoy_kg = row[ogirlik_i] if ogirlik_i is not None and ogirlik_i < len(row) else None
-        raw_key = _tuzatish_kaliti("LIST", spec, marka, rang)
-        saqlangan = _tuzatishdan_top(raw_key)
-        if saqlangan:
-            nom_final = saqlangan
-        else:
-            nom = _inventarga_moslashtir(_list_spec_to_name(spec, marka, rang))
-            nom_final = nom or spec
-        vazn_kg = _item_vazn_kg(nom_final, miqdor, xitoy_kg, inv_set)
-        result[cur_iso]["items"].append((nom_final, miqdor, vazn_kg, raw_key))
+    _blokni_yop()
+
+    result: dict = {}
+    for blk in blocks:
+        real_iso = None
+        pseudo = None
+        for _, _, note in blk["rows"]:
+            if not real_iso:
+                real_iso = _iso(note)
+            if not real_iso and not pseudo:
+                pseudo = _mashina_raqam(note)
+        iso = real_iso or pseudo
+        if not iso:
+            first_ri, _, first_note = blk["rows"][0]
+            iso = _notadan_pseudo_id(first_note, first_ri)
+
+        # Mashina raqami (haqiqiy 柜号 emas) BOSHQA sanadagi bloklar uchun
+        # ALLAQACHON ishlatilgan bo'lsa — bu ALOHIDA yetkazib berish.
+        if pseudo and not real_iso and iso in result and result[iso]["sana"] != blk["sana"]:
+            n = 2
+            while f"{iso}-{n}" in result:
+                n += 1
+            iso = f"{iso}-{n}"
+
+        if iso not in result:
+            result[iso] = {"sana": blk["sana"], "items": []}
+
+        for _, row, _ in blk["rows"]:
+            spec  = str(row[gg_i]).strip() if row[gg_i] else ''
+            marka = row[mat_i]
+            rang  = str(row[rang_i]).strip() if rang_i < len(row) and row[rang_i] else ''
+
+            try:
+                miqdor = int(float(row[qty_i])) if qty_i < len(row) and row[qty_i] else 0
+            except (ValueError, TypeError):
+                miqdor = 0
+            if miqdor <= 0:
+                continue
+
+            xitoy_kg = row[ogirlik_i] if ogirlik_i is not None and ogirlik_i < len(row) else None
+            raw_key = _tuzatish_kaliti("LIST", spec, marka, rang)
+            saqlangan = _tuzatishdan_top(raw_key)
+            if saqlangan:
+                nom_final = saqlangan
+            else:
+                nom = _inventarga_moslashtir(_list_spec_to_name(spec, marka, rang))
+                nom_final = nom or spec
+            vazn_kg = _item_vazn_kg(nom_final, miqdor, xitoy_kg, inv_set)
+            result[iso]["items"].append((nom_final, miqdor, vazn_kg, raw_key))
 
     return result
 
