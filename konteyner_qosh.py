@@ -14,6 +14,75 @@ from pathlib import Path
 
 import openpyxl
 
+# 2026-07-13 (haqiqiy xato: "File contains no valid workbook part" -- Xitoy
+# tomonidan yuborilgan出货清单/装箱单 fayllarning kengaytirmasi (.xls/.xlsx)
+# HAQIQIY ichki formatga har doim mos kelmaydi -- masalan ".xlsx" deb
+# nomlangan fayl aslida eski ikkilik .xls bo'lishi mumkin (yoki aksincha).
+# openpyxl FAQAT .xlsx (zip-asosli) formatni ochadi, boshqa holatda aynan
+# shu xato bilan yiqiladi. Shu sabab HAR DOIM avval openpyxl bilan, keyin
+# (muvaffaqiyatsiz bo'lsa) xlrd bilan (eski .xls) sinab ko'ramiz -- fayl
+# NOMIGA emas, ICHKI TARKIBIGA ishonamiz.
+def _xlsx_yukla_moslashuvchan(raw: bytes):
+    """Excel faylni ochadi -- .xlsx (openpyxl) YOKI eski .xls (xlrd)
+    bo'lishi mumkin, KENGAYTIRMAGA ishonilmaydi. Har qanday holatda haqiqiy
+    openpyxl.Workbook obyekti qaytariladi -- chaqiruvchi kod (cell.row,
+    merged_cells va h.k. ishlatadigan barcha joylar) o'zgarishsiz ishlaydi.
+    """
+    try:
+        return openpyxl.load_workbook(BytesIO(raw), data_only=True)
+    except Exception:
+        pass
+    import xlrd
+    book = xlrd.open_workbook(file_contents=raw)
+    wb_new = openpyxl.Workbook()
+    wb_new.remove(wb_new.active)
+    for sh in book.sheets():
+        ws_new = wb_new.create_sheet((sh.name or "Sheet")[:31])
+        for ri in range(sh.nrows):
+            qator = []
+            for v, ty in zip(sh.row_values(ri), sh.row_types(ri)):
+                if ty == 3:  # xlrd.XL_CELL_DATE
+                    try:
+                        qator.append(xlrd.xldate_as_datetime(v, book.datemode))
+                    except Exception:
+                        qator.append(v)
+                elif ty == 2 and isinstance(v, float) and v.is_integer():
+                    qator.append(int(v))
+                else:
+                    qator.append(v if v != '' else None)
+            ws_new.append(qator)
+    return wb_new
+
+
+class _XlrdUslubidagiVaraq:
+    """xlrd Sheet interfeysiga o'xshatilgan o'rovchi (shim) --出货清单
+    fayli aslida .xls emas, balki (kengaytirmasiga qaramay) .xlsx bo'lib
+    chiqsa, _parse_list_chuhuo() O'ZGARISHSIZ ishlashda davom etishi uchun."""
+    def __init__(self, ws):
+        self._qatorlar = [list(r) for r in ws.iter_rows(values_only=True)]
+        self.nrows = len(self._qatorlar)
+
+    def row_values(self, ri):
+        row = self._qatorlar[ri] if ri < len(self._qatorlar) else []
+        return [v if v is not None else '' for v in row]
+
+
+def _list_workbook_yukla(raw: bytes):
+    """出货清单 faylini ochadi -- ODATDA eski .xls (xlrd bilan), LEKIN fayl
+    kengaytirmasiga ishonilmaydi: agar xlrd o'qiy olmasa (aslida .xlsx
+    bo'lib chiqsa), openpyxl bilan o'qib, xlrd-uslubidagi shim orqali
+    qaytaradi. Qaytaradi: (varaq, datemode) -- datemode None bo'lsa, sana
+    qiymatlari xlrd-kodlashsiz, to'g'ridan-to'g'ri date/datetime sifatida
+    keladi (_sana_qator_qiymatini_parse shuni ham qo'llab-quvvatlaydi)."""
+    import xlrd
+    try:
+        book = xlrd.open_workbook(file_contents=raw)
+        return book.sheets()[0], book.datemode
+    except Exception:
+        wb = openpyxl.load_workbook(BytesIO(raw), data_only=True)
+        return _XlrdUslubidagiVaraq(wb.active), None
+
+
 # ── Admin tomonidan bir marta to'g'irlangan Xitoy spec → inventar nomi ──────
 # Xitoy fayllari hech qachon "ideal" bo'lmaydi (turli marka yozilishi,
 # almashgan tartib, kamdan-kam o'lchamlar va h.k.) — shu sababli har bir
@@ -485,7 +554,7 @@ def _parse_truba_zhuangxiang(raw: bytes) -> dict:
     except Exception:
         inv_set = set()
 
-    wb = openpyxl.load_workbook(BytesIO(raw), data_only=True)
+    wb = _xlsx_yukla_moslashuvchan(raw)
     ws = wb.active
 
     # 1) 柜号 → qator_raqami. FAQAT merged celllardan emas — hujjatning
@@ -658,7 +727,11 @@ def _list_sana_qatormi(row: list) -> bool:
     if len(row) < 2:
         return False
     v = row[1]
-    is_sana = isinstance(v, (int, float)) or (isinstance(v, str) and _matndan_sana(v))
+    is_sana = (
+        isinstance(v, (int, float))
+        or isinstance(v, (datetime, date))
+        or (isinstance(v, str) and _matndan_sana(v))
+    )
     if not is_sana:
         return False
     boshqalar = [c for i, c in enumerate(row) if i != 1]
@@ -666,8 +739,15 @@ def _list_sana_qatormi(row: list) -> bool:
 
 
 def _sana_qator_qiymatini_parse(v, datemode) -> "date | None":
-    """_list_sana_qatormi True bergan qatordagi sana qiymatini date'ga o'giradi."""
-    if isinstance(v, (int, float)):
+    """_list_sana_qatormi True bergan qatordagi sana qiymatini date'ga o'giradi.
+    2026-07-13: datemode None bo'lishi mumkin -- bu holda v ALLAQACHON
+    haqiqiy date/datetime (_list_workbook_yukla() openpyxl-fallback yo'lidan
+    kelgan, xlrd-seriali EMAS) -- xldate dekodlashga urinilmaydi."""
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    if isinstance(v, (int, float)) and datemode is not None:
         try:
             import xlrd
             return xlrd.xldate_as_datetime(v, datemode).date()
@@ -688,18 +768,16 @@ def _parse_list_chuhuo(raw: bytes) -> dict:
     bo'limning sanasini olishi kerak.
     """
     try:
-        import xlrd
-    except ImportError:
-        raise ImportError("xlrd o'rnatilmagan: pip install xlrd")
-
-    try:
         from parsers import _get_inventar_set
         inv_set = _get_inventar_set()
     except Exception:
         inv_set = set()
 
-    book = xlrd.open_workbook(file_contents=raw)
-    sh   = book.sheets()[0]
+    # 2026-07-13 (haqiqiy xato: "File contains no valid workbook part"):
+    # fayl kengaytirmasiga (.xls/.xlsx) ishonilmaydi -- ICHKI tarkibiga
+    # qarab avtomatik aniqlanadi (avval xlrd/eski .xls, muvaffaqiyatsiz
+    # bo'lsa openpyxl/.xlsx bilan shim orqali).
+    sh, datemode = _list_workbook_yukla(raw)
 
     # Birinchi sarlavha satrini topish (ustun indekslarini aniqlash uchun)
     hdr_row = 2
@@ -734,7 +812,7 @@ def _parse_list_chuhuo(raw: bytes) -> dict:
 
         # Bo'lim sanasi qatori — yangi jo'natish bo'limi boshlanmoqda
         if _list_sana_qatormi(row):
-            yangi_sana = _sana_qator_qiymatini_parse(row[1], book.datemode)
+            yangi_sana = _sana_qator_qiymatini_parse(row[1], datemode)
             if yangi_sana:
                 cur_sana = yangi_sana
             continue
@@ -820,7 +898,7 @@ def aksessuar_fayl_mi(raw: bytes) -> bool:
     sarlavhalar bo'ladi. Shu farq orqali ikkalasi bir-biridan ajratiladi.
     """
     try:
-        wb = openpyxl.load_workbook(BytesIO(raw), data_only=True)
+        wb = _xlsx_yukla_moslashuvchan(raw)
         ws = wb.active
         nom_ok = False
         soni_ok = False
@@ -848,7 +926,7 @@ def aksessuar_fayl_oqi(raw: bytes, iso: str, sana_s: str) -> dict:
     iso    — konteynerni ajratib turadigan nom (odatda yuborilgan fayl nomi).
     sana_s — 'DD.MM.YYYY' formatidagi sana (fayl nomida bo'lmasa — bugun).
     """
-    wb = openpyxl.load_workbook(BytesIO(raw), data_only=True)
+    wb = _xlsx_yukla_moslashuvchan(raw)
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
 
@@ -1415,7 +1493,7 @@ def draft_excel_oqi(raw: bytes) -> list[dict]:
     except Exception:
         inv_set = set()
 
-    wb = openpyxl.load_workbook(BytesIO(raw), data_only=True)
+    wb = _xlsx_yukla_moslashuvchan(raw)
     ws = wb.active
 
     natija: list[dict] = []
