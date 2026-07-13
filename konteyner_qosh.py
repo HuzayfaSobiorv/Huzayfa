@@ -492,13 +492,20 @@ def _list_spec_to_name(spec: str, marka_raw, rang: str = '') -> str | None:
     except ValueError:
         return None
 
-    # Qalinlik: Труба/Профиль bilan BIR XIL Xitoy-delta jadvalidan
-    # o'tkaziladi (0,55→0,6 / 0,75→0,8 / 0,95→1,0 / 1,15→1,2 / 1,45→1,45
-    # (istisno) / 1,95→2,0 / 2,95→3,0). Avval bu qadam BUTUNLAY yo'q edi —
-    # xom Xitoy qiymati o'zgarishsiz yozilardi (masalan "Лист 2,95..."),
-    # bu esa inventarda HECH QACHON topilmaydigan nom yaratardi (inventar
-    # doim yaxlitlangan: 0,6 / 0,8 / 1,0 / 2,0 / 3,0 va h.k.).
-    q_s = _yaxlitla_stenka(qalinlik_raw)
+    # 2026-07-13 (Huzayfa: "3.5 list yozmoqda ammo ro'yxatda bunday list
+    # yo'q"): ILGARI bu yerda Труба/Профиль'ning "ст" jadvali
+    # (_yaxlitla_stenka) ishlatilardi — LEKIN u jadval FAQAT 3,5mm gacha
+    # ("ст" qiymati inventarda hech qachon 3,5dan oshmaydi). Лист esa
+    # 4/5/6/8/10/12/14/16 mm gacha bo'ladi — shu sabab xom "3.95" yoki
+    # "4.95" kabi qalinliklar bu (noto'g'ri) jadvaldan ENG YAQIN "3,5"ga
+    # yaxlitlanib, INVENTARDA UMUMAN MAVJUD BO'LMAGAN nom chiqarardi
+    # (haqiqiy mos qiymat: "Лист-4,0" / "Лист-5,0"). Endi xom qiymat
+    # o'ZGARISHSIZ uzatiladi — yakuniy moslashtirish _inventarga_moslashtir()
+    # → _fix_oddiy_nom() orqali bo'ladi, u aniq mos kelishni (ba'zi inventar
+    # yozuvlari "0,41"/"0,81" kabi xom qiymatni saqlaydi) HAM, Xitoy
+    # "-0,05" konvensiyasini (0,75→0,8 / 2,95→3,0 / 3,95→4,0 / 5,95→6,0
+    # va h.k, TO'LIQ diapazonda) HAM to'g'ri qamrab oladi.
+    q_s = m.group(1).replace('.', ',')
 
     en, boy = _yaxlitla_list_razmer(en_raw, boy_raw)
 
