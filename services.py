@@ -137,6 +137,13 @@ def konteyner_tarix_olish() -> set[str]:
         if XITOY_PARSED_DIR.exists():
             for f in XITOY_PARSED_DIR.glob("*.xlsx"):
                 stem = f.stem[:-2] if f.stem.endswith("_D") else f.stem
+                # 2026-07-13: "F_" (tezkor/aksessuar) prefiksi ham olib
+                # tashlanadi -- aks holda (masalan "F_AksessuarKont_26.06.2026")
+                # noto'g'ri iso="F" bo'lib chiqib, bu konteyner keyinchalik
+                # dedup tekshiruvida "ko'rinmas" bo'lib qolardi (konteyner_qosh.py
+                # dagi bir xil tuzatish bilan izchil).
+                if stem.startswith("F_"):
+                    stem = stem[2:]
                 iso, _, sana = stem.partition("_")
                 if iso:
                     boshlangich.add(konteyner_tarix_kalit(iso, sana))

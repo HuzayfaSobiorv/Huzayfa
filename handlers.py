@@ -1443,7 +1443,6 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             from konteyner_qosh import (
                 aksessuar_fayl_oqi, draft_excel_yarat, qisqa_xulosa,
                 iso_boyicha_yangilarini_ajrat, notanish_soni,
-                oxirgi_malum_sana, faqat_sanadan_keyingi,
             )
             await msg.reply_text("⏳ Aksessuar fayli o'qilmoqda, biroz kuting...")
             fname = (doc.file_name or "Aksessuar").rsplit(".", 1)[0]
@@ -1468,9 +1467,23 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data.pop("kutilmoqda", None)
                 return
             tarix = konteyner_tarix_olish()
-            oxirgi = oxirgi_malum_sana(XITOY_PARSED_DIR, tarix)
-            yangilar = faqat_sanadan_keyingi([kont], oxirgi)
-            yangilar = iso_boyicha_yangilarini_ajrat(yangilar, XITOY_PARSED_DIR, tarix)
+            # 2026-07-13 (Huzayfa: "Aksessuarlar02" 15.06.2026 -- bot
+            # "allaqachon ro'yxatda" dedi, lekin "Yo'ldagi yuklar" Excelida
+            # UMUMAN yo'q edi -- ANIQLANDI): ILGARI bu yerda ham
+            # faqat_sanadan_keyingi() (GLOBAL sana chegarasi) ishlatilardi --
+            # bu filtr XITOY XOM FAYLLARI (装箱单/出货清单) uchun mo'ljallangan,
+            # chunki ular KUMULYATIV (bitta fayl ichida oy-lab eski
+            # yozuvlarni ham saqlaydi). Aksessuar fayli esa HAR DOIM BITTA,
+            # ALOHIDA yangi yetkazib berish -- kumulyativ EMAS. Global filtr
+            # bu yerda noto'g'ri qo'llanib, sanasi (15.06.2026) tizimdagi
+            # BOSHQA turdagi konteynerlarning eng oxirgi sanasidan
+            # (masalan 30.06.2026) OLDINROQ bo'lgani uchun, HALI HECH QACHON
+            # qo'shilmagan haqiqiy yangi konteynerni "eski, allaqachon bor"
+            # deb noto'g'ri o'tkazib yuborardi. Endi faqat ISO-asosidagi
+            # tekshiruv ishlatiladi -- bu ANIQ shu konteyner (ISO/nom)
+            # ilgari qo'shilganmi yoki yo'qmi, sanasidan qat'iy nazar
+            # to'g'ri aniqlaydi.
+            yangilar = iso_boyicha_yangilarini_ajrat([kont], XITOY_PARSED_DIR, tarix)
             if not yangilar:
                 await msg.reply_text(t(lang, "kont_barchasi_bor"), parse_mode="Markdown")
                 context.user_data.pop("kutilmoqda", None)

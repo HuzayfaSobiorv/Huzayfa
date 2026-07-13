@@ -1101,6 +1101,21 @@ def xitoy_yuklar_oqi(truba_raw: bytes, list_raw: bytes) -> list[dict]:
 
 # ── Mavjud konteynerlar bilan solishtirish ────────────────────────────────────
 
+def _iso_tozala(iso: str) -> str:
+    """Solishtirish (dedup) uchun ISO'ni tozalaydi -- "F_" (tezkor/aksessuar
+    konteyner belgisi) prefiksini olib tashlaydi, main.py::_parse_konteyner_fayli()
+    qanday qilsa xuddi shunday. 2026-07-13 (Huzayfa: "Aksessuarlar02"
+    ALLAQACHON bor deb ko'rsatdi, aslida hech qachon qo'shilmagan edi --
+    ANIQLANDI): bu tozalash YO'Q edi, shu sabab "F_AksessuarKont_26.06.2026.xlsx"
+    kabi fayllar stem.partition("_") orqali NOTO'G'RI iso="F" (va qolgan matn
+    sana sifatida parslanmay) bo'lib chiqar, natijada bu konteyner dedup
+    tekshiruvida BUTUNLAY "ko'rinmas" bo'lib qolardi. DIQQAT: bu FAQAT
+    solishtirish uchun -- haqiqiy saqlangan fayl nomi ("F_..." prefiksi bilan)
+    o'ZGARISHSIZ qoladi, chunki main.py aynan shu prefiksga qarab FAST
+    yetkazib berish muddatini qo'llaydi."""
+    return iso[2:] if iso.startswith("F_") else iso
+
+
 def yangi_konteynerlar(yuklar: list[dict], kont_dir: Path) -> list[dict]:
     """
     Allaqachon saqlangan xlsx fayllar bilan solishtiradi — ISO + sana
@@ -1112,13 +1127,14 @@ def yangi_konteynerlar(yuklar: list[dict], kont_dir: Path) -> list[dict]:
     existing = set()
     if kont_dir.exists():
         for f in kont_dir.glob("*.xlsx"):
-            # CRXU1561318_07.06.2026.xlsx yoki _..._D.xlsx
+            # CRXU1561318_07.06.2026.xlsx yoki _..._D.xlsx yoki F_...xlsx
             stem = f.stem[:-2] if f.stem.endswith("_D") else f.stem
+            stem = _iso_tozala(stem) if stem.startswith("F_") else stem
             iso, _, sana = stem.partition("_")
             if iso:
                 existing.add((iso, sana))
 
-    return [k for k in yuklar if (k["iso"], k["sana"]) not in existing]
+    return [k for k in yuklar if (_iso_tozala(k["iso"]), k["sana"]) not in existing]
 
 
 # ── Sana chegarasi bo'yicha filtrlash ──────────────────────────────────────────
@@ -1191,6 +1207,7 @@ def _mavjud_sanalar_iso_boyicha(kont_dir: Path, tarix: set = None) -> dict:
     if kont_dir.exists():
         for f in kont_dir.glob("*.xlsx"):
             stem = f.stem[:-2] if f.stem.endswith("_D") else f.stem
+            stem = _iso_tozala(stem) if stem.startswith("F_") else stem
             iso, _, sana_s = stem.partition("_")
             d = _sana_parse(sana_s)
             if iso and d:
@@ -1198,6 +1215,7 @@ def _mavjud_sanalar_iso_boyicha(kont_dir: Path, tarix: set = None) -> dict:
     if tarix:
         for kalit in tarix:
             iso, _, sana_s = str(kalit).partition("|")
+            iso = _iso_tozala(iso)
             d = _sana_parse(sana_s)
             if iso and d:
                 natija.setdefault(iso, []).append(d)
@@ -1222,7 +1240,7 @@ def iso_boyicha_yangilarini_ajrat(yuklar: list[dict], kont_dir: Path, tarix: set
     mavjud = _mavjud_sanalar_iso_boyicha(kont_dir, tarix)
     natija = []
     for k in yuklar:
-        eski_sanalar = mavjud.get(k["iso"])
+        eski_sanalar = mavjud.get(_iso_tozala(k["iso"]))
         if not eski_sanalar:
             natija.append(k)
             continue
