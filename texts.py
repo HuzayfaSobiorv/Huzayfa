@@ -106,7 +106,8 @@ STR: dict[str, dict[str, str]] = {
     "kritik_stub":   "📊 Критик товарлар рўйхати тайёрланмоқда...",
     # Yo'lga konteyner qo'shish
     "b_yolga_kont":    "🚢 Йўлга контейнер қўшиш",
-    "kont_tp_kut":     "📎 *Тайёр рўйхат файлини юборинг* (1-варақ: Труба/Профиль, 2-варақ: Лист).\n\n_Устунлар: Контейнер рақами | Товар номи | Товар миқдори | Юкланган сана_\n_(Excel .xlsx формат)_",
+    "kont_tp_kut":     "📎 *1/2 — Труба/Профиль装箱单 файлини юборинг.*\n\n_(Excel .xlsx формат)_",
+    "kont_list_kut":   "📎 *2/2 — Лист出货清单 файлини юборинг.*\n\n_(Excel .xls/.xlsx формат)_",
     "kont_tasdiq_ha":  "✅ Ҳа, қўшиш",
     "kont_tasdiq_yoq": "❌ Бекор",
     "kont_qoshildi":   "✅ *{n}* та контейнер йўлда рўйхатига қўшилди!",
@@ -224,7 +225,8 @@ STR: dict[str, dict[str, str]] = {
     "kritik_stub":   "📊 Kritik tovarlar ro'yxati tayyorlanmoqda...",
     # Yo'lga konteyner qo'shish
     "b_yolga_kont":    "🚢 Yo'lga konteyner qo'shish",
-    "kont_tp_kut":     "📎 *Tayyor ro'yxat faylini yuboring* (1-varaq: Труба/Профиль, 2-varaq: Лист).\n\n_Ustunlar: Konteyner raqami | Tovar nomi | Tovar miqdori | Yuklangan sana_\n_(Excel .xlsx format)_",
+    "kont_tp_kut":     "📎 *1/2 — Truba/Profil faylini yuboring.*\n\n_(Excel .xlsx format)_",
+    "kont_list_kut":   "📎 *2/2 — List faylini yuboring.*\n\n_(Excel .xls/.xlsx format)_",
     "kont_tasdiq_ha":  "✅ Ha, qo'shish",
     "kont_tasdiq_yoq": "❌ Bekor",
     "kont_qoshildi":   "✅ *{n}* ta konteyner yo'lda ro'yxatiga qo'shildi!",
