@@ -759,10 +759,19 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
     from Generate_Asosiy_order import load_data, calculate, build
 
     # Agar xitoy_ostatka berilmagan bo'lsa — JSON fayldan avtomatik o'qiymiz
+    mavjud = xitoy_yuklash(kanal)
     if xitoy_ostatka is None:
-        mavjud = xitoy_yuklash(kanal)
         if mavjud and mavjud.get("tovarlar"):
             xitoy_ostatka = mavjud["tovarlar"]
+    # 2026-07-13 (Huzayfa: "K va L ustunlarini Excelda ham ko'rsatib
+    # turish kerak"): Tayyor (L) ustuni ham xuddi shu xitoy_{kanal}.json
+    # faylida ("ombor" kaliti) saqlanadi -- ILGARI bu yerda umuman
+    # o'qilmasdi, faqat Zakaz (K, "tovarlar") buyurtmani kamaytirish
+    # uchun ishlatilardi. Endi ikkalasi ham Excelga (E=Zakaz, F=Tayyor)
+    # yoziladi -- admin har bir tovar uchun Xitoydagi ostatkani buyurtma
+    # qatori yonida to'g'ridan-to'g'ri ko'radi, alohida fayl ochib
+    # qidirishga hojat qolmaydi.
+    ombor_map = (mavjud or {}).get("ombor") or {}
 
     _df, _kont_map = load_data(kanal=kanal)
     df_calc = calculate(_df, _kont_map)
@@ -800,6 +809,16 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
 
     if df_calc.empty:
         return None  # Buyurtma kerak emas — chaqiruvchi xabar beradi
+
+    # E/F ustunlari uchun — xuddi shu tovar nomi bo'yicha Zakaz/Tayyor
+    # qiymatlarini qo'shib qo'yamiz (FAQAT ko'rsatish uchun, hisoblashga
+    # ta'sir qilmaydi — "buyurtma" ustuni yuqorida allaqachon tuzatilgan).
+    df_calc["zakaz"] = df_calc["tovar"].apply(
+        lambda t: xitoy_ostatka.get(str(t).strip(), 0) if xitoy_ostatka else 0
+    )
+    df_calc["tayyor"] = df_calc["tovar"].apply(
+        lambda t: ombor_map.get(str(t).strip(), 0) if ombor_map else 0
+    )
 
     # Draft tovarlarni saqlaymiz — buyurtma_tekshir shu ro'yxatdan lookup qiladi.
     # Inventar keyinchalik o'zgarsa ham xato bo'lmaydi.

@@ -90,10 +90,21 @@ SORTED_CATS = {"Труба","Профиль","Лист"}
 SURFACE_ORDER = ["","Матовый","Глянцевый","Чёрный","Голд","Цветной"]
 MARKA_ORDER   = ["201","304","430","316","321",""]
 
-# Faqat 3 ustun
+# Faqat 3 ustun (A-C) — bannerlar/sarlavhalar shu 3 ustunni egallaydi
 NCOLS      = 3
 COL_NAMES  = ["Tovar nomi", "Uzunlik", "Buyurtma"]
 COL_WIDTHS = [50, 12, 14]
+
+# 2026-07-13 (Huzayfa: "K va L ustunlarini ham ko'rsatib turish kerak"):
+# D ustuni BO'SH qoladi (ajratuvchi bo'shliq), E va F ustunlarida esa
+# Xitoy ostatka faylidagi K (Zakaz) va L (Tayyor) qiymatlari -- FAQAT
+# KO'RSATISH uchun (Buyurtma ustuni bularni hisobga olib ALLAQACHON
+# tuzatilgan, bu yerda qayta ayirilmaydi) -- admin har bir tovar uchun
+# Xitoydagi ostatkani buyurtma qatori yonida to'g'ridan-to'g'ri ko'radi.
+EXTRA_COL_ZAKAZ  = 5   # E
+EXTRA_COL_TAYYOR = 6   # F
+EXTRA_HDRS       = {EXTRA_COL_ZAKAZ: "Zakaz", EXTRA_COL_TAYYOR: "Tayyor"}
+EXTRA_WIDTHS     = {EXTRA_COL_ZAKAZ: 12, EXTRA_COL_TAYYOR: 12}
 
 # ============================================================
 # 4. PARSING
@@ -407,6 +418,8 @@ def rich_tovar_name(name: str) -> CellRichText:
 def set_cols(ws):
     for i, (_, width) in enumerate(zip(COL_NAMES, COL_WIDTHS), 1):
         ws.column_dimensions[get_column_letter(i)].width = width
+    for col_i, width in EXTRA_WIDTHS.items():
+        ws.column_dimensions[get_column_letter(col_i)].width = width
 
 
 def write_category_banner(ws, row, text):
@@ -425,6 +438,14 @@ def write_col_headers(ws, row):
         c.font      = Font(name=FONT_NAME, bold=True, size=FONT_SZ, color=WHITE)
         c.fill      = _fill(COL_HDR_BG)
         c.alignment = _align(center=(i > 1))
+        c.border    = _border()
+    # E/F -- "Zakaz"/"Tayyor" (Xitoy ostatka, faqat ko'rsatish uchun). D
+    # ustuni ATAYLAB bo'sh qoldiriladi (ajratuvchi bo'shliq).
+    for col_i, name in EXTRA_HDRS.items():
+        c = ws.cell(row=row, column=col_i, value=name)
+        c.font      = Font(name=FONT_NAME, bold=True, size=FONT_SZ, color=WHITE)
+        c.fill      = _fill(COL_HDR_BG)
+        c.alignment = _align(center=True)
         c.border    = _border()
     ws.row_dimensions[row].height = 26
 
@@ -496,6 +517,31 @@ def write_product(ws, row, r) -> int:
     cc.fill      = fill
     cc.border    = brd
     cc.alignment = _align(center=True)
+
+    # E/F — Zakaz (K) / Tayyor (L): Xitoy ostatkasi, FAQAT ko'rsatish uchun
+    # (Buyurtma ustuniga ta'sir qilmaydi -- u yuqorida allaqachon shu
+    # qiymatlarni hisobga olib tuzatilgan). Ma'lumot yo'q bo'lsa (masalan
+    # ostatka fayli hali yuklanmagan) -- 0 ko'rsatiladi, bo'sh emas.
+    try:
+        zakaz_v = int(float(r.get("zakaz", 0) or 0))
+    except (ValueError, TypeError):
+        zakaz_v = 0
+    try:
+        tayyor_v = int(float(r.get("tayyor", 0) or 0))
+    except (ValueError, TypeError):
+        tayyor_v = 0
+
+    ce = ws.cell(row=row, column=EXTRA_COL_ZAKAZ, value=zakaz_v)
+    ce.font      = Font(name=FONT_NAME, size=FONT_SZ - 1, color="1A5276")
+    ce.fill      = fill
+    ce.border    = brd
+    ce.alignment = _align(center=True)
+
+    cf = ws.cell(row=row, column=EXTRA_COL_TAYYOR, value=tayyor_v)
+    cf.font      = Font(name=FONT_NAME, size=FONT_SZ - 1, color="1A5276")
+    cf.fill      = fill
+    cf.border    = brd
+    cf.alignment = _align(center=True)
 
     return row + 1
 
