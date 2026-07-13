@@ -1334,7 +1334,6 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text("❌ Bu funksiya faqat admin uchun.")
             return
         context.user_data["kutilmoqda"] = ("kont_tp", None)
-        context.user_data.pop("kont_tp_raw", None)
         await msg.reply_text(t(lang, "kont_tp_kut"), parse_mode="Markdown")
 
     elif action == "boglanish":
@@ -1351,6 +1350,60 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await yolda_ko_rish(msg, context, lang)
 
 
+# 2026-07-13 (Huzayfa talabi: "xom Xitoy fayl o'rniga tayyor ro'yxatga
+# osonroq o'qishga bo'ladi"): "kont_tp" oqimidagi aksessuar-bo'lim va yangi
+# tayyor-ro'yxat bo'limi bir xil "tarix tekshirish + qisqa xulosa + draft
+# Excel + tasdiqlash tugmasi" bosqichini takrorlamasin uchun umumiy holga
+# chiqarildi. Draft Excel/tasdiqlash DIZAYNI o'zgarishsiz qoladi (Huzayfa
+# talabi) — faqat kirish (ingest) formati o'zgardi.
+async def _kont_yangilarni_qayta_ishla(msg, context, lang, yuklar: list[dict]):
+    from konteyner_qosh import (
+        draft_excel_yarat, qisqa_xulosa, iso_boyicha_yangilarini_ajrat,
+        oxirgi_malum_sana, faqat_sanadan_keyingi, notanish_soni,
+    )
+    tarix = konteyner_tarix_olish()
+    oxirgi = oxirgi_malum_sana(XITOY_PARSED_DIR, tarix)
+    soni_oldin = len(yuklar)
+    yangilar = faqat_sanadan_keyingi(yuklar, oxirgi)
+    eskisi_soni = soni_oldin - len(yangilar)
+    if oxirgi and eskisi_soni:
+        await msg.reply_text(
+            f"ℹ️ Tizimdagi eng oxirgi ma'lum sana: {oxirgi.strftime('%d.%m.%Y')}. "
+            f"Shundan OLDINGI (eski) {eskisi_soni} ta yozuv faylda "
+            f"topildi va o'tkazib yuborildi."
+        )
+    yangilar = iso_boyicha_yangilarini_ajrat(yangilar, XITOY_PARSED_DIR, tarix)
+    if not yangilar:
+        await msg.reply_text(t(lang, "kont_barchasi_bor"), parse_mode="Markdown")
+        context.user_data.pop("kutilmoqda", None)
+        return
+    context.user_data["kont_yangilar"] = yangilar
+    context.user_data["kutilmoqda"] = ("kont_tasdiq_fayl", None)
+    await msg.reply_text(qisqa_xulosa(yangilar), parse_mode="Markdown")
+    bio = draft_excel_yarat(yangilar)
+    await msg.reply_document(
+        document=bio, filename="Yangi_konteynerlar.xlsx",
+        caption=(
+            "📋 Har bir konteynerning to'liq tovar ro'yxati shu faylda. "
+            "Xato bo'lsa tahrirlab qayta shu yerga yuboring. "
+            "Hammasi to'g'ri bo'lsa — pastdagi tugmani bosing."
+        ),
+    )
+    n_nomos = notanish_soni(yangilar)
+    if n_nomos:
+        await msg.reply_text(
+            f"⚠️ *DIQQAT: {n_nomos} ta tovar hali ham inventarda "
+            f"NOTANISH* (faylda ⚠️ belgi bilan ajratilgan). Iltimos, "
+            f"yuqoridagi Excel faylni oching, shu qatorlarni TO'G'IRLAB "
+            f"qayta shu yerga yuboring — aks holda ular xato/noaniq nom "
+            f"bilan saqlanib qoladi.",
+            parse_mode="Markdown",
+        )
+        await msg.reply_text("✅ Baribir tasdiqlaysizmi?", reply_markup=kont_tasdiq_ikb(lang))
+    else:
+        await msg.reply_text("✅ Tasdiqlaysizmi?", reply_markup=kont_tasdiq_ikb(lang))
+
+
 async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Xitoy Excel fayllarini qabul qiladi."""
     uid = update.message.from_user.id
@@ -1362,7 +1415,7 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg   = update.message
     kut   = context.user_data.get("kutilmoqda")
 
-    if not (isinstance(kut, tuple) and kut[0] in ("xitoy_fayl", "xitoy_ostatka_fayl", "xitoy_tp", "xitoy_list", "buyurtma_tasdiq", "kont_tp", "kont_list", "kont_tasdiq_fayl")):
+    if not (isinstance(kut, tuple) and kut[0] in ("xitoy_fayl", "xitoy_ostatka_fayl", "xitoy_tp", "xitoy_list", "buyurtma_tasdiq", "kont_tp", "kont_tasdiq_fayl")):
         await msg.reply_text("Fayl kutilmayapti. Avval kanal tanlang.")
         return
 
@@ -1376,7 +1429,7 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # yuboriladi — aks holda (avvalgi kod shunday edi) katta fayllarda
     # bot bir necha soniya JIM turib qolar edi (fayl hali serverdan
     # yuklab olinayotgan payt hech qanday javob yo'q edi), va foydalanuvchi
-    # botni "osilib qoldi" deb o'ylardi. Har bir holat (kont_tp, kont_list
+    # botni "osilib qoldi" deb o'ylardi. Har bir holat (kont_tp,
     # va h.k.) o'zining KEYINGI, aniqroq xabarini pastda alohida yuboradi.
     await msg.reply_text("📎 Fayl qabul qilindi, yuklanmoqda...")
 
@@ -1427,24 +1480,26 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Yo'lga konteyner qo'shish: 1/2 — Труба/Профиль装箱单 ────────────────────
+    # ── Yo'lga konteyner qo'shish: tayyor ro'yxat fayli (1 fayl, 2 varaq) ─────
+    # 2026-07-13 (Huzayfa talabi): xom Xitoycha装箱单/出货清单 (bot o'zi tarjima
+    # qilishga urinardi) endi ISHLATILMAYDI. O'rniga: foydalanuvchi o'zi
+    # tayyorlagan, tarjima qilinmaydigan BITTA Excel (1-varaq Труба/Профиль,
+    # 2-varaq Лист; ustunlar: Konteyner raqami | Tovar nomi | Tovar miqdori |
+    # Yuklatilgan sana). Bir xil "Konteyner raqami" bilan kelgan qatorlar —
+    # ikkala varaqdan bo'lsa ham — bitta konteynerga birlashadi. "Tovar nomi"
+    # baribir _inventarga_moslashtir() orqali (Buyurtma/Yuklatish rejasi
+    # kabi CHUQUR) haqiqiy inventar bilan solishtiriladi — natija va
+    # tasdiqlash oqimi (qisqa_xulosa + draft Excel + tugma) O'ZGARMAGAN.
     if kut[0] == "kont_tp":
-        # ── AKSESSUAR fayl tekshiruvi (2026-07-08 qo'shildi) ────────────────
-        # Баласина/Чашка/Шар/Сокка kabi tovarlar Труба/Профиль/Лист kabi
-        # ikki-faylli (装箱单+出货清单) formatda EMAS — bitta oddiy jadval
-        # (T/r | Tovar nomi | Soni). Bunday fayl aniqlansa, "2-fayl kut"
-        # bosqichi butunlay o'tkazib yuboriladi — konteyner shu bitta fayldan
-        # to'g'ridan-to'g'ri tayyorlanadi va odatdagi tasdiqlash oqimiga
-        # (qisqa_xulosa + draft Excel + tasdiqlash tugmasi) uzatiladi.
+        # ── AKSESSUAR fayl tekshiruvi (2026-07-08 qo'shildi) — o'zgarishsiz ──
+        # Баласина/Чашка/Шар/Сокка kabi tovarlar bu yangi 4-ustunli formatda
+        # ham EMAS — o'zining alohida oddiy jadvali (T/r | Tovar nomi | Soni)
+        # bilan keladi, shu sabab avval shu tekshiriladi.
         import re as _re
         from datetime import datetime as _dt
         from konteyner_qosh import aksessuar_fayl_mi
         if aksessuar_fayl_mi(raw):
-            from konteyner_qosh import (
-                aksessuar_fayl_oqi, draft_excel_yarat, qisqa_xulosa,
-                iso_boyicha_yangilarini_ajrat, notanish_soni,
-                oxirgi_malum_sana, faqat_sanadan_keyingi,
-            )
+            from konteyner_qosh import aksessuar_fayl_oqi
             await msg.reply_text("⏳ Aksessuar fayli o'qilmoqda, biroz kuting...")
             fname = (doc.file_name or "Aksessuar").rsplit(".", 1)[0]
             m = _re.search(r'(\d{1,2}[.\-]\d{1,2}[.\-]\d{4})', fname)
@@ -1467,140 +1522,27 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 context.user_data.pop("kutilmoqda", None)
                 return
-            tarix = konteyner_tarix_olish()
-            oxirgi = oxirgi_malum_sana(XITOY_PARSED_DIR, tarix)
-            yangilar = faqat_sanadan_keyingi([kont], oxirgi)
-            yangilar = iso_boyicha_yangilarini_ajrat(yangilar, XITOY_PARSED_DIR, tarix)
-            if not yangilar:
-                await msg.reply_text(t(lang, "kont_barchasi_bor"), parse_mode="Markdown")
-                context.user_data.pop("kutilmoqda", None)
-                return
-            context.user_data["kont_yangilar"] = yangilar
-            context.user_data["kutilmoqda"] = ("kont_tasdiq_fayl", None)
-            await msg.reply_text(qisqa_xulosa(yangilar), parse_mode="Markdown")
-            bio = draft_excel_yarat(yangilar)
-            await msg.reply_document(
-                document=bio, filename="Yangi_konteynerlar.xlsx",
-                caption=(
-                    "📋 Aksessuar ro'yxati shu faylda. Xato bo'lsa tahrirlab "
-                    "qayta shu yerga yuboring. Hammasi to'g'ri bo'lsa — "
-                    "pastdagi tugmani bosing."
-                ),
-            )
-            n_nomos = notanish_soni(yangilar)
-            if n_nomos:
-                await msg.reply_text(
-                    f"⚠️ *DIQQAT: {n_nomos} ta tovar hali ham inventarda "
-                    f"NOTANISH* (faylda ⚠️ belgi bilan ajratilgan). Iltimos, "
-                    f"yuqoridagi Excel faylni oching, shu qatorlarni TO'G'IRLAB "
-                    f"qayta shu yerga yuboring — aks holda ular xato/noaniq nom "
-                    f"bilan saqlanib qoladi.",
-                    parse_mode="Markdown",
-                )
-                await msg.reply_text(
-                    "✅ Baribir tasdiqlaysizmi?",
-                    reply_markup=kont_tasdiq_ikb(lang),
-                )
-            else:
-                await msg.reply_text(
-                    "✅ Tasdiqlaysizmi?",
-                    reply_markup=kont_tasdiq_ikb(lang),
-                )
+            await _kont_yangilarni_qayta_ishla(msg, context, lang, [kont])
             return
 
-        # DIQQAT: bu yerda hali og'ir tekshirish/parslash YO'Q — faqat
-        # xotiraga saqlanadi, haqiqiy o'qish ikkala fayl ham kelgach
-        # ("kont_list" bosqichida) bajariladi. Shuning uchun qo'shimcha
-        # "tekshirilmoqda" xabari YOLG'ON va ORTIQCHA edi (yuqoridagi umumiy
-        # "qabul qilindi" xabari yetarli) — olib tashlandi.
-        context.user_data["kont_tp_raw"] = raw
-        context.user_data["kutilmoqda"] = ("kont_list", None)
-        await msg.reply_text(t(lang, "kont_list_kut"), parse_mode="Markdown")
-        return
-
-    # ── Yo'lga konteyner qo'shish: 2/2 — Лист出货清单 → tekshirish uchun draft ──
-    if kut[0] == "kont_list":
-        from konteyner_qosh import (
-            xitoy_yuklar_oqi, draft_excel_yarat, qisqa_xulosa,
-            iso_boyicha_yangilarini_ajrat, notanish_soni,
-            oxirgi_malum_sana, faqat_sanadan_keyingi,
-        )
-        await msg.reply_text("⏳ Ikkala fayl o'qilmoqda va solishtirilmoqda, biroz kuting...")
-        truba_raw = context.user_data.pop("kont_tp_raw", None)
-        if not truba_raw:
-            await msg.reply_text(
-                "⚠️ 1-fayl (Труба/Профиль) topilmadi — qaytadan boshlang."
-            )
-            context.user_data.pop("kutilmoqda", None)
-            return
+        # ── Tayyor ro'yxat (Труба/Профиль + Лист, 4 ustun) ──────────────────
+        from konteyner_qosh import tayyor_royhat_fayl_oqi
+        await msg.reply_text("⏳ Fayl o'qilmoqda va inventar bilan solishtirilmoqda, biroz kuting...")
         try:
-            yuklar = xitoy_yuklar_oqi(truba_raw, raw)
+            yuklar = tayyor_royhat_fayl_oqi(raw)
         except Exception as e:
             await msg.reply_text(t(lang, "kont_xato").format(xato=str(e)[:300]), parse_mode="Markdown")
             context.user_data.pop("kutilmoqda", None)
             return
-        tarix = konteyner_tarix_olish()
-        # 1-QADAM — GLOBAL sana chegarasi: Xitoy faylida (kumulyativ master
-        # ro'yxat bo'lgani uchun) ko'p oy oldingi (masalan mart/aprel)
-        # yozuvlar ham bor bo'lishi mumkin. Bular ILGARI "ISO hech qachon
-        # uchramagan bo'lsa — sanasidan qat'iy nazar yangi" qoidasi orqali
-        # noto'g'ri qoshilib ketardi (masalan yangi payqalgan mashina-raqam
-        # psevdo-ID'lari yoki tuzatilgan ISO'lar). Endi tizimdagi ENG OXIRGI
-        # ma'lum yuklangan sanadan KEYINGI (qat'iy katta) yozuvlar
-        # QOLDIRILADI — bundan eskisi butunlay o'tkazib yuboriladi.
-        oxirgi = oxirgi_malum_sana(XITOY_PARSED_DIR, tarix)
-        soni_oldin = len(yuklar)
-        yuklar = faqat_sanadan_keyingi(yuklar, oxirgi)
-        eskisi_soni = soni_oldin - len(yuklar)
-        if oxirgi and eskisi_soni:
+        if not yuklar:
             await msg.reply_text(
-                f"ℹ️ Tizimdagi eng oxirgi ma'lum sana: {oxirgi.strftime('%d.%m.%Y')}. "
-                f"Shundan OLDINGI (eski) {eskisi_soni} ta yozuv Xitoy faylida "
-                f"topildi va o'tkazib yuborildi."
+                "⚠️ Faylda 'Konteyner raqami'/'Tovar nomi'/'Tovar miqdori' "
+                "ustunlaridan hech qanday to'g'ri qator topilmadi (1-varaq "
+                "Труба/Профиль, 2-varaq Лист bo'lishi kerak) — qaytadan tekshiring."
             )
-        # 2-QADAM — shundan keyin, qolgan (yangi sanadagi) yozuvlar orasida
-        # HAR BIR ISO alohida tekshiriladi: shu ISO ushbu sanadan avvalroq
-        # allaqachon xuddi shu (yoki keyingi) sana bilan qayd etilgan bo'lsa
-        # — qayta o'tkazib yuboriladi.
-        yangilar = iso_boyicha_yangilarini_ajrat(yuklar, XITOY_PARSED_DIR, tarix)
-        if not yangilar:
-            await msg.reply_text(t(lang, "kont_barchasi_bor"), parse_mode="Markdown")
             context.user_data.pop("kutilmoqda", None)
             return
-        context.user_data["kont_yangilar"] = yangilar
-        context.user_data["kutilmoqda"] = ("kont_tasdiq_fayl", None)
-        # Tasdiqlashdan oldin QISQA xulosa (har bir konteyner — birlashganmi,
-        # faqat Труба/Лист, tonnaji, inventarda mos kelmagan tovar bormi) +
-        # to'liq tafsilotli Excel + tasdiqlash tugmasi.
-        await msg.reply_text(qisqa_xulosa(yangilar), parse_mode="Markdown")
-        bio = draft_excel_yarat(yangilar)
-        await msg.reply_document(
-            document=bio, filename="Yangi_konteynerlar.xlsx",
-            caption=(
-                "📋 Har bir konteynerning to'liq tovar ro'yxati shu faylda. "
-                "Xato bo'lsa tahrirlab qayta shu yerga yuboring. "
-                "Hammasi to'g'ri bo'lsa — pastdagi tugmani bosing."
-            ),
-        )
-        n_nomos = notanish_soni(yangilar)
-        if n_nomos:
-            await msg.reply_text(
-                f"⚠️ *DIQQAT: {n_nomos} ta tovar hali ham inventarda "
-                f"NOTANISH* (faylda ⚠️ belgi bilan ajratilgan). Iltimos, "
-                f"yuqoridagi Excel faylni oching, shu qatorlarni TO'G'IRLAB "
-                f"qayta shu yerga yuboring — aks holda ular xato/noaniq nom "
-                f"bilan saqlanib qoladi.",
-                parse_mode="Markdown",
-            )
-            await msg.reply_text(
-                "✅ Baribir tasdiqlaysizmi?",
-                reply_markup=kont_tasdiq_ikb(lang),
-            )
-        else:
-            await msg.reply_text(
-                "✅ Tasdiqlaysizmi?",
-                reply_markup=kont_tasdiq_ikb(lang),
-            )
+        await _kont_yangilarni_qayta_ishla(msg, context, lang, yuklar)
         return
 
     # ── Yo'lga konteyner qo'shish: tasdiqlashdan oldin tahrirlangan fayl ──────
