@@ -105,30 +105,28 @@ def _inventarga_moslashtir(nom: str | None) -> str | None:
     if not nom:
         return nom
     try:
-        from parsers import _fix_oddiy_nom, _get_inventar_set, _inventardan_moslashtir
+        from parsers import _fix_oddiy_nom, _get_inventar_set
         inv_set = _get_inventar_set()
 
-        # DIQQAT: Лист nomlari bu yerdan ALOHIDA o'tkaziladi — _fix_oddiy_nom()
-        # birinchi qadami sifatida common.normalize_product_name() ni
-        # chaqiradi, u esa "Лист-3,0" kabi nomlarni "Лист- 3,0" ga aylantirib
-        # (raqamdan oldin bo'shliq qo'shib) yuboradi. Bu Труба/Профиль
-        # nomlariga ta'sir qilmaydi, lekin Лист uchun ko'pchilik inventar
-        # yozuvlari bo'shliqsiz ("Лист-0,6...") bo'lgani sababli bu normalize
-        # qadami tovar nomini ANIQ moslikdan abadiy chiqarib qo'yardi.
-        #
-        # MUHIM QO'SHIMCHA (2026-07-06): inventarning O'ZIDA ba'zi qatorlar
-        # noodatiy bo'shliq bilan yozilgan (masalan haqiqiy "Лист- 2,0
-        # (1500х3000) (Глянцевый) (304 марка)" — chiziqchadan keyin
-        # bo'shliq bilan). Bunday hollarda aniq solishtirish (`nom in
-        # inv_set`) muvaffaqiyatsiz bo'lib, ANIQ MAVJUD tovar "notanish"
-        # deb noto'g'ri belgilanardi. `_inventardan_moslashtir()` avval aniq,
-        # keyin bo'shliqqa CHIDAMLI (kanonik) solishtiradi va topilsa —
-        # inventardagi ASL matnni (g'alati bo'shligi bilan) qaytaradi —
-        # chunki chiqishda biz DOIM inventarda qanday yozilgan bo'lsa xuddi
-        # shundayligicha ko'rsatishimiz kerak, o'zimiznikini emas.
-        if nom.startswith("Лист-"):
-            return _inventardan_moslashtir(nom, inv_set)
-
+        # 2026-07-11 (tuzatildi, Huzayfa: "yo'lga konteyner qo'shish"ni ham
+        # ko'rib chiq): ILGARI Лист nomlari bu yerdan ALOHIDA o'tkazilardi
+        # (_inventardan_moslashtir() to'g'ridan-to'g'ri, _fix_oddiy_nom()ni
+        # butunlay chetlab o'tib) — sabab: _fix_oddiy_nom() birinchi qadami
+        # sifatida common.normalize_product_name() ni chaqiradi, u "Лист-3,0"
+        # kabi nomlarga bo'shliq qo'shib yuboradi ("Лист- 3,0"), bu esa
+        # ko'pchilik bo'shliqsiz inventar yozuvlari bilan ANIQ moslikni
+        # buzardi. LEKIN _fix_oddiy_nom() O'ZINING ICHIDA ham xuddi shu
+        # bo'shliqqa-chidamli _inventardan_moslashtir() bilan tugaydi — shu
+        # sabab bypass qilish HECH NARSA cheklamas edi, faqat _fix_oddiy_nom()
+        # ichidagi QO'SHIMCHA qadamni (Xitoy "-0,05mm" Лист qalinlik
+        # konvensiyasi -- 0,75->0,8 / 0,95->1,0 / 1,45->1,5 / 2,95->3,0 kabi)
+        # yo'qotib qo'yardi. Natijada _list_spec_to_name()ning o'z jadvali
+        # ("1,45->1,45 istisno" kabi, Труба/Профиль uchun to'g'ri, lekin
+        # Лист uchun XATO -- inventarda "Лист-1,45" umuman yo'q, faqat
+        # "Лист-1,5") tuzatilmasdan qolib, haqiqiy mavjud tovar "notanish"
+        # deb chiqib ketardi. Endi bypasssiz -- _fix_oddiy_nom() Труба/
+        # Профиль uchun ham, Лист uchun ham bir xil, TO'LIQ (bo'shliq +
+        # +0,05 snap + kanonik) yo'l bilan ishlaydi.
         return _fix_oddiy_nom(nom, inv_set)
     except Exception:
         # parsers.py mavjud bo'lmasa yoki xato bo'lsa — o'zgarishsiz qaytaramiz
