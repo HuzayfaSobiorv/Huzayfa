@@ -628,6 +628,7 @@ def _parse_truba_zhuangxiang(raw: bytes) -> dict:
 
         # Shu blok ichidagi ISO raqam (haqiqiy 柜号 ustuvor)
         iso = None
+        is_pseudo = False
         for kr in sorted(kont_at):
             if start_row <= kr < end_row:
                 iso = kont_at[kr]
@@ -640,9 +641,20 @@ def _parse_truba_zhuangxiang(raw: bytes) -> dict:
             for kr in sorted(mashina_at):
                 if start_row <= kr < end_row:
                     iso = mashina_at[kr]
+                    is_pseudo = True
                     break
         if not iso:
             continue
+
+        # 2026-07-13 (Huzayfa: "17 ta list qayerdan kelmoqda"): mashina
+        # raqami HAQIQIY 柜号 EMAS -- bir xil mashina BOSHQA sanada/bo'limda
+        # yana uchrasa, bu ALOHIDA yetkazib berish (eskisiga qo'shilmasligi
+        # kerak) -- Лист parseridagi bir xil tuzatish, izchillik uchun.
+        if is_pseudo and iso in result and result[iso]["sana"] != sana:
+            n = 2
+            while f"{iso}-{n}" in result:
+                n += 1
+            iso = f"{iso}-{n}"
 
         # Mahsulotlarni o'qish
         items = []
@@ -844,8 +856,23 @@ def _parse_list_chuhuo(raw: bytes) -> dict:
         # topilgan xuddi shu turdagi jiddiy xato — bu yerda ham bir xil
         # fallback qo'llanadi, izchillik uchun).
         note = str(row[bz_i]).strip() if row[bz_i] else ''
-        iso  = _iso(note) or _mashina_raqam(note)
+        real_iso = _iso(note)
+        pseudo   = None if real_iso else _mashina_raqam(note)
+        iso = real_iso or pseudo
         if iso:
+            # 2026-07-13 (Huzayfa: "17 ta list qayerdan kelmoqda"): mashina
+            # davlat raqami (车号/车牌) HAQIQIY 柜号 EMAS — bir xil mashina
+            # BOSHQA kunda/bo'limda YANA jo'natish qilishi mumkin (haqiqiy
+            # konteyner raqami esa deyarli takrorlanmaydi). Agar shu
+            # pseudo-ID ALLAQACHON boshqa sanadagi bo'lim uchun ishlatilgan
+            # bo'lsa — bu YANGI, ALOHIDA yetkazib berish, eskisiga
+            # QO'SHILMASLIGI kerak (aks holda ikki xil mashqulot bir
+            # konteynerga "yutilib" ketib, miqdor xato oshib ketardi).
+            if pseudo and iso in result and result[iso]["sana"] != cur_sana:
+                n = 2
+                while f"{iso}-{n}" in result:
+                    n += 1
+                iso = f"{iso}-{n}"
             cur_iso = iso
             if cur_iso not in result:
                 result[cur_iso] = {"sana": cur_sana, "items": []}
