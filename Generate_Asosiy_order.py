@@ -102,15 +102,14 @@ COL_WIDTHS = [50, 12, 14]
 # tuzatilgan, bu yerda qayta ayirilmaydi) -- admin har bir tovar uchun
 # Xitoydagi ostatkani buyurtma qatori yonida to'g'ridan-to'g'ri ko'radi.
 EXTRA_COL_ZAKAZ  = 5   # E
-EXTRA_COL_TAYYOR = 6   # F
-# 2026-07-14 (Huzayfa: "G/H ustunlariga qoldiq va yo'ldagini qo'shsak"):
-# G — bizdagi joriy qoldiq, H — yo'ldagi (kelayotgan konteynerlar jami).
-# Bular ham FAQAT ko'rsatish uchun — taklif yonida sabab ko'rinib turadi.
-EXTRA_COL_QOLDIQ = 7   # G
-EXTRA_COL_YOLDA  = 8   # H
-EXTRA_HDRS       = {EXTRA_COL_ZAKAZ: "Zakaz", EXTRA_COL_TAYYOR: "Tayyor",
+# 2026-07-14 (Huzayfa): "Tayyor" (L) ustuni olib tashlandi — faqat Zakaz (K)
+# qoladi va u "🇨🇳 Ostatka" deb nomlanadi. Qoldiq/Yo'lda F/G ga siljidi.
+# Bular FAQAT ko'rsatish uchun — taklif yonida sabab ko'rinib turadi.
+EXTRA_COL_QOLDIQ = 6   # F
+EXTRA_COL_YOLDA  = 7   # G
+EXTRA_HDRS       = {EXTRA_COL_ZAKAZ: "🇨🇳 Ostatka",
                     EXTRA_COL_QOLDIQ: "Qoldiq", EXTRA_COL_YOLDA: "Yo'lda"}
-EXTRA_WIDTHS     = {EXTRA_COL_ZAKAZ: 12, EXTRA_COL_TAYYOR: 12,
+EXTRA_WIDTHS     = {EXTRA_COL_ZAKAZ: 14,
                     EXTRA_COL_QOLDIQ: 12, EXTRA_COL_YOLDA: 12}
 
 # ============================================================
@@ -533,10 +532,6 @@ def write_product(ws, row, r) -> int:
         zakaz_v = int(float(r.get("zakaz", 0) or 0))
     except (ValueError, TypeError):
         zakaz_v = 0
-    try:
-        tayyor_v = int(float(r.get("tayyor", 0) or 0))
-    except (ValueError, TypeError):
-        tayyor_v = 0
 
     ce = ws.cell(row=row, column=EXTRA_COL_ZAKAZ, value=zakaz_v)
     ce.font      = Font(name=FONT_NAME, size=FONT_SZ - 1, color="1A5276")
@@ -544,13 +539,7 @@ def write_product(ws, row, r) -> int:
     ce.border    = brd
     ce.alignment = _align(center=True)
 
-    cf = ws.cell(row=row, column=EXTRA_COL_TAYYOR, value=tayyor_v)
-    cf.font      = Font(name=FONT_NAME, size=FONT_SZ - 1, color="1A5276")
-    cf.fill      = fill
-    cf.border    = brd
-    cf.alignment = _align(center=True)
-
-    # G/H — Qoldiq / Yo'lda (2026-07-14): bizdagi ombor holati, kulrang —
+    # F/G — Qoldiq / Yo'lda (2026-07-14): bizdagi ombor holati, kulrang —
     # Xitoy ustunlari (E/F, ko'k) dan vizual farqlansin.
     def _int0(v):
         try:
@@ -609,6 +598,11 @@ def fill_sheet(ws, cat_data, sorted_mode: bool):
 
     write_col_headers(ws, row)
     row += 1
+
+    # 2026-07-14 (Huzayfa: "pastga tushursam ustun nomlari yo'q bo'lib
+    # ketmoqda"): sarlavha (banner + ustun nomlari) muzlatiladi — Excel'ni
+    # qancha pastga aylantirsangiz ham 1-2 qatorlar ko'rinib turadi.
+    ws.freeze_panes = f"A{row}"
 
     if sorted_mode:
         active_surfs = [s for s in SURFACE_ORDER
