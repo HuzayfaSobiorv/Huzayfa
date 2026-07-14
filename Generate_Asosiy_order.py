@@ -103,8 +103,15 @@ COL_WIDTHS = [50, 12, 14]
 # Xitoydagi ostatkani buyurtma qatori yonida to'g'ridan-to'g'ri ko'radi.
 EXTRA_COL_ZAKAZ  = 5   # E
 EXTRA_COL_TAYYOR = 6   # F
-EXTRA_HDRS       = {EXTRA_COL_ZAKAZ: "Zakaz", EXTRA_COL_TAYYOR: "Tayyor"}
-EXTRA_WIDTHS     = {EXTRA_COL_ZAKAZ: 12, EXTRA_COL_TAYYOR: 12}
+# 2026-07-14 (Huzayfa: "G/H ustunlariga qoldiq va yo'ldagini qo'shsak"):
+# G — bizdagi joriy qoldiq, H — yo'ldagi (kelayotgan konteynerlar jami).
+# Bular ham FAQAT ko'rsatish uchun — taklif yonida sabab ko'rinib turadi.
+EXTRA_COL_QOLDIQ = 7   # G
+EXTRA_COL_YOLDA  = 8   # H
+EXTRA_HDRS       = {EXTRA_COL_ZAKAZ: "Zakaz", EXTRA_COL_TAYYOR: "Tayyor",
+                    EXTRA_COL_QOLDIQ: "Qoldiq", EXTRA_COL_YOLDA: "Yo'lda"}
+EXTRA_WIDTHS     = {EXTRA_COL_ZAKAZ: 12, EXTRA_COL_TAYYOR: 12,
+                    EXTRA_COL_QOLDIQ: 12, EXTRA_COL_YOLDA: 12}
 
 # ============================================================
 # 4. PARSING
@@ -542,6 +549,26 @@ def write_product(ws, row, r) -> int:
     cf.fill      = fill
     cf.border    = brd
     cf.alignment = _align(center=True)
+
+    # G/H — Qoldiq / Yo'lda (2026-07-14): bizdagi ombor holati, kulrang —
+    # Xitoy ustunlari (E/F, ko'k) dan vizual farqlansin.
+    def _int0(v):
+        try:
+            return int(float(v or 0))
+        except (ValueError, TypeError):
+            return 0
+
+    cg = ws.cell(row=row, column=EXTRA_COL_QOLDIQ, value=_int0(r.get("qoldiq", 0)))
+    cg.font      = Font(name=FONT_NAME, size=FONT_SZ - 1, color="555555")
+    cg.fill      = fill
+    cg.border    = brd
+    cg.alignment = _align(center=True)
+
+    ch = ws.cell(row=row, column=EXTRA_COL_YOLDA, value=_int0(r.get("yoldagi", 0)))
+    ch.font      = Font(name=FONT_NAME, size=FONT_SZ - 1, color="555555")
+    ch.fill      = fill
+    ch.border    = brd
+    ch.alignment = _align(center=True)
 
     return row + 1
 
