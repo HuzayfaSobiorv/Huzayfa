@@ -1237,17 +1237,58 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # o'zgarishlari BUNDAN keyin ham pm2 restart talab qiladi
                 # (server_yangilash.bat), chunki Python allaqachon xotiraga
                 # yuklangan kodni o'zi qayta yuklay olmaydi.
-                git_proc = await asyncio.create_subprocess_exec(
-                    "git", "pull", "origin", "main",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=str(BASE_DIR),
-                )
-                git_out, git_err = await git_proc.communicate()
-                if git_proc.returncode != 0:
-                    xato = (git_err or git_out).decode("utf-8", errors="replace")[-300:]
+                async def _git_pull():
+                    p = await asyncio.create_subprocess_exec(
+                        "git", "pull", "origin", "main",
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        cwd=str(BASE_DIR),
+                    )
+                    out, err = await p.communicate()
+                    return p.returncode, (err or out).decode("utf-8", errors="replace")
+
+                rc, xato_full = await _git_pull()
+
+                # DIQQAT (2026-07-14 qo'shildi): "untracked working tree files
+                # would be overwritten by merge" xatosi — server botning O'ZI
+                # yaratgan fayl (masalan konteynerlar/xitoy_parsed/*.xlsx)
+                # endi git'dan ham kelayotganda chiqadi (ish kompyuterda ham
+                # xuddi shu konteyner parse qilinib push qilingan bo'lsa).
+                # Yechim: serverdagi nusxa .serverbak ga ko'chiriladi (o'chirilmaydi,
+                # ehtiyot uchun) va pull BIR marta qayta uriniladi.
+                if rc != 0 and "untracked working tree files" in xato_full:
+                    toqnash = []
+                    grab = False
+                    for line in xato_full.splitlines():
+                        if "untracked working tree files" in line:
+                            grab = True
+                            continue
+                        if line.strip().startswith(("Please move", "Aborting")):
+                            grab = False
+                            continue
+                        if grab and line.strip():
+                            toqnash.append(line.strip())
+                    kochirildi = []
+                    for rel in toqnash:
+                        fp = BASE_DIR / rel
+                        if fp.exists():
+                            try:
+                                fp.replace(fp.with_name(fp.name + ".serverbak"))
+                                kochirildi.append(rel)
+                            except OSError:
+                                logger.exception(f"yangilash: {rel} ni chetga olishda xato")
+                    if kochirildi:
+                        logger.warning(
+                            f"yangilash: {len(kochirildi)} ta to'qnashgan fayl "
+                            f".serverbak ga ko'chirildi: {kochirildi}"
+                        )
+                        rc, xato_full = await _git_pull()
+
+                if rc != 0:
                     await msg.reply_text(
-                        t(lang, "yangilash_err").format(xato=f"git pull xato: {xato}")
+                        t(lang, "yangilash_err").format(
+                            xato=f"git pull xato: {xato_full[-300:]}"
+                        )
                     )
                     return
 
