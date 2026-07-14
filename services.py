@@ -18,7 +18,7 @@ from config import (
     CAT_SHEET, AKSESSUAR_KATS, get_inv, get_kont,
     KONTEYNER_TARIX_FILE, XITOY_PARSED_DIR,
 )
-from common import normalize_product_name
+from common import normalize_product_name, atomic_json_write
 
 # Lokal aliaslar — config cache funksiyalari
 _get_inv  = get_inv
@@ -89,7 +89,7 @@ def whitelist_yuklash() -> set[int]:
 
 
 def whitelist_saqlash(ids: set[int]) -> None:
-    _WHITELIST_FILE.write_text(json.dumps(sorted(ids)), encoding="utf-8")
+    atomic_json_write(_WHITELIST_FILE, sorted(ids))
 
 
 def whitelist_qosh(uid: int) -> bool:
@@ -148,9 +148,7 @@ def konteyner_tarix_olish() -> set[str]:
                 if iso:
                     boshlangich.add(konteyner_tarix_kalit(iso, sana))
         try:
-            KONTEYNER_TARIX_FILE.write_text(
-                json.dumps(sorted(boshlangich), ensure_ascii=False), encoding="utf-8"
-            )
+            atomic_json_write(KONTEYNER_TARIX_FILE, sorted(boshlangich))
         except Exception as e:
             logger.error(f"konteyner_tarix boshlang'ich to'ldirishda xato: {e}")
         return boshlangich
@@ -173,9 +171,7 @@ def konteyner_tarix_qoshish(konteynerlar: list) -> None:
             iso, sana = k
         tarix.add(konteyner_tarix_kalit(iso, sana))
     try:
-        KONTEYNER_TARIX_FILE.write_text(
-            json.dumps(sorted(tarix), ensure_ascii=False), encoding="utf-8"
-        )
+        atomic_json_write(KONTEYNER_TARIX_FILE, sorted(tarix))
     except Exception as e:
         logger.error(f"konteyner_tarix_qoshish yozishda xato: {e}")
 
@@ -557,7 +553,8 @@ def buyurtma_yuklash(kanal: str) -> dict | None:
         return None
     try:
         return json.loads(p.read_text(encoding="utf-8"))
-    except:
+    except (json.JSONDecodeError, OSError):
+        logger.exception(f"buyurtma_yuklash: {p} o'qib bo'lmadi (buzilgan JSON?)")
         return None
 
 
@@ -593,20 +590,20 @@ def buyurtma_saqlash(kanal: str, items: list):
         if miq > 0
     ]
 
-    p.write_text(json.dumps(
+    atomic_json_write(p,
         {"sana":        datetime.now().strftime("%d.%m.%Y %H:%M"),
          "kanal":       kanal,
          "buyurtmalar": jami_items},
-        ensure_ascii=False, indent=2), encoding="utf-8")
+        indent=2)
 
 
 def pending_saqlash(kanal: str, user_id: int, items: list):
     """Tasdiqlash kutilayotgan buyurtmani diskka saqlaydi (bot qayta ishga tushsa yo'qolmasin)."""
     p = BOT_HOLAT_DIR / f"pending_{kanal}_{user_id}.json"
-    p.write_text(json.dumps(
+    atomic_json_write(p,
         {"kanal": kanal, "user_id": user_id, "items": items,
          "sana": datetime.now().strftime("%d.%m.%Y %H:%M")},
-        ensure_ascii=False, indent=2), encoding="utf-8")
+        indent=2)
 
 
 def pending_yuklash(kanal: str, user_id: int) -> list | None:
@@ -617,7 +614,8 @@ def pending_yuklash(kanal: str, user_id: int) -> list | None:
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
         return data.get("items")
-    except:
+    except (json.JSONDecodeError, OSError):
+        logger.exception(f"pending_yuklash: {p} o'qib bo'lmadi (buzilgan JSON?)")
         return None
 
 
@@ -632,10 +630,10 @@ def draft_saqlash(kanal: str, tovarlar: list):
     """Excel yaratilganda tovar → to'liq nom mappingini saqlaydi.
     buyurtma_tekshir shu fayldan lookup qiladi — inventar o'zgarsa ham ishlaydi."""
     p = BOT_HOLAT_DIR / f"draft_{kanal}.json"
-    p.write_text(json.dumps(
+    atomic_json_write(p,
         {"sana": datetime.now().strftime("%d.%m.%Y %H:%M"),
          "tovarlar": tovarlar},
-        ensure_ascii=False, indent=2), encoding="utf-8")
+        indent=2)
 
 
 def draft_yuklash(kanal: str) -> list | None:
@@ -644,7 +642,8 @@ def draft_yuklash(kanal: str) -> list | None:
         return None
     try:
         return json.loads(p.read_text(encoding="utf-8")).get("tovarlar")
-    except:
+    except (json.JSONDecodeError, OSError):
+        logger.exception(f"draft_yuklash: {p} o'qib bo'lmadi (buzilgan JSON?)")
         return None
 
 
@@ -671,7 +670,8 @@ def xitoy_yuklash(kanal: str) -> dict | None:
         return None
     try:
         return json.loads(p.read_text(encoding="utf-8"))
-    except:
+    except (json.JSONDecodeError, OSError):
+        logger.exception(f"xitoy_yuklash: {p} o'qib bo'lmadi (buzilgan JSON?)")
         return None
 
 
@@ -692,7 +692,7 @@ def xitoy_saqlash(kanal: str, xitoy_map: dict, ombor_map: dict | None = None,
         data["ombor"] = ombor_map
     if vazn_map:
         data["vazn"] = vazn_map
-    p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_json_write(p, data, indent=2)
 
 
 def buyurtma_tozala(kanal: str):

@@ -676,7 +676,7 @@ with pd.ExcelWriter(str(OUTPUT_FILE), engine='openpyxl') as writer:
             try:
                 qismlar = str(row['Юкланган_Сана']).split('.')
                 return int(qismlar[2]) * 10000 + int(qismlar[1]) * 100 + int(qismlar[0])
-            except:
+            except (ValueError, IndexError):
                 return 99999998
 
         cont['Сана_Тартиб'] = cont.apply(_sana_tartib, axis=1)

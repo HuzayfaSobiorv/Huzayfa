@@ -12,11 +12,45 @@ MUHIM: Ikki faylda bir xil normalize ishlatilishi shart, aks holda
 import re
 import math
 import os
+import json
 import pandas as pd
 from datetime import datetime
 import warnings
 
 warnings.filterwarnings('ignore')
+
+
+# ============================================================
+# ATOMIC JSON YOZISH — holat fayllari buzilmasligi uchun
+# ============================================================
+
+def atomic_json_write(path, data, **dumps_kwargs) -> None:
+    """JSON ni ATOMIC yozadi: avval vaqtinchalik .tmp faylga, keyin
+    os.replace bilan asl fayl ustiga almashtiradi.
+
+    Nima uchun: bot yozish o'rtasida o'chsa (svet, crash, Ctrl+C),
+    to'g'ridan write_text yarim yozilgan/buzilgan JSON qoldiradi va
+    buyurtma/tarix ma'lumotlari yo'qoladi. os.replace esa OS darajasida
+    atomic — fayl yo eski, yo to'liq yangi holatda bo'ladi.
+
+    Ishlatish: atomic_json_write(p, data, ensure_ascii=False, indent=2)
+    """
+    dumps_kwargs.setdefault("ensure_ascii", False)
+    path = str(path)
+    tmp = f"{path}.tmp{os.getpid()}"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(json.dumps(data, **dumps_kwargs))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        # tmp qoldiq qolmasin
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 # ============================================================
 # KONSTANTALAR — faqat shu yerda, boshqa joyda takrorlanmaydi

@@ -8,6 +8,7 @@ Chiqish: [{"iso": "TCKU2238508", "sana": "21.03.2026", "items": [("Tovar nomi", 
 import re
 import math
 import json
+import logging
 from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
@@ -123,13 +124,12 @@ def _tuzatish_saqla(kalit: str, nom: str) -> None:
         return  # allaqachon xuddi shunday saqlangan
     tuzatishlar[kalit] = nom
     try:
+        from common import atomic_json_write
         fpath = _tuzatishlar_fayli()
         fpath.parent.mkdir(parents=True, exist_ok=True)
-        fpath.write_text(
-            json.dumps(tuzatishlar, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        atomic_json_write(fpath, tuzatishlar, indent=2)
     except Exception:
-        pass  # saqlab bo'lmasa ham dastur ishlashda davom etadi
+        logging.getLogger(__name__).exception("xitoy_tuzatishlar.json saqlashda xato")
 
 
 def _tuzatish_kaliti(turi: str, spec: str, marka, rang: str = "") -> str:

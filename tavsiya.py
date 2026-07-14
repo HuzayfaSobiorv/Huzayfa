@@ -112,7 +112,7 @@ for f in fayllar:
     fn = os.path.basename(f).replace('.xlsx', '')
     try:
         sana = datetime.strptime(fn, '%d.%m.%Y')
-    except:
+    except ValueError:
         continue
     df_t = load_qoldiq_file(f)
     df_t['Sana'] = sana
