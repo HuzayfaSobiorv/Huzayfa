@@ -679,7 +679,7 @@ def fill_sheet(ws, cat_data, sorted_mode: bool):
             row = write_product(ws, row, r)
 
 
-def build(df):
+def build(df, meyor_yoq=None):
     wb = Workbook()
     if wb.active:
         wb.remove(wb.active)
@@ -700,6 +700,27 @@ def build(df):
         ws          = wb.create_sheet(title=title)
         sorted_mode = cat in SORTED_CATS
         fill_sheet(ws, cd, sorted_mode)
+
+    # ── "Меъёр йўқ" varag'i (2026-07-14, Huzayfa so'rovi) ────────────────
+    # Min zaxirasi belgilanmagan tovarlar buyurtma hisobiga KIRMAYDI va
+    # ilgari hech qayerda ko'rinmasdi ("nega falon tovar ro'yxatda yo'q?"
+    # savolining sababi). Endi ular oxirgi varaqda ro'yxat bo'lib chiqadi —
+    # ko'rib chiqib Min_Zaxira.xlsx da meyor belgilash mumkin.
+    # DIQQAT: sarlavha ataylab "Товар" (buyurtma varaqlaridagi "Tovar nomi"
+    # emas) — buyurtma_tekshir() bu varaqni buyurtma varag'i deb adashib
+    # o'qimasligi uchun.
+    if meyor_yoq is not None and len(meyor_yoq):
+        ws = wb.create_sheet(title="Меъёр йўқ")
+        ws.append(["Товар", "Қолдиқ"])
+        for c in ws[1]:
+            c.font = Font(bold=True, size=11)
+            c.fill = _fill("FFF2CC")
+            c.border = _border()
+        for _, r in meyor_yoq.iterrows():
+            ws.append([str(r["tovar"]), int(r["qoldiq"])])
+        ws.column_dimensions["A"].width = 48
+        ws.column_dimensions["B"].width = 12
+        ws.freeze_panes = "A2"
     return wb
 
 

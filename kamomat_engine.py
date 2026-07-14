@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # KONSTANTALAR — kelish kunini common.py dan olamiz
 # ============================================================
-from common import KELISH_KUNI, KUNLIK_SOTUV_BOLISH
+from common import KELISH_KUNI, KUNLIK_SOTUV_BOLISH, BUYURTMA_SIKL_KUN
 KUNLAR = KUNLIK_SOTUV_BOLISH  # 2026-07-09: endi 30 (eski kod o'zgarmasin, nomi qoldi)
 
 CAT_ORDER = {
@@ -104,34 +104,69 @@ def tovar_sort_key(nom: str, kat: str) -> tuple:
 def zanjir_sim(qoldiq: float, min_z: float,
                konteynerlar: list) -> dict:
     """
-    Qoldiq kuniga (min_z / 45) kamayadi.
-    Har konteyner kelganda miqdor qo'shiladi.
-    Qoldiq min_z dan past tushgan kun = uzilish_kun.
+    Kun-ma-kun zanjir simulyatsiyasi (2026-07-14 qayta yozildi).
+
+    Qoldiq kuniga (min_z / KUNLAR=30) kamayadi, har konteyner o'z kunida
+    miqdorini qo'shadi. Gorizont — KELISH_KUNI (55) kun: bugun berilgan
+    YANGI buyurtma yetib kelguncha bo'lgan davr.
+
+    ESKI XATO (2026-07-14 gacha): izohda "55 kun tekshiruv" deyilgan
+    bo'lsa-da, kod oxirgi konteynerdan keyin faqat KUNLAR (30) kun
+    tekshirardi — oxirgi konteyner erta kelsa (masalan 10-kun), 40–55
+    kunlardagi tanqislik KO'RINMAY qolib, buyurtma kam chiqardi.
+
+    BUYURTMA MANTIG'I — "order-up-to" (2026-07-14, Huzayfa bilan kelishildi):
+      * Trigger: gorizont ichida qoldiq min_z dan pastga tushsaGINA buyurtma
+        taklif qilinadi. Ilgari "min'dan 100 ta pastga tushibdi — 100 ta
+        buyur" kabi MAYDA (50–200 talik) takliflar har kuni chiqib turardi.
+      * Hajm: buyurtma kelganda (55-kun) zaxira
+            nishon = min_z + kunlik * BUYURTMA_SIKL_KUN (30)
+        darajasiga chiqadigan qilib hisoblanadi — bir yo'la ~1 oylik hajm,
+        keyin bu tovar ~1 oy Excel'da umuman chiqmaydi.
+      * 55 kundan KEYIN keladigan konteynerlar simulyatsiyaga kirmaydi
+        (yangi buyurtma bilan birga/keyin keladi), lekin buyurtma hajmini
+        kamaytirishda hisobga olinadi (ikki marta buyurmaslik uchun).
 
     konteynerlar: [(kun_qoldi: int, miqdor: float), ...]
 
     Qaytaradi:
-      uzilish_kun  — None yoki bugundan necha kun (int)
-      min_nuqta    — simulatsiya davomida eng past qoldiq
-      taklif_A     — min ga qaytarish uchun buyurtma (50 ga yaxlit)
-      taklif_B     — zanjirni to'liq ta'minlash uchun (50 ga yaxlit)
-      taklif       — max(A, B)
-      xavf         — 'KRITIK' | 'PAST' | 'NORMA' | 'MEYOR_YOQ'
+      uzilish_kun — None yoki bugundan necha kun (gorizont ichida)
+      min_nuqta   — gorizont ichidagi eng past qoldiq
+      taklif      — order-up-to buyurtma (50 ga yaxlit)
+      taklif_A/B  — eski nomlar mosligi uchun (A = eski min-farq usuli,
+                    B = taklif bilan bir xil)
+      xavf        — 'KRITIK' | 'PAST' | 'NORMA' | 'MEYOR_YOQ'
     """
     EMPTY = dict(uzilish_kun=None, min_nuqta=qoldiq,
                  taklif_A=0, taklif_B=0, taklif=0, xavf="MEYOR_YOQ")
     if min_z <= 0:
         return EMPTY
 
-    kunlik = min_z / float(KUNLAR)
-    kont   = sorted(konteynerlar, key=lambda x: x[0])
+    kunlik  = min_z / float(KUNLAR)
+    horizon = float(KELISH_KUNI)
+    kont    = sorted(konteynerlar, key=lambda x: x[0])
 
     joriy       = float(qoldiq)
     joriy_kun   = 0.0
     uzilish_kun = None
-    min_nuqta   = joriy
+
+    # Bugun (kun<=0) kelayotgan konteynerlar min_nuqta O'RNATILISHIDAN
+    # OLDIN qo'shiladi — aks holda "konteyner tushayotgan kuni" bir lahzalik
+    # past qoldiq noto'g'ri trigger otilishiga sabab bo'lardi.
+    bugun_kelganlar = [(k, m) for k, m in kont if k <= 0]
+    for _, m in bugun_kelganlar:
+        joriy += m
+    kont = [(k, m) for k, m in kont if k > 0]
+
+    min_nuqta = joriy
+
+    def _uzilish_hisobla(oldin: float, kun_boshi: float) -> int:
+        # min_z chizig'i kesib o'tilgan kunni topish
+        return int(kun_boshi + max(0.0, (oldin - min_z) / kunlik))
 
     for kun_q, miqdor in kont:
+        if kun_q > horizon:
+            break  # 55+ kunda keladi — pastda alohida hisobga olinadi
         if kun_q <= joriy_kun:
             joriy += miqdor
             continue
@@ -139,46 +174,48 @@ def zanjir_sim(qoldiq: float, min_z: float,
         joriy_oldin = joriy
         joriy      -= kunlik * gap
         min_nuqta   = min(min_nuqta, joriy)
-
         if joriy < min_z and uzilish_kun is None:
-            dtm = max(0.0, (joriy_oldin - min_z) / kunlik)
-            uzilish_kun = int(joriy_kun + dtm)
-
+            uzilish_kun = _uzilish_hisobla(joriy_oldin, joriy_kun)
         joriy    += miqdor
         joriy_kun = kun_q
 
-    # Oxirgi konteynerdan keyin KELISH_KUNI kun tekshiruv
-    joriy_oxir = joriy - kunlik * KUNLAR
-    min_nuqta  = min(min_nuqta, joriy_oxir)
-    if joriy_oxir < min_z and uzilish_kun is None:
-        dtm = max(0.0, (joriy - min_z) / kunlik)
-        uzilish_kun = int(joriy_kun + dtm)
+    # Dumini GORIZONTGACHA yetkazish — 2026-07-14 dagi asosiy tuzatish
+    # (ilgari bu yerda "oxirgi konteyner + 30 kun" edi).
+    if joriy_kun < horizon:
+        joriy_oldin = joriy
+        joriy      -= kunlik * (horizon - joriy_kun)
+        min_nuqta   = min(min_nuqta, joriy)
+        if joriy < min_z and uzilish_kun is None:
+            uzilish_kun = _uzilish_hisobla(joriy_oldin, joriy_kun)
 
-    # Taklif hisoblash
+    qoldiq_gorizont = joriy                                   # 55-kun prognozi
+    kech_jami  = sum(m for k, m in kont if k > horizon)       # 55+ kunda keladiganlar
     yolda_jami = sum(m for _, m in kont)
 
     def _50(x: float) -> int:
         return int(math.ceil(x / 50)) * 50 if x > 0 else 0
 
-    taklif_A = max(0.0, min_z - (qoldiq + yolda_jami))
-    taklif_B = max(0.0, min_z - min_nuqta) if min_nuqta < min_z else 0.0
+    # Order-up-to taklif
+    taklif = 0.0
+    if min_nuqta < min_z:
+        nishon = min_z + kunlik * BUYURTMA_SIKL_KUN
+        taklif = max(0.0, nishon - (qoldiq_gorizont + kech_jami))
+    taklif_50 = _50(taklif)
 
     # Xavf darajasi
-    if uzilish_kun is not None and uzilish_kun <= KELISH_KUNI:
-        xavf = "KRITIK"
-    elif uzilish_kun is not None:
-        xavf = "PAST"
-    elif qoldiq < min_z * 1.5:
-        xavf = "PAST"
+    if uzilish_kun is not None:
+        xavf = "KRITIK"   # gorizont ichida uzilish — yangi buyurtma ham ulgurmaydi
+    elif taklif_50 > 0:
+        xavf = "PAST"     # hali uzilmaydi, lekin buyurtma vaqti keldi
     else:
         xavf = "NORMA"
 
     return dict(
         uzilish_kun=uzilish_kun,
         min_nuqta=int(round(min_nuqta)),
-        taklif_A=_50(taklif_A),
-        taklif_B=_50(taklif_B),
-        taklif=_50(max(taklif_A, taklif_B)),
+        taklif_A=_50(max(0.0, min_z - (qoldiq + yolda_jami))),
+        taklif_B=taklif_50,
+        taklif=taklif_50,
         xavf=xavf,
     )
 

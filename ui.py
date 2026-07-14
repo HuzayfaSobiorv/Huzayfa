@@ -393,9 +393,9 @@ async def draft_buyurtma_yubor(msg, context, kanal: str, lang: str,
                 None, draft_excel_yarat, kanal, xitoy_ostatka
             )
         except FileNotFoundError as e:
-            err = ("⚠️ Fayl topilmadi. Avval NEJAVIYKA_v3.py ni ishga tushiring."
+            err = ("⚠️ Fayl topilmadi. Avval 'Malumotlarni yangilash' tugmasini bosing."
                    if lang == "lat" else
-                   "⚠️ Файл топилмади. Аввал NEJAVIYKA_v3.py ни ишга туширинг.")
+                   "⚠️ Файл топилмади. Аввал 'Маълумотларни янгилаш' тугмасини босинг.")
             logger.error(f"draft_buyurtma_yubor FileNotFoundError: {e}")
             await msg.reply_text(err)
             return

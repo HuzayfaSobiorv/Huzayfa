@@ -65,6 +65,12 @@ YOLDA_KUN       = KELISH_KUNI   # alias (eski kod uchun)
 # DIQQAT: bu KELISH_KUNI (55, haqiqiy yetib kelish vaqti) bilan ADASHTIRILMASIN
 # — u alohida, jismoniy konstanta, o'zgarishsiz qoladi.
 KUNLIK_SOTUV_BOLISH = 30
+# 2026-07-14 (Huzayfa bilan kelishildi, "order-up-to" mantiq): buyurtma
+# berilganda zaxira min ustiga yana necha KUNlik savdoga yetadigan qilib
+# to'ldiriladi. Katta son = kam, lekin yirik buyurtmalar. Bu kamomat_engine
+# .zanjir_sim'da ishlatiladi — mayda (50-200 talik) takliflar o'rniga
+# tovar oyiga ~1 marta, ~1 oylik hajmda chiqadi.
+BUYURTMA_SIKL_KUN = 30
 FAST_KUN        = 20    # tezkor (fayl nomi "F_" bilan boshlanadigan) konteyner yetib kelish vaqti (kun)
 # "12 metrlik" konteyner — ISO'siz, ko'pincha mashina-raqami (masalan
 # "ME5312") bilan yozilgan, tarkibidagi tovarlarning KO'PCHILIGI 6 metrlik

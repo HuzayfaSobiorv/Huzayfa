@@ -756,7 +756,7 @@ def kamomat_stats(kanal: str) -> dict:
 
 def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
                                kanal: str = "asosiy") -> BytesIO:
-    from Generate_Asosiy_order import load_data, calculate, build
+    from Generate_Asosiy_order import load_data, calculate, build, strip_length, get_length
 
     # Agar xitoy_ostatka berilmagan bo'lsa — JSON fayldan avtomatik o'qiymiz
     mavjud = xitoy_yuklash(kanal)
@@ -776,10 +776,55 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
     _df, _kont_map = load_data(kanal=kanal)
     df_calc = calculate(_df, _kont_map)
 
+    # ── Xitoy nomi to'qnashgan qatorlarni birlashtirish (2026-07-14) ────────
+    # Inventarda IKKI XIL nom (masalan "ст 1,4" va "ст 1,35") Xitoy qoidasi
+    # (stenka −0,05; 1,35/1,45 istisno) bilan Excel'da BIR XIL ko'rinishga
+    # tushib, "bitta tovar ikki qator" bo'lib chiqardi (Huzayfa shikoyati).
+    # Xitoy uchun bu bitta tovar — miqdorlar qo'shiladi, kanonik nom sifatida
+    # min_zaxirasi kattasi olinadi. Ayirishlarda (K ustuni, tasdiqlangan)
+    # IKKALA nom ham tekshiriladi — buning uchun merge_nomlar lug'ati.
+    try:
+        from vazn_hisobla import xitoy_nomi as _xn
+    except ImportError:
+        def _xn(n): return n
+
+    merge_nomlar: dict = {}
+    if not df_calc.empty:
+        df_calc["_xkey"] = df_calc["tovar"].apply(
+            lambda t: (strip_length(_xn(str(t))).strip(), get_length(str(t)).strip())
+        )
+        if df_calc["_xkey"].duplicated().any():
+            yangi_rows = []
+            for _, grp in df_calc.groupby("_xkey", sort=False):
+                if len(grp) == 1:
+                    yangi_rows.append(grp.iloc[0])
+                    continue
+                grp  = grp.sort_values("min_zaxira", ascending=False)
+                bosh = grp.iloc[0].copy()
+                bosh["buyurtma"] = int(grp["buyurtma"].sum())
+                for col in ("qoldiq", "yoldagi"):
+                    if col in grp.columns:
+                        bosh[col] = grp[col].sum()
+                merge_nomlar[str(bosh["tovar"]).strip()] = [
+                    str(t).strip() for t in grp["tovar"]
+                ]
+                logger.info(
+                    f"[{kanal}] Xitoy-nom to'qnashuvi birlashtirildi: "
+                    f"{list(grp['tovar'])} -> {bosh['tovar']}"
+                )
+                yangi_rows.append(bosh)
+            df_calc = pd.DataFrame(yangi_rows).reset_index(drop=True)
+        df_calc = df_calc.drop(columns=["_xkey"])
+
+    def _nomlar(tovar) -> list:
+        """Kanonik nom -> ayirishda tekshiriladigan barcha nomlar."""
+        tovar = str(tovar).strip()
+        return merge_nomlar.get(tovar, [tovar])
+
     # 1. Xitoy ostatka K ustuni ayiriladi (Xitoyda buyurtma berilgan + tayyorlanayotgan)
     if xitoy_ostatka and not df_calc.empty:
         def _adjust_xitoy(row):
-            ayir = float(xitoy_ostatka.get(str(row["tovar"]).strip(), 0))
+            ayir = sum(float(xitoy_ostatka.get(n, 0)) for n in _nomlar(row["tovar"]))
             return max(0, int(row["buyurtma"]) - int(ayir))
         df_calc["buyurtma"] = df_calc.apply(_adjust_xitoy, axis=1)
         df_calc = df_calc[df_calc["buyurtma"] > 0].copy()
@@ -797,7 +842,7 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
         if tasdiq_map:
             oldin = len(df_calc)
             def _adjust_tasdiq(row):
-                ayir = tasdiq_map.get(str(row["tovar"]).strip(), 0)
+                ayir = sum(tasdiq_map.get(n, 0) for n in _nomlar(row["tovar"]))
                 return max(0, int(row["buyurtma"]) - int(ayir))
             df_calc["buyurtma"] = df_calc.apply(_adjust_tasdiq, axis=1)
             df_calc = df_calc[df_calc["buyurtma"] > 0].copy()
@@ -814,17 +859,24 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
     # qiymatlarini qo'shib qo'yamiz (FAQAT ko'rsatish uchun, hisoblashga
     # ta'sir qilmaydi — "buyurtma" ustuni yuqorida allaqachon tuzatilgan).
     df_calc["zakaz"] = df_calc["tovar"].apply(
-        lambda t: xitoy_ostatka.get(str(t).strip(), 0) if xitoy_ostatka else 0
+        lambda t: sum(xitoy_ostatka.get(n, 0) for n in _nomlar(t)) if xitoy_ostatka else 0
     )
     df_calc["tayyor"] = df_calc["tovar"].apply(
-        lambda t: ombor_map.get(str(t).strip(), 0) if ombor_map else 0
+        lambda t: sum(ombor_map.get(n, 0) for n in _nomlar(t)) if ombor_map else 0
     )
 
     # Draft tovarlarni saqlaymiz — buyurtma_tekshir shu ro'yxatdan lookup qiladi.
     # Inventar keyinchalik o'zgarsa ham xato bo'lmaydi.
     draft_saqlash(kanal, df_calc["tovar"].tolist())
 
-    wb  = build(df_calc)
+    # "Меъёр йўқ" varaq (2026-07-14, Huzayfa so'rovi): min zaxirasi
+    # belgilanmagan tovarlar hisobga KIRMAYDI va ilgari hech qayerda
+    # ko'rinmasdi — "nega falon tovar ro'yxatda yo'q?" savoliga sabab
+    # shu edi. Endi ular Excel oxirida alohida varaqda chiqadi.
+    myoq_df = _df[_df["min_zaxira"] <= 0][["tovar", "qoldiq"]].copy()
+    myoq_df = myoq_df.sort_values("qoldiq", ascending=False)
+
+    wb  = build(df_calc, meyor_yoq=myoq_df)
     bio = BytesIO()
     wb.save(bio)
     bio.seek(0)
