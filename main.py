@@ -80,6 +80,8 @@ print(f"  ✅ {len(qoldiq):,} mahsulot yuklandi")
 
 print("\n2. MIN_ZAXIRA YUKLANMOQDA...")
 
+KUZATUV_YOQ: set = set()   # Кузатув=X belgilangan tovarlar (normalized)
+
 try:
     mz_raw = pd.read_excel(MIN_ZAXIRA_FILE, sheet_name='Min_Zaxira')
     # Ustunlar: №, Товар, Категория, Йиллик_Сотув, Кунлик_Истеъмол, Мин_Захира, (Цех_Захира)
@@ -126,6 +128,19 @@ try:
         print("  ⚠️  Цех_Захира ustuni topilmadi — barcha Cex_Min = 0")
 
     mz_raw['Mahsulot_Normalized'] = mz_raw[tovar_col].apply(normalize_product_name)
+
+    # 2026-07-14 (Huzayfa: "kuzatuvdan mutloq chiqarishim kerak bo'lgan
+    # tovarlar bor"): Min_Zaxira.xlsx dagi "Кузатув" ustunida X (yoki ЙЎҚ)
+    # belgilangan tovar BUTUN tizimdan chiqariladi — Power BI'ga kirmaydi,
+    # demak buyurtma, kamomat, qidiruv, "Меъёр йўқ" — hech qayerda chiqmaydi.
+    kuzatuv_col = _find_col(cols, ['кузатув', 'kuzatuv', 'чиқар', 'chiqar'])
+    if kuzatuv_col:
+        _belgi = mz_raw[kuzatuv_col].astype(str).str.strip().str.upper()
+        _mask  = _belgi.isin(['X', 'Х', 'ЙЎҚ', 'ЙУҚ', 'YOQ', "YO'Q", '-'])
+        KUZATUV_YOQ.update(mz_raw.loc[_mask, 'Mahsulot_Normalized'])
+        if _mask.any():
+            print(f"  🚫 Кузатув=X belgilangan: {int(_mask.sum())} ta tovar chiqariladi")
+
     min_zaxira = mz_raw[['Mahsulot_Normalized', 'Sotuv_Min', 'Kunlik_Istemol', 'Kategoriya', 'Cex_Min']].copy()
     print(f"  ✅ {len(min_zaxira):,} ta tovar min zaxirasi yuklandi")
     print(f"  ✅ {(min_zaxira['Cex_Min'] > 0).sum()} ta tovarda Цех_Захира > 0 (Tsex mahsulotlari)")
@@ -547,6 +562,12 @@ result['Etishmaydi'] = result['Farq'].apply(lambda x: abs(x) if x < 0 else 0)
 oldin  = len(result)
 result = result[~result['Mahsulot'].apply(keraksizmi)].copy()
 print(f"  ✅ Keraksiz tovarlar olib tashlandi: {oldin - len(result)} ta")
+
+# Кузатув=X (Min_Zaxira.xlsx) — foydalanuvchi belgilagan tovarlar butunlay chiqariladi
+if KUZATUV_YOQ:
+    oldin = len(result)
+    result = result[~result['Mahsulot'].apply(normalize_product_name).isin(KUZATUV_YOQ)].copy()
+    print(f"  🚫 Kuzatuvdan chiqarildi (Кузатув=X): {oldin - len(result)} ta")
 
 
 # ============================================================
