@@ -87,6 +87,25 @@ CATEGORIES  = [
 ]
 SORTED_CATS = {"Труба","Профиль","Лист"}
 
+# 2026-07-14 (Huzayfa qoidasi — mayda tovarlar Excelni to'ldirib yubormasin):
+#   * Mayda truba  = diametri 51 dan KICHIK (Ф-51 ning o'zi mayda EMAS)
+#   * Mayda profil = ikkala o'lchami 50 dan kichik (50х50 ning o'zi EMAS,
+#     80х40 ham emas — bitta tomoni 50+)
+#   * Bunday tovar buyurtmasi MAYDA_LIMIT dan OSHSAgina Excelga chiqadi
+#     (keyingi safar ehtiyoj yig'ilib oshgach o'zi chiqadi, yo'qolmaydi)
+#   * Безшовный труба bundan MUSTASNO (alohida kategoriya, 50 ta ham
+#     buyurtsa bo'ladi); Лист va boshqa kategoriyalarga daxli yo'q.
+MAYDA_LIMIT = 200
+
+def mayda_buyurtma_limiti(tovar, kategoriya) -> int:
+    """Tovar uchun minimal buyurtma chegarasi: mayda truba/profil -> 200,
+    qolganlarga 0 (ya'ni cheklovsiz)."""
+    if kategoriya == 'Труба' and _dia_f(tovar) < 51:
+        return MAYDA_LIMIT
+    if kategoriya == 'Профиль' and max(_d1_f(tovar), _d2_f(tovar)) < 50:
+        return MAYDA_LIMIT
+    return 0
+
 SURFACE_ORDER = ["","Матовый","Глянцевый","Чёрный","Голд","Цветной"]
 MARKA_ORDER   = ["201","304","430","316","321",""]
 
@@ -117,8 +136,12 @@ EXTRA_WIDTHS     = {EXTRA_COL_ZAKAZ: 14,
 # ============================================================
 def get_category(name):
     s = str(name).strip()
-    # Безшовный — Труба'dan OLDIN tekshirilsin; "Б/Ш" ham ushlansin
-    if re.search(r'Безш|Б/Ш|б/ш', s):                             return 'Безшовный труба'
+    # Безшовный — Труба'dan OLDIN tekshirilsin; "Б/Ш" ham ushlansin.
+    # 2026-07-14 (Huzayfa so'rovi bilan tekshirildi): inventarda bu tovarlar
+    # "БеСшовный" (С bilan) yozilgan, eski regex esa faqat "БеЗш" (З) ni
+    # qidirardi — shu IMLO FARQI tufayli 16 ta tovar hech qachon o'z
+    # varag'iga tushmay, oddiy Труба ichida yurgan. Endi ikkala imlo ham.
+    if re.search(r'Бе[сз]ш|Б/Ш', s, re.I):                        return 'Безшовный труба'
     if re.match(r'^(\([^)]*\)\s*)?Ф-\d+', s) and 'ст' in s:      return 'Труба'
     if re.search(r'Пр\.\s*\d+[хx]\d+', s) and 'ст' in s:         return 'Профиль'
     if re.match(r'^Лист-', s) or re.match(r'^Лист\s*-', s):       return 'Лист'

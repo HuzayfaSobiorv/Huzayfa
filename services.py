@@ -852,6 +852,23 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
                 f"({oldin-keyin} ta o'chirildi, {len(tasdiq_map)} ta tasdiqlangan)"
             )
 
+    # ── Mayda truba/profil filtri (2026-07-14, Huzayfa qoidasi) ─────────
+    # Ф<51 truba va <50х50 profil buyurtmasi MAYDA_LIMIT(200) dan oshmasa
+    # Excelga chiqmaydi — ehtiyoj yig'ilib limitdan oshganda o'zi chiqadi.
+    # Безшовный (alohida kategoriya), Лист va boshqalarga tegilmaydi.
+    if not df_calc.empty:
+        from Generate_Asosiy_order import mayda_buyurtma_limiti
+        _mask = df_calc.apply(
+            lambda r: int(r["buyurtma"]) > mayda_buyurtma_limiti(r["tovar"], r["kategoriya"]),
+            axis=1,
+        )
+        if (~_mask).any():
+            logger.info(
+                f"[{kanal}] mayda filtri: {(~_mask).sum()} ta tovar limitga "
+                f"yetmagani uchun chiqarilmadi"
+            )
+        df_calc = df_calc[_mask].copy()
+
     if df_calc.empty:
         return None  # Buyurtma kerak emas — chaqiruvchi xabar beradi
 

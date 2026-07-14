@@ -110,3 +110,33 @@ class TestChekkaHolatlar:
         for k in ("uzilish_kun", "min_nuqta", "taklif_A", "taklif_B",
                   "taklif", "xavf"):
             assert k in s
+
+
+class TestMaydaLimit:
+    """2026-07-14: mayda truba (Ф<51) / profil (<50х50) — 200 limit."""
+
+    def test_mayda_truba(self):
+        from Generate_Asosiy_order import mayda_buyurtma_limiti as lim
+        assert lim("Ф-19 ст 0,7 (6 м) (201 марка)", "Труба") == 200
+        assert lim("Ф-38 ст 0,9 (6 м) (304 марка)", "Труба") == 200
+        assert lim("Ф-51 ст 0,9 (6 м) (304 марка)", "Труба") == 0   # 51 mayda EMAS
+        assert lim("Ф-76 ст 0,9 (6 м) (201 марка)", "Труба") == 0
+
+    def test_mayda_profil(self):
+        from Generate_Asosiy_order import mayda_buyurtma_limiti as lim
+        assert lim("Пр. 20х20 ст 0,7 (6 м) (201 марка)", "Профиль") == 200
+        assert lim("Пр. 40х20 ст 0,9 (6 м) (201 марка)", "Профиль") == 200
+        assert lim("Пр. 50х50 ст 0,9 (6 м) (201 марка)", "Профиль") == 0  # 50х50 EMAS
+        assert lim("Пр. 80х40 ст 1,1 (6 м) (201 марка)", "Профиль") == 0  # bir tomoni 50+
+
+    def test_besshovniy_va_boshqalar_mustasno(self):
+        from Generate_Asosiy_order import mayda_buyurtma_limiti as lim, get_category
+        bes = "Ф-25 ст 3,0 Бесшовный (6 м) (304 марка)"
+        assert get_category(bes) == "Безшовный труба"   # imlo (С) tuzatildi
+        assert lim(bes, get_category(bes)) == 0          # limit yo'q
+        assert get_category("Ф-32 ст 3,0 Б/Ш (6 м)") == "Безшовный труба"
+        assert lim("Лист- 0,5 (1220х2440) (201 марка)", "Лист") == 0
+
+    def test_truba_kategoriya_buzilmagan(self):
+        from Generate_Asosiy_order import get_category
+        assert get_category("Ф-51 ст 0,9 (6 м) (304 марка)") == "Труба"
