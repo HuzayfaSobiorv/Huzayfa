@@ -88,9 +88,18 @@ def abc_map_yuklash() -> dict:
                 continue
             tovar = row[tovar_i]
             abc   = row[abc_i]
-            if not tovar or not isinstance(tovar, str) or abc not in ("A", "B", "C"):
+            if not tovar or not isinstance(tovar, str) or abc is None:
                 continue
-            res[tovar.strip()] = abc
+            # 2026-07-14: qo'lda tahrirda uchraydigan variantlar
+            # normallashtiriladi — kichik harf (a/b/c) va KIRILLcha А/В/С
+            # (rus klaviaturada terilsa lotincha bilan BIR XIL ko'rinadi,
+            # farqini ko'z bilan sezib bo'lmaydi!). Ilgari bunday qiymatlar
+            # jimgina rad etilib, tovar "C" (eng past ustunlik) deb qolardi.
+            abc_s = str(abc).strip().upper()
+            abc_s = {"А": "A", "В": "B", "С": "C"}.get(abc_s, abc_s)  # kirill→lotin
+            if abc_s not in ("A", "B", "C"):
+                continue
+            res[tovar.strip()] = abc_s
         wb.close()
         logger.info("abc_map (Min_Zaxira dan): %d ta tovar", len(res))
         return res
