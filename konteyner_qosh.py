@@ -1717,4 +1717,4 @@ def preview_matn(yangilar: list[dict], oxirgi_sana: "date | None" = None) -> str
             lines.append(f"  • `{k['iso']}` — {k['sana']} — {len(k['items'])} ta tovar{tonna_qator}")
 
     lines.append("\n✅ Tasdiqlaysizmi?")
-    return
+    return "\n".join(lines)
