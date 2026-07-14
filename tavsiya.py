@@ -84,6 +84,8 @@ print("=" * 80)
 print("\n1. Min_Zaxira yuklanmoqda...")
 try:
     mz = pd.read_excel(MIN_ZAXIRA_FILE, sheet_name='Min_Zaxira')
+    # 2026-07-14: ustun nomlarida bo'shliq bo'lishi mumkin ('Мин_Захира ') — strip
+    mz.columns = [str(c).strip() for c in mz.columns]
     mz = mz[mz['Товар'].notna()].copy()
     mz['Мин_Захира']      = pd.to_numeric(mz['Мин_Захира'], errors='coerce').fillna(0)
     mz['Кунлик_Истеъмол'] = pd.to_numeric(mz['Кунлик_Истеъмол'], errors='coerce').fillna(0)
