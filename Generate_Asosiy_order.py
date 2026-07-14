@@ -269,6 +269,7 @@ def load_data(kanal: str = "asosiy"):
         if not MIN_ZAXIRA_FILE.exists():
             raise FileNotFoundError(f"Min zaxira fayli topilmadi: {MIN_ZAXIRA_FILE}")
         mz = pd.read_excel(MIN_ZAXIRA_FILE, sheet_name=MZ_SHEET)
+        mz.columns = [str(c).strip() for c in mz.columns]  # 'Мин_Захира ' kabi bo'shliqlar
         mz_missing = [c for c in [MZ_COL_TOVAR, MZ_COL_MIN] if c not in mz.columns]
         if mz_missing:
             raise ValueError(f"Min_Zaxira varaqida ustunlar yetishmaydi: {', '.join(mz_missing)}")
