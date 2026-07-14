@@ -31,7 +31,7 @@ from common import (
     get_category, get_marka, get_category_with_marka, get_category_order,
     get_himoya_foiz, yaxlitla_50, hisobla_min_zaxira, min_dan_kunlik_chiqar,
     load_qoldiq_file, keraksizmi, fayl_sanasi,
-    YOLDA_KUN, FAST_KUN, M12_KUN,
+    YOLDA_KUN, FAST_KUN, M12_KUN, KUNLIK_SOTUV_BOLISH,
 )
 
 
@@ -460,6 +460,14 @@ result['Tur'] = result['Cex_Min'].apply(lambda x: 'ЦЕХ🏭' if x > 0 else 'С
 
 # Жами минимал захира — Холат (КРИТИК/ПАСТ/НОРМА) shu asosda hisoblanadi
 result['Min_Zaxira'] = result['Sotuv_Min'] + result['Cex_Min']
+
+# 2026-07-14 (Huzayfa: "min o'zgartirsam kunlik avtomatik o'zgarsin"):
+# Кунлик_Истеъмол endi FAYLDAN O'QILMAYDI — har doim yagona qoidadan
+# hisoblanadi: min / KUNLIK_SOTUV_BOLISH (30). Shu bilan bot buyurtmasi
+# (zanjir_sim ham xuddi shunday hisoblaydi) va Power BI Холат hisobi
+# HECH QACHON ikki xil kunlik ishlatmaydi. Min_Zaxira.xlsx dagi ustun
+# esa endi formula (=G/30) — faqat ko'rish uchun, kod unga qaramaydi.
+result['Kunlik_Istemol'] = (result['Min_Zaxira'] / KUNLIK_SOTUV_BOLISH).round(2)
 
 
 def _simulatsiya(row) -> tuple:
