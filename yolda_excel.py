@@ -87,10 +87,13 @@ def _set_row(ws, row_i: int, values: list, fills: list = None,
         ws.row_dimensions[row_i].height = height
 
 
-def yolda_excel(data_file: str | Path) -> io.BytesIO | None:
+def yolda_excel(data_file: str | Path, stats: dict | None = None) -> io.BytesIO | None:
     """
     data_file — NEJAVIYKA_POWER_BI.xlsx yo'li.
     Qaytaradi BytesIO (Excel fayli) yoki None (ma'lumot yo'q).
+    stats — bo'sh dict berilsa, unga xulosa yoziladi (2026-07-14):
+        n (konteynerlar soni), kechikdi (nechta kechikkan),
+        tonna (jami og'irlik, t), eng_yaqin ((id, kun) yoki None)
     """
     try:
         df = pd.read_excel(data_file, sheet_name="Контейнерлар")
@@ -102,16 +105,14 @@ def yolda_excel(data_file: str | Path) -> io.BytesIO | None:
     if df.empty:
         return None
 
-    # Tartib
-    if "Сана_Тартиб" in df.columns:
-        df["_tartib"] = pd.to_numeric(df["Сана_Тартиб"], errors="coerce").fillna(999)
-    elif "Кун_Қолди" in df.columns:
-        df["_tartib"] = pd.to_numeric(df["Кун_Қолди"], errors="coerce").fillna(999)
-        df["_tartib"] = -df["_tartib"]   # kam kun qoldi -> oldin
-    else:
-        df["_tartib"] = 0
-
-    # КЕЧИКДИ ni oldin ko'rsatamiz (Сана_Тартиб allaqachon bunga mos)
+    # Tartib (2026-07-14 tuzatildi): ilgari Сана_Тартиб (ЮКЛАНГАН sanasi!)
+    # bo'yicha edi — "2 kun kechikkan" konteyner "4 kun qoldi"dan KEYIN
+    # chiqib qolardi. Endi: avval КЕЧИКДИлар (eng ko'p kechikkani birinchi),
+    # keyin yo'ldagilar kelishiga OZ qolgani birinchi.
+    _kech = pd.to_numeric(df.get("Кечикиш_Кун", 0), errors="coerce").fillna(0)
+    _kunq = pd.to_numeric(df.get("Кун_Қолди", 999), errors="coerce").fillna(999)
+    df["_tartib"] = _kunq.where(~df["Холат"].astype(str).str.contains("КЕЧИКДИ"),
+                                -_kech)   # kechikkan: -kechikish (ko'pi eng oldin)
     df = df.sort_values(["_tartib", "Контейнер"])
 
     # Konteynerlar tartibini aniqlash
@@ -347,6 +348,21 @@ def yolda_excel(data_file: str | Path) -> io.BytesIO | None:
             cell.border = BORDER_THIN
             cell.font   = _font(size=11)
             cell.alignment = _align(h="left" if ci in (1, 3) else "center")
+
+    # ── Xulosa statistikasi (2026-07-14): chatdagi xabar uchun ──
+    if stats is not None:
+        kechikkanlar = df.groupby("Контейнер").first()
+        kech_mask = kechikkanlar["Холат"].astype(str).str.contains("КЕЧИКДИ")
+        stats["n"]        = len(container_order)
+        stats["kechikdi"] = int(kech_mask.sum())
+        stats["tonna"]    = round(umumiy_tonna_kg / 1000, 1)
+        eng_yaqin = None
+        yoldagilar = kechikkanlar[~kech_mask]
+        if not yoldagilar.empty and "Кун_Қолди" in yoldagilar.columns:
+            kq = pd.to_numeric(yoldagilar["Кун_Қолди"], errors="coerce").dropna()
+            if not kq.empty:
+                eng_yaqin = (str(kq.idxmin()), int(kq.min()))
+        stats["eng_yaqin"] = eng_yaqin
 
     bio = io.BytesIO()
     wb.save(bio)
