@@ -177,11 +177,20 @@ def _konteyner_12m_mi(mahsulot_qatorlari: list) -> bool:
     try:
         if not mahsulot_qatorlari:
             return False
+        # 2026-07-15 (Huzayfa ME5312 ga aksessuar qo'shdi): nisbat endi
+        # FAQAT uzunligi bor tovarlar (truba/profil, "(X м)") orasida
+        # hisoblanadi — aksessuarlar (uzunliksiz) konteynerga qo'shilsa
+        # nisbatni buzib, 12-metrlikni "oddiy 55 kunlik"ka o'tkazib
+        # yuborardi va kelish sanasi noto'g'ri surilardi.
+        uzunlikli = [m for m in mahsulot_qatorlari
+                     if re.search(r'\([\d,\.]+\s*м\)', str(m))]
+        if not uzunlikli:
+            return False
         olti_m_soni = sum(
-            1 for m in mahsulot_qatorlari
+            1 for m in uzunlikli
             if re.search(r'\(6\s*м\)', str(m))
         )
-        return olti_m_soni > len(mahsulot_qatorlari) / 2
+        return olti_m_soni > len(uzunlikli) / 2
     except Exception:
         return False
 
