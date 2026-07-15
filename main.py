@@ -243,13 +243,45 @@ def _parse_konteyner_fayli(file_path: str) -> list[dict]:
 
     rows = []
     try:
-        df           = pd.read_excel(file_path)
-        mahsulot_col = df.columns[1]
+        df = pd.read_excel(file_path)
 
-        # Birinchi raqamli ustunni miqdor sifatida olish
-        miqdor_col = next(
-            (col for col in df.columns[2:] if pd.api.types.is_numeric_dtype(df[col])),
-            df.columns[2]
+        # 2026-07-15 (Huzayfa: Aksessuarlar02 rasmi guruhga yuborilmadi):
+        # ILGARI mahsulot_col/miqdor_col FAQAT POZITSIYA bo'yicha (har doim
+        # 2- va 3-ustun) olinardi — bu "№" (tartib raqami) ustuni bo'lgan
+        # standart fayllar uchun ishlar edi. Lekin ba'zi konteyner fayllarida
+        # (masalan shu Aksessuarlar02) "№" ustuni yo'q, tovar nomi to'g'ridan
+        # to'g'ri 1-ustunda turadi — natijada miqdor ustuni tovar nomi,
+        # kategoriya ustuni esa miqdor deb noto'g'ri o'qilib, HAR BIR qator
+        # `float(...)` xatosi bilan tashlab yuborilar edi (butun konteyner
+        # "Контейнерлар" varag'iga sukut bo'yicha kirmasdi — hech qanday
+        # xato ko'rinmasdan). Endi ustunlar NOMIGA qarab topiladi, faqat
+        # topilmasa eski pozitsion mantiqqa qaytiladi (orqaga moslashuvchan).
+        def _find_mahsulot_col(cols):
+            for c in cols:
+                cl = str(c).strip().lower()
+                if 'товар' in cl or 'tovar' in cl:
+                    return c
+            return None
+
+        def _find_miqdor_col(cols, exclude):
+            kalitlar = ('миқдор', 'миqdor', 'miqdor', 'soni', 'quantity', 'qty')
+            for c in cols:
+                if c == exclude:
+                    continue
+                cl = str(c).strip().lower()
+                if any(k in cl for k in kalitlar):
+                    return c
+            return None
+
+        mahsulot_col = _find_mahsulot_col(df.columns) or df.columns[1]
+
+        miqdor_col = (
+            _find_miqdor_col(df.columns, mahsulot_col)
+            or next(
+                (col for col in df.columns if col != mahsulot_col
+                 and pd.api.types.is_numeric_dtype(df[col])),
+                df.columns[2] if len(df.columns) > 2 else df.columns[-1]
+            )
         )
 
         # "Vazn_kg" ustuni (agar mavjud bo'lsa) — konteyner_qosh.py
