@@ -304,8 +304,13 @@ def _parse_konteyner_fayli(file_path: str) -> list[dict]:
             mahsulot_str = str(mahsulot).strip()
             if not mahsulot_str:
                 continue
-            # Sarlavha qatorlarini o'tkazib yuborish
-            if any(x in mahsulot_str.lower() for x in ['жами', 'jami', 'total', '№']):
+            # Sarlavha/jami qatorlarini o'tkazib yuborish.
+            # 2026-07-15 (Huzayfa ME5312 ga Стойка qo'shdi): '№' belgisi
+            # BUTUN nomda qidirilardi — "Стойка №25" kabi BARCHA aksessuarlar
+            # ham jimgina tashlab yuborilardi! Endi faqat nom AYNAN '№' bo'lsa
+            # (sarlavha katagi) yoki jami/total qatori bo'lsa o'tkaziladi.
+            if (mahsulot_str == '№'
+                    or any(x in mahsulot_str.lower() for x in ('жами', 'jami', 'total'))):
                 continue
 
             try:
