@@ -463,15 +463,40 @@ def grafik_qidirish(query: str, kat: str, kanal: str) -> pd.DataFrame:
     def _qn(s):
         return re.escape(s.strip()) + r'(?!\d)'
 
+    # 2026-07-14 (Huzayfa: "20 10 5,8 desam topilmadi deydi"): qism ROLI
+    # endi o'rniga qarab emas, QIYMATIGA qarab aniqlanadi — foydalanuvchi
+    # stenkani tashlab "51 5,8" (diametr+uzunlik) yozsa ham ishlaydi:
+    #   201/304/430/316/321  -> marka
+    #   4 dan katta son      -> uzunlik (м)   (stenka hech qachon 4+ emas)
+    #   4 dan kichik son     -> stenka
+    #   son bo'lmasa         -> matn (голд, бесшовный, ...)
+    def _rol(p: str) -> str:
+        if p in ('201', '304', '430', '316', '321'):
+            return 'marka'
+        try:
+            v = float(p.replace(',', '.'))
+        except ValueError:
+            return 'matn'
+        return 'uzunlik' if v >= 4 else 'stenka'
+
+    def _rol_mask(p: str):
+        r = _rol(p)
+        if r == 'marka':
+            return names.str.contains(f'{p} марка', na=False, case=False)
+        if r == 'uzunlik':
+            # "(5,8 м)" — chapda raqam/vergul bo'lmasin ("5,8" "5,6 м"dagi
+            # "6 м"ga o'xshab adashmasin), o'ngda "м" kelsin
+            return names.str.contains(
+                r'(?<![\d,])' + re.escape(p) + r'\s*м', na=False, case=False, regex=True)
+        if r == 'stenka':
+            return names.str.contains(f'ст {_qn(p)}', na=False, case=False)
+        return names.str.contains(re.escape(p), na=False, case=False)
+
     if kat == "truba":
         if len(parts) >= 1:
             mask &= names.str.contains(f'Ф-{_qn(parts[0])}', na=False, case=False)
-        if len(parts) >= 2:
-            mask &= names.str.contains(f'ст {_qn(parts[1])}', na=False, case=False)
-        if len(parts) >= 3:
-            mask &= names.str.contains(_qn(parts[2]), na=False, case=False)
-        if len(parts) >= 4:
-            mask &= names.str.contains(parts[3].strip(), na=False, case=False)
+        for p in parts[1:]:
+            mask &= _rol_mask(p)
 
     elif kat == "profil":
         # "20 20 0,7 6 201" yoki "20х20 0,7 6 201" — ikkalasi ishlaydi
@@ -491,14 +516,15 @@ def grafik_qidirish(query: str, kat: str, kanal: str) -> pd.DataFrame:
             idx = 1
         else:
             olcham = ""
+        # 2026-07-14: Профиль kategoriyasida faqat haqiqiy profillar chiqsin —
+        # ilgari "20 20" qidirilsa "Пласт-20х20", "Трубогиб 20х20", "Кольцо"
+        # kabi begona tovarlar ham aralashib chiqardi (Huzayfa 3-rasm).
+        mask &= names.str.contains(r'Пр\.', na=False, regex=True)
         if olcham:
             mask &= names.str.contains(_qn(olcham), na=False, case=False)
-        if len(parts) > idx:
-            mask &= names.str.contains(f'ст {_qn(parts[idx])}', na=False, case=False)
-        if len(parts) > idx + 1:
-            mask &= names.str.contains(_qn(parts[idx + 1]), na=False, case=False)
-        if len(parts) > idx + 2:
-            mask &= names.str.contains(parts[idx + 2].strip(), na=False, case=False)
+        # 2026-07-14: qolgan qismlar roli qiymatiga qarab (yuqoridagi _rol_mask)
+        for p in parts[idx:]:
+            mask &= _rol_mask(p)
 
     elif kat == "list":
         if len(parts) >= 1:
@@ -573,7 +599,20 @@ def grafik_qidirish(query: str, kat: str, kanal: str) -> pd.DataFrame:
         if num:
             mask &= names.str.contains(f'№-{num.zfill(2)}', na=False, case=False)
 
-    return df[mask].copy().reset_index(drop=True)
+    out = df[mask].copy()
+    if not out.empty:
+        # 2026-07-14 (Huzayfa: "Голд/Гулли birinchi chiqmasin, xodovoylar
+        # birinchi chiqsin"): natijalar saralanadi —
+        #   1) nomi qavs bilan BOSHLANMAGANLAR avval ((Голд)/(Янги)/(Кора)
+        #      kabi kam yuradigan variantlar pastga),
+        #   2) keyin Мин_Захира KATTAROQLARI avval (min katta = xodovoy tovar).
+        nm = out["Товар"].astype(str)
+        out["_pfx"] = nm.str.match(r"^\(").astype(int)
+        out["_min"] = (pd.to_numeric(out["Мин_Захира"], errors="coerce").fillna(0)
+                       if "Мин_Захира" in out.columns else 0)
+        out = (out.sort_values(["_pfx", "_min"], ascending=[True, False])
+                  .drop(columns=["_pfx", "_min"]))
+    return out.reset_index(drop=True)
 
 
 def buyurtma_yuklash(kanal: str) -> dict | None:

@@ -899,28 +899,20 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Orqaga yoki menyu tugmasi kelsa — holatni tozala
         if text == t(lang, "back") or get_action(lang, screen, text):
             if text == t(lang, "back"):
-                if context.user_data.pop("grafik_back", False):
-                    # 2-Orqaga: search_kat → kategoriya tanlash
-                    context.user_data.pop("kutilmoqda", None)
-                    context.user_data.pop("grafik_natijalar", None)
-                    await go_screen(msg, context, "search")
-                    await msg.reply_text(t(lang, "karta_kat_sor"), reply_markup=grafik_kat_ikb())
-                else:
-                    # 1-Orqaga: natijadan → yozish ekrani (kutilmoqda saqlanadi)
-                    context.user_data.pop("grafik_natijalar", None)
-                    context.user_data["grafik_back"] = True
-                    context.user_data["screen"] = "search_kat"
-                    matn_key = _KAT_MATN.get(kat, "grafik_list")
-                    await msg.reply_text(t(lang, matn_key), parse_mode="Markdown",
-                                         reply_markup=search_kb(lang))
+                # 2026-07-14 (Huzayfa: "ikki marta Orqaga bosish kerak edi —
+                # olib tashla"): eski ikki bosqichli qaytish o'chirildi,
+                # endi BITTA Orqaga to'g'ridan kategoriya tanlashga qaytaradi.
+                context.user_data.pop("kutilmoqda", None)
+                context.user_data.pop("grafik_natijalar", None)
+                context.user_data.pop("grafik_back", None)
+                await go_screen(msg, context, "search")
+                await msg.reply_text(t(lang, "karta_kat_sor"), reply_markup=grafik_kat_ikb())
                 return
             # Boshqa menyu tugmasi
             context.user_data.pop("kutilmoqda", None)
             context.user_data.pop("grafik_natijalar", None)
             context.user_data.pop("grafik_back", None)
         else:
-            # Qidiruv so'rovi — yangi qidiruv, grafik_back ni tozala
-            context.user_data.pop("grafik_back", None)
             df = grafik_qidirish(text, kat, kanal)
             if df.empty:
                 await msg.reply_text(t(lang, "grafik_topilmadi"), parse_mode="Markdown")
