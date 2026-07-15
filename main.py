@@ -84,7 +84,7 @@ KUZATUV_YOQ: set = set()   # Кузатув=X belgilangan tovarlar (normalized)
 
 try:
     mz_raw = pd.read_excel(MIN_ZAXIRA_FILE, sheet_name='Min_Zaxira')
-    # Ustunlar: №, Товар, Категория, Йиллик_Сотув, Кунлик_Истеъмол, Мин_Захира, (Цех_Захира)
+    # Ustunlar: №, Товар, Категория, Кунлик_Истеъмол, Асосий_Захира, Цех_Захира, Кузатув, (Ош_Захира)
 
     # Ustun nomlarini ANIQ matnga emas, KALIT SO'ZGA qarab topamiz —
     # chunki Excel'da sarlavhalar qo'lda qayta yozilganda harflar
@@ -101,14 +101,23 @@ try:
     kat_col    = _find_col(cols, ['категор', 'kategor'])
     kunlik_col = _find_col(cols, ['кунлик', 'kunlik'])
     cex_col    = _find_col(cols, ['цех', 'tsex', 'cex'])
-    sotuv_col  = _find_col(cols, ['захира', 'zaxira', 'мин', 'min'],
-                            exclude=['цех', 'tsex', 'cex'])
+    osh_col    = _find_col(cols, ['ош_захира', 'ош', 'osh'])
+    # 2026-07-15 (Huzayfa: uch kanal — Asosiy/Cex/Osh — har birining O'Z
+    # захираси bo'lishi kerak): avval "Асосий" ustuni nomiga qarab qidiriladi,
+    # topilmasa (eski fayl, hali qayta nomlanmagan) — eski "захира/мин"
+    # qoidasiga qaytiladi, lekin endi ЦЕХ HAM, ОШ HAM chetlab o'tiladi
+    # (aks holda ular ham "asosiy" deb noto'g'ri o'qilib qolishi mumkin edi).
+    sotuv_col  = (
+        _find_col(cols, ['асосий', 'asosiy'])
+        or _find_col(cols, ['захира', 'zaxira', 'мин', 'min'],
+                      exclude=['цех', 'tsex', 'cex', 'ош', 'osh'])
+    )
 
     if not tovar_col or not sotuv_col:
         raise KeyError(
             f"Kerakli ustunlar topilmadi. Mavjud ustunlar: {cols} | "
             f"tovar={tovar_col}, kategoriya={kat_col}, kunlik={kunlik_col}, "
-            f"sotuv_min={sotuv_col}, cex_min={cex_col}"
+            f"asosiy_min={sotuv_col}, cex_min={cex_col}, osh_min={osh_col}"
         )
 
     mz_raw = mz_raw[mz_raw[tovar_col].notna()].copy()
@@ -127,6 +136,13 @@ try:
         mz_raw['Cex_Min'] = 0
         print("  ⚠️  Цех_Захира ustuni topilmadi — barcha Cex_Min = 0")
 
+    if osh_col:
+        mz_raw['Osh_Min'] = pd.to_numeric(mz_raw[osh_col], errors='coerce').fillna(0)
+        print(f"  ✅ Ош ustuni topildi: '{osh_col}'")
+    else:
+        mz_raw['Osh_Min'] = 0
+        print("  ⚠️  Ош_Захира ustuni topilmadi — barcha Osh_Min = 0")
+
     mz_raw['Mahsulot_Normalized'] = mz_raw[tovar_col].apply(normalize_product_name)
 
     # 2026-07-14 (Huzayfa: "kuzatuvdan mutloq chiqarishim kerak bo'lgan
@@ -141,9 +157,10 @@ try:
         if _mask.any():
             print(f"  🚫 Кузатув=X belgilangan: {int(_mask.sum())} ta tovar chiqariladi")
 
-    min_zaxira = mz_raw[['Mahsulot_Normalized', 'Sotuv_Min', 'Kunlik_Istemol', 'Kategoriya', 'Cex_Min']].copy()
+    min_zaxira = mz_raw[['Mahsulot_Normalized', 'Sotuv_Min', 'Kunlik_Istemol', 'Kategoriya', 'Cex_Min', 'Osh_Min']].copy()
     print(f"  ✅ {len(min_zaxira):,} ta tovar min zaxirasi yuklandi")
     print(f"  ✅ {(min_zaxira['Cex_Min'] > 0).sum()} ta tovarda Цех_Захира > 0 (Tsex mahsulotlari)")
+    print(f"  ✅ {(min_zaxira['Osh_Min'] > 0).sum()} ta tovarda Ош_Захира > 0 (Osh mahsulotlari)")
 except FileNotFoundError:
     print(f"  ❌ Min_Zaxira.xlsx topilmadi: {MIN_ZAXIRA_FILE}")
     print(f"     Avval 'yarat_min_zaxira.py' ni ishga tushiring!")
@@ -442,8 +459,9 @@ else:
     result['Sotuv_Min']      = 0
     result['Kunlik_Istemol'] = 0
     result['Cex_Min']        = 0
+    result['Osh_Min']        = 0
 
-for col in ['Sotuv_Min', 'Kunlik_Istemol', 'Cex_Min']:
+for col in ['Sotuv_Min', 'Kunlik_Istemol', 'Cex_Min', 'Osh_Min']:
     result[col] = result[col].fillna(0)
 
 # Konteynerlarni ulash (fast va standart alohida)
@@ -519,8 +537,12 @@ result['Kategoriya_Display'] = result['Mahsulot'].apply(get_category_with_marka)
 # bunday holda u ЦЕХ🏭 deb belgilanadi, lekin Жами_Мин ikkalasini ham qamrab oladi.
 result['Tur'] = result['Cex_Min'].apply(lambda x: 'ЦЕХ🏭' if x > 0 else 'САВДО')
 
-# Жами минимал захира — Холат (КРИТИК/ПАСТ/НОРМА) shu asosda hisoblanadi
-result['Min_Zaxira'] = result['Sotuv_Min'] + result['Cex_Min']
+# Жами минимал захира — Холат (КРИТИК/ПАСТ/НОРМА) shu asosda hisoblanadi.
+# 2026-07-15: uchinchi kanal (Ош) ham qo'shildi — umumiy holat FIZIK
+# ombordagi bitta zaxiraning UCH kanal (Asosiy+Cex+Osh) uchun JAMI
+# ehtiyojini aks ettirishi kerak (har kanalning O'Z buyurtmasi esa
+# Generate_Asosiy_order.py'da alohida, mos ustunidan hisoblanadi).
+result['Min_Zaxira'] = result['Sotuv_Min'] + result['Cex_Min'] + result['Osh_Min']
 
 # 2026-07-14 (Huzayfa: "min o'zgartirsam kunlik avtomatik o'zgarsin"):
 # Кунлик_Истеъмол endi FAYLDAN O'QILMAYDI — har doim yagona qoidadan
@@ -626,7 +648,7 @@ final_df = result[[
     'Fast_Miqdor', 'Fast_Kelish_Kun', 'Fast_Kelish_Sana',
     'M12_Miqdor', 'M12_Kelish_Kun', 'M12_Kelish_Sana',
     'Standart_Miqdor', 'Standart_Kelish_Kun', 'Standart_Kelish_Sana',
-    'Yolda_Jami', 'Umumiy_Zaxira', 'Min_Zaxira', 'Sotuv_Min', 'Cex_Min',
+    'Yolda_Jami', 'Umumiy_Zaxira', 'Min_Zaxira', 'Sotuv_Min', 'Cex_Min', 'Osh_Min',
     'Kunlik_Istemol', 'Kun_Yetadi', 'Yakuniy_Qoldiq',
     'Farq', 'Etishmaydi', 'Qoldiq_Summa',
 ]].copy()
@@ -666,8 +688,9 @@ final_df = final_df.rename(columns={
     'Yolda_Jami':           'Йўлда_Жами',
     'Umumiy_Zaxira':        'Умумий_Захира',
     'Min_Zaxira':           'Мин_Захира',
-    'Sotuv_Min':            'Сотув_Захира',
+    'Sotuv_Min':            'Асосий_Захира',
     'Cex_Min':              'Цех_Захира',
+    'Osh_Min':              'Ош_Захира',
     'Kunlik_Istemol':       'Кунлик_Истеъмол',
     'Kun_Yetadi':           'Кун_Етади',
     'Yakuniy_Qoldiq':       'Якуний_Қолдиқ',

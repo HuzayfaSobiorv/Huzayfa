@@ -32,7 +32,10 @@ PB_SHEET_INVENTAR = "Инвентар"
 PB_COL_TOVAR      = "Товар"
 PB_COL_QOLDIQ     = "Қолдиқ"
 PB_COL_YOLDA      = "Йўлда_Жами"
-PB_COL_MIN        = "Мин_Захира"
+PB_COL_MIN        = "Мин_Захира"        # Асосий+Цех+Ош (jamlangan) — faqat backward-compat fallback
+PB_COL_ASOSIY     = "Асосий_Захира"     # faqat "asosiy" kanali uchun
+PB_COL_CEX        = "Цех_Захира"        # faqat "sex" (Цех) kanali uchun
+PB_COL_OSH        = "Ош_Захира"         # faqat "osh" kanali uchun
 MZ_SHEET          = "Min_Zaxira"
 MZ_COL_TOVAR      = "Товар"
 MZ_COL_MIN        = "Мин_Захира"
@@ -265,24 +268,29 @@ def load_data(kanal: str = "asosiy"):
     if missing:
         raise ValueError(f"Inventar varaqida ustunlar yetishmaydi: {', '.join(missing)}")
 
-    # Kanal bo'yicha filtr
-    if "Тур" in inv.columns:
-        if kanal == "sex":
-            inv = inv[inv["Тур"] == "ЦЕХ🏭"].copy()
-        else:  # asosiy, osh — savdo kanallari
-            inv = inv[inv["Тур"] != "ЦЕХ🏭"].copy()
+    # 2026-07-15 (Huzayfa: "ham sotuvga, ham sexga kerak bo'lgan tovar bor",
+    # keyin: "Osh ham o'z alohida zaxirasiga ega bo'lishi kerak"): ILGARI
+    # kanal filtri "Тур" ustuniga (Цех_Захира>0 bo'lsa BUTUN qator "ЦЕХ🏭"
+    # deb belgilanib, Asosiy/Osh kanaldan MUTLAQO chiqarib tashlanardi, Osh
+    # esa Asosiy bilan BITTA "Сотув_Захира"ni bo'lishardi) asoslangandi.
+    # Endi HAR BIR kanal (Asosiy/Cex/Osh) FAQAT O'ZINING ustunidan
+    # foydalanadi — bir tovar bir nechta kanalga kerak bo'lsa, har birida
+    # o'z ulushicha, alohida-alohida chiqadi.
+    min_col = {"sex": PB_COL_CEX, "osh": PB_COL_OSH}.get(kanal, PB_COL_ASOSIY)
+    if min_col not in inv.columns:
+        min_col = PB_COL_MIN   # eski Power BI fayli (hali yangilanmagan) — backward-compat
 
     cols = [PB_COL_TOVAR, PB_COL_QOLDIQ]
     if PB_COL_YOLDA in inv.columns:
         cols.append(PB_COL_YOLDA)
-    if PB_COL_MIN in inv.columns:
-        cols.append(PB_COL_MIN)
+    if min_col in inv.columns:
+        cols.append(min_col)
 
     df = inv[cols].rename(columns={
         PB_COL_TOVAR: "tovar",
         PB_COL_QOLDIQ: "qoldiq",
         PB_COL_YOLDA: "yoldagi",
-        PB_COL_MIN: "min_zaxira",
+        min_col: "min_zaxira",
     }).dropna(subset=["tovar"])
 
     if "yoldagi" not in df.columns:
