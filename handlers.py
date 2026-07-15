@@ -521,6 +521,47 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["screen"] = "keldi_menu"
             await kont_holat_royhat(query.message, context)
 
+    elif query.data.startswith("kont_rasm_qayta:"):
+        # 2026-07-15 (Huzayfa: Aksessuarlar02 rasmi guruhga ketmagan edi,
+        # keyin "faqat bugun qaytarish mumkin" himoyasi tufayli uni orqaga
+        # qaytarib qayta belgilab bo'lmadi): allaqachon KELDI bo'lgan
+        # (istalgan kundagi) konteyner uchun, holatini/faylini o'zgartirmasdan,
+        # faqat rasmni HOZIRGI ma'lumot asosida qayta chizib guruhga
+        # yuborish so'rovini ko'rsatadi. _keldi_bugunmi()ga UMUMAN tegmaydi.
+        fname = query.data[len("kont_rasm_qayta:"):]
+        old_path = XITOY_PARSED_DIR / fname
+        if not old_path.exists():
+            await query.answer("Fayl topilmadi.", show_alert=True)
+        else:
+            stem_no_d = old_path.stem[:-2] if old_path.stem.endswith("_D") else old_path.stem
+            iso = _iso_from_stem(stem_no_d)
+            await query.answer("Tayyorlanmoqda...")
+            rasm = generate_kelgan_rasm(iso)
+            if not rasm:
+                await query.message.reply_text(
+                    f"⚠️ *{iso}* uchun ma'lumot topilmadi.\n"
+                    "Avval \"⚙️ Ma'lumotlarni yangilash\"ni bosing (bu konteyner "
+                    "hisob-kitobga hali kirmagan bo'lishi mumkin), so'ng qayta urinib ko'ring.",
+                    parse_mode="Markdown",
+                )
+            else:
+                sent = await query.message.reply_photo(
+                    photo=rasm,
+                    caption=(
+                        f"🖼 *{iso}* — kelgan yuklar ro'yxati.\n"
+                        "Guruhga yuborilsinmi?"
+                    ),
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📤 Guruhga jo'natish", callback_data=f"kg_send:{iso}")],
+                        [InlineKeyboardButton("❌ Bekor qilish", callback_data=f"kg_cancel:{iso}")],
+                    ]),
+                )
+                context.user_data["kg_pending"] = {
+                    "iso": iso,
+                    "file_id": sent.photo[-1].file_id,
+                }
+
     elif query.data.startswith("kont_bekor:"):
         await query.edit_message_text("❌ Bekor qilindi.")
 
@@ -2080,6 +2121,15 @@ async def _kont_list_yuborish(msg, query_key: str, is_keldi: bool,
             sana_f = stem_no_d.rsplit("_", 1)[-1]
             lbl    = f"\u2705 {iso} ({sana_f})"
             cb     = f"kont_bir_qayt:{f.name}|{query_key}"
+            # 2026-07-15 (Huzayfa: Aksessuarlar02 rasmi guruhga ketmagan edi):
+            # allaqachon KELDI bo'lgan (bugun emas, ilgari belgilangan)
+            # konteyner uchun "qaytarish"ga tegmasdan, faqat rasmni qayta
+            # chizib guruhga yuborish imkoni \u2014 "bugun" himoyasidan mustasno.
+            buttons.append([
+                InlineKeyboardButton(lbl, callback_data=cb),
+                InlineKeyboardButton("\U0001f5bc", callback_data=f"kont_rasm_qayta:{f.name}"),
+            ])
+            continue
         buttons.append([InlineKeyboardButton(lbl, callback_data=cb)])
 
     await msg.reply_text(sarlavha, parse_mode="Markdown",
@@ -2115,7 +2165,13 @@ def _qt_multi_kb(fayllar, query_key: str, selected: set) -> InlineKeyboardMarkup
         mark   = "\u2705" if f.name in selected else "\u2b1c"
         lbl    = f"{mark} {iso} ({sana_f})"
         cb     = f"qt_tgl:{f.name}|{query_key}"
-        buttons.append([InlineKeyboardButton(lbl, callback_data=cb)])
+        # 2026-07-15: har bir qatorda qo'shimcha "rasmni qayta yubor" tugmasi
+        # \u2014 "bugun" himoyasi tufayli qaytarib bo'lmaydigan (eski) konteyner
+        # uchun ham rasmni qayta olish imkonini beradi.
+        buttons.append([
+            InlineKeyboardButton(lbl, callback_data=cb),
+            InlineKeyboardButton("\U0001f5bc", callback_data=f"kont_rasm_qayta:{f.name}"),
+        ])
     n = len(selected)
     buttons.append([InlineKeyboardButton(
         f"\u21a9\ufe0f Tanlanganlarni qaytarish ({n} ta)" if n else "\u21a9\ufe0f Tanlanganlarni qaytarish",
