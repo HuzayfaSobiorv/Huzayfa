@@ -158,7 +158,7 @@ def grafik_kat_ikb() -> InlineKeyboardMarkup:
 
 def grafik_tovar_ikb(tovars: list) -> InlineKeyboardMarkup:
     rows = []
-    for i, tov in enumerate(tovars[:8]):
+    for i, tov in enumerate(tovars[:10]):
         short = tov if len(tov) <= 45 else tov[:42] + '...'
         rows.append([(short, f"karta_tovar:{i}")])
     return InlineKeyboardMarkup(

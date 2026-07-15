@@ -704,7 +704,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data.startswith("karta_tovar:"):
         idx  = int(query.data.split(":")[1])
         lang = context.user_data.get("lang", "cyr")
-        tovs = context.user_data.pop("grafik_natijalar", [])
+        # 2026-07-14: pop -> get. Ilgari bitta tugma bosilgach ro'yxat
+        # o'chirilar, xuddi shu xabardagi IKKINCHI tugma "Xato" berardi.
+        tovs = context.user_data.get("grafik_natijalar", [])
         kanal = context.user_data.get("kanal", "asosiy")
         kut   = context.user_data.get("kutilmoqda")
         kat   = kut[2] if isinstance(kut, tuple) and len(kut) > 2 else "truba"
@@ -951,7 +953,17 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             df = qidiruv_olish(text, kanal)
             matn = qidiruv_text(text, df, lang)
-            await msg.reply_text(matn, parse_mode="Markdown")
+            # 2026-07-14: parse_mode OLIB TASHLANDI — foydalanuvchi so'rovida
+            # "_" yoki "*" bo'lsa (masalan "profil_20"), Markdown parse xatosi
+            # bilan javob umuman YUBORILMAY qolardi. Oddiy matn — xavfsiz.
+            if df.empty:
+                await msg.reply_text(matn)
+            else:
+                # Natijalar bosiladigan tugma ham bo'ladi — tovar kartasini
+                # (grafik bilan) bir bosishda ochish uchun.
+                tovs = df["Товар"].tolist()
+                context.user_data["grafik_natijalar"] = tovs
+                await msg.reply_text(matn, reply_markup=grafik_tovar_ikb(tovs))
             return  # kutilmoqda saqlanadi — davomli qidiruv uchun
 
     if isinstance(kut, tuple):

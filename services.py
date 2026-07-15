@@ -319,6 +319,19 @@ def _qidiruv_normalize(s: str) -> str:
     return s
 
 
+def _term_pattern(term: str) -> str:
+    """Qidiruv so'zi -> regex. 2026-07-14: raqam bilan boshlanib/tugasa
+    ANCHOR qo'yiladi -- "0,6" endi "0,65" ga, "19" esa "190" ga mos
+    kelmaydi (grafik qidiruvdagi 2026-07-11 tuzatishning umumiy qidiruvga
+    ko'chirilishi -- bu yerda o'sha bug qolib ketgan edi)."""
+    pat = re.escape(term)
+    if term and term[0].isdigit():
+        pat = r"(?<!\d)" + pat
+    if term and term[-1].isdigit():
+        pat = pat + r"(?!\d)"
+    return pat
+
+
 def _fuzzy_score(terms: list, name_tokens: list) -> float:
     """Har bir so'rov so'zi uchun nom ichidagi eng yaqin so'zni topib,
     o'rtacha o'xshashlik darajasini qaytaradi (0..1)."""
@@ -334,7 +347,7 @@ def _fuzzy_score(terms: list, name_tokens: list) -> float:
     return total / len(terms)
 
 
-def qidiruv_olish(query: str, kanal: str | None = None, limit: int = 12) -> pd.DataFrame:
+def qidiruv_olish(query: str, kanal: str | None = None, limit: int = 10) -> pd.DataFrame:
     """
     Umumiy (kategoriyasiz) qidiruv — butun inventar bo'yicha.
     Kirill va lotin yozuvi farqi hisobga olinmaydi (masalan "труба" va "truba"
@@ -342,7 +355,11 @@ def qidiruv_olish(query: str, kanal: str | None = None, limit: int = 12) -> pd.D
     Aniq mos kelmasa — xato/yozuv farqiga chidamli (taxminiy/fuzzy) eng
     yaqin natijalarni qaytaradi.
     """
-    df = inventar_olish(kanal)
+    # 2026-07-14: kanal filtri OLIB TASHLANDI — ilgari asosiy kanaldan
+    # qidirilganda ЦЕХ tovarlari (19 ta) umuman TOPILMASdi ("Natija
+    # topilmadi" chiqardi). Endi butun inventar qidiriladi, ЦЕХ tovar
+    # natijada 🏭 belgisi bilan ko'rinadi (qidiruv_text).
+    df = inventar_olish(None)
     if df.empty or "Товар" not in df.columns:
         return pd.DataFrame()
 
@@ -354,7 +371,7 @@ def qidiruv_olish(query: str, kanal: str | None = None, limit: int = 12) -> pd.D
     names_norm = df["Товар"].astype(str).apply(_qidiruv_normalize)
     mask = pd.Series(True, index=df.index)
     for term in terms:
-        mask &= names_norm.str.contains(re.escape(term), na=False)
+        mask &= names_norm.str.contains(_term_pattern(term), na=False, regex=True)
 
     out = df[mask].copy()
 
@@ -368,18 +385,21 @@ def qidiruv_olish(query: str, kanal: str | None = None, limit: int = 12) -> pd.D
 
     if out.empty:
         return out
+    jami = len(out)
     status_rank = {"🔴 КРИТИК": 1, "🟡 ПАСТ": 2, "🟢 НОРМА": 3, "МЕЁР ЙЎҚ": 4}
     if "Холат" in out.columns:
         out["_rank"] = out["Холат"].map(status_rank).fillna(9)
     else:
         out["_rank"] = 9
     sort_cols = [c for c in ["_rank", "Кун_Етади", "Товар"] if c in out.columns]
-    return (
+    natija = (
         out.sort_values(sort_cols)
         .head(limit)
         .drop(columns=["_rank"], errors="ignore")
         .reset_index(drop=True)
     )
+    natija.attrs["jami"] = jami   # limit'dan tashqarida qolganlar haqida xabar uchun
+    return natija
 
 
 def qidiruv_text(query: str, df: pd.DataFrame, lang: str) -> str:
@@ -394,9 +414,18 @@ def qidiruv_text(query: str, df: pd.DataFrame, lang: str) -> str:
         yolda = int(row.get("Йўлда_Жами", 0))
         min_z = int(row.get("Мин_Захира", 0))
         kun = row.get("Кун_Етади", "")
+        # 2026-07-14: ЦЕХ tovarlari endi qidiruvda chiqadi — belgi bilan
+        cex = " 🏭ЦЕХ" if "ЦЕХ" in str(row.get("Тур", "")) else ""
         lines.append(
-            f"{i + 1}. {tovar}\n"
+            f"{i + 1}. {tovar}{cex}\n"
             f"   {holat} | Qoldiq: {qoldiq} | Yo'lda: {yolda} | Min: {min_z} | Kun: {kun}"
+        )
+    jami = df.attrs.get("jami", len(df))
+    if jami > len(df):
+        lines.append(
+            f"\n... yana {jami - len(df)} ta natija bor — aniqroq yozing"
+            if lang == "lat" else
+            f"\n... яна {jami - len(df)} та натижа бор — аниқроқ ёзинг"
         )
     return "\n".join(lines)
 
