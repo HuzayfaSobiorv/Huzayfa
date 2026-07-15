@@ -15,6 +15,56 @@ from pathlib import Path
 from telegram import Update
 
 logger = logging.getLogger(__name__)
+
+
+def _iso_from_stem(stem: str) -> str:
+    """Fayl nomi (stem, '_D'siz) dan konteyner raqamini ajratadi — main.py
+    bilan BIR XIL qoida: 'F_' (tezkor) prefiksi tashlanadi.
+    2026-07-15 bugi: 'F_aksessuar02_15.06.2026' dan 'F_aksessuar02' chiqar,
+    Power BI'da esa 'aksessuar02' — natijada KELDI rasmi topilmay, guruhga
+    yuborilmasdi (barcha F_ konteynerlarda shunday edi)."""
+    s = stem[2:] if stem.startswith("F_") else stem
+    return s.rsplit("_", 1)[0]
+
+
+# 2026-07-15 (Huzayfa: "17.06 da kelgan konteynerni 1 oydan keyin ham
+# adashib qaytarib qo'yishim mumkin"): KELDI qilingan sana qayd etiladi,
+# qaytarish FAQAT o'sha kunning o'zida ruxsat etiladi.
+def _keldi_sana_fayl():
+    # import pastda (21-qator) bo'lgani uchun kech chaqiriladi
+    from config import BOT_HOLAT_DIR as _BHD
+    return _BHD / "keldi_qilingan.json"
+
+
+def _keldi_sana_yoz(fname: str) -> None:
+    """KELDI qilingan fayl (_D bilan) bugungi sana bilan qayd etiladi."""
+    import json as _json
+    from datetime import date as _date
+    try:
+        d = {}
+        f = _keldi_sana_fayl()
+        if f.exists():
+            d = _json.loads(f.read_text(encoding="utf-8"))
+        d[fname] = _date.today().isoformat()
+        from common import atomic_json_write
+        atomic_json_write(f, d, indent=2)
+    except Exception:
+        logger.exception("keldi_sana_yoz xato")
+
+
+def _keldi_bugunmi(fname: str) -> bool:
+    """Fayl BUGUN keldi qilinganmi? Qayd yo'q (eski) bo'lsa — False."""
+    import json as _json
+    from datetime import date as _date
+    try:
+        f = _keldi_sana_fayl()
+        if not f.exists():
+            return False
+        d = _json.loads(f.read_text(encoding="utf-8"))
+        return d.get(fname) == _date.today().isoformat()
+    except Exception:
+        return False
+
 from telegram.ext import ContextTypes
 
 import config
@@ -401,13 +451,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not old_path.exists():
             await query.answer("Fayl topilmadi.", show_alert=True)
         else:
-            iso    = old_path.stem.rsplit("_", 1)[0]
+            iso    = _iso_from_stem(old_path.stem)   # 2026-07-15: F_ prefiksi tashlanadi
             sana_f = old_path.stem.rsplit("_", 1)[-1]
 
             # ── Rasmni ALBATTA belgilashdan oldin tayyorlaymiz — aks holda
             # main.py qayta hisoblagach "Yuklangan sana" "Архив" ga almashadi ──
             rasm = generate_kelgan_rasm(iso)
 
+            _keldi_sana_yoz(f"{old_path.stem}_D.xlsx")
             old_path.rename(XITOY_PARSED_DIR / f"{old_path.stem}_D.xlsx")
             _main_py_ishga_tushir()
             await query.answer(f"✅ {iso} — KELDI!", show_alert=False)
@@ -446,9 +497,16 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         old_path = XITOY_PARSED_DIR / fname
         if not old_path.exists():
             await query.answer("Fayl topilmadi.", show_alert=True)
+        elif not _keldi_bugunmi(fname):
+            # 2026-07-15: xatodan himoya — faqat BUGUN keldi qilinganlarni
+            # qaytarish mumkin (eski kelganni adashib qaytarib bo'lmaydi).
+            await query.answer(
+                "⛔ Bu konteyner bugun KELDI qilinmagan.\n"
+                "Himoya: qaytarish faqat keldi qilingan kunning o'zida mumkin.",
+                show_alert=True)
         else:
             stem_no_d = old_path.stem[:-2]
-            iso    = stem_no_d.rsplit("_", 1)[0]
+            iso    = _iso_from_stem(stem_no_d)
             sana_f = stem_no_d.rsplit("_", 1)[-1]
             old_path.rename(XITOY_PARSED_DIR / f"{stem_no_d}.xlsx")
             _main_py_ishga_tushir()
@@ -533,8 +591,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for fname in list(selected):
                 old_path = XITOY_PARSED_DIR / fname
                 if old_path.exists():
-                    iso = old_path.stem.rsplit("_", 1)[0]
+                    iso = _iso_from_stem(old_path.stem)   # 2026-07-15: F_ tashlanadi
                     rasm = generate_kelgan_rasm(iso)
+                    _keldi_sana_yoz(f"{old_path.stem}_D.xlsx")
                     old_path.rename(XITOY_PARSED_DIR / f"{old_path.stem}_D.xlsx")
                     isos.append(iso)
                     if rasm:
@@ -640,25 +699,37 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.answer("Ishlanmoqda...")
             isos = []
+            otkazildi = []   # bugun keldi qilinmaganlar — himoya (2026-07-15)
             for fname in list(selected):
                 old_path = XITOY_PARSED_DIR / fname
-                if old_path.exists():
+                if old_path.exists() and _keldi_bugunmi(fname):
                     stem_no_d = old_path.stem[:-2]
-                    iso = stem_no_d.rsplit("_", 1)[0]
+                    iso = _iso_from_stem(stem_no_d)
                     old_path.rename(XITOY_PARSED_DIR / f"{stem_no_d}.xlsx")
                     isos.append(iso)
+                elif old_path.exists():
+                    otkazildi.append(_iso_from_stem(old_path.stem[:-2]))
             context.user_data.pop("qt_multi_sel", None)
             context.user_data["screen"] = "keldi_menu"
 
             if not isos:
-                await query.message.reply_text("❌ Tanlangan fayllar topilmadi.")
+                if otkazildi:
+                    await query.message.reply_text(
+                        "⛔ Hech biri qaytarilmadi — bugun KELDI qilinmagan:\n"
+                        + "\n".join(f"• {x}" for x in otkazildi)
+                        + "\n\nHimoya: qaytarish faqat keldi qilingan kunning o'zida mumkin."
+                    )
+                else:
+                    await query.message.reply_text("❌ Tanlangan fayllar topilmadi.")
             else:
                 _main_py_ishga_tushir()
+                matn = (f"↩️ {len(isos)} ta konteyner ЙЎЛДА ga qaytarildi:\n" +
+                        "\n".join(f"• {x}" for x in isos))
+                if otkazildi:
+                    matn += ("\n\n⛔ Bugun keldi qilinmagani uchun qaytarilmadi:\n" +
+                             "\n".join(f"• {x}" for x in otkazildi))
                 try:
-                    await query.edit_message_text(
-                        f"↩️ {len(isos)} ta konteyner ЙЎЛДА ga qaytarildi:\n" +
-                        "\n".join(f"• {x}" for x in isos)
-                    )
+                    await query.edit_message_text(matn)
                 except Exception:
                     pass
             await kont_holat_royhat(query.message, context)
