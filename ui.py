@@ -111,9 +111,12 @@ async def yuklash_animatsiya(msg, context, text_cyr: str = "", text_lat: str = "
 
 
 def _is_admin(context) -> bool:
-    from config import ADMIN_IDS
+    # 2026-07-16: config.ADMIN_IDS EMAS — admin_idlari() ishlatiladi, chunki
+    # endi admin ro'yxati dinamik (/addadmin, /removeadmin bilan boshqariladi,
+    # .env kerak emas). Qarang: services.py::admin_idlari.
+    from services import admin_idlari
     uid = context.user_data.get("user_id") if context else None
-    return uid is not None and uid in ADMIN_IDS
+    return uid is not None and uid in admin_idlari()
 
 
 def build_screen(screen: str, lang: str, context) -> tuple:

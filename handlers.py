@@ -138,8 +138,12 @@ from config import xlsx_refresh as _xlsx_refresh
 # Buyurtma/Xitoy ostatka tozalash) shu funksiya bilan qayta tekshiriladi —
 # "Yo'lga konteyner qo'shish"da avvaldan bor bo'lgan naqsh bilan bir xil.
 def _admin_emasmi(uid: int) -> bool:
-    """True — bu odam ADMIN_IDS ichida emas (xavfli amalga ruxsati yo'q)."""
-    return bool(ADMIN_IDS) and uid not in ADMIN_IDS
+    """True — bu odam admin emas (xavfli amalga ruxsati yo'q). 2026-07-16:
+    config.ADMIN_IDS (.env) EMAS — dinamik admin_idlari() ishlatiladi
+    (/addadmin, /removeadmin bilan boshqariladi)."""
+    from services import admin_idlari
+    ids = admin_idlari()
+    return bool(ids) and uid not in ids
 from kont_rasm import generate_kelgan_rasm
 from texts import t
 from keyboards import (
@@ -160,6 +164,7 @@ from services import (
     qidiruv_olish, qidiruv_text,
     konteyner_tarix_olish, konteyner_tarix_qoshish, konteyner_tarix_kalit,
     kirish_ruxsati, whitelist_qosh, whitelist_ochir, whitelist_yuklash,
+    admin_idlari, qoshimcha_admin_qosh, qoshimcha_admin_ochir,
 )
 from parsers import xitoy_ostatka_oqi, ai_ostatka_fayl_mi, ai_ostatka_fayl_oqi
 from keyboards import grafik_tovar_ikb
@@ -254,6 +259,63 @@ async def removeuser_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"ℹ️ `{rem_id}` ro'yxatda topilmadi.", parse_mode="Markdown")
 
 
+async def addadmin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/addadmin <id> — admin qilib tayinlaydi (faqat super admin).
+    2026-07-16: serverning .env fayliga kirmasdan, to'liq Telegram ichidan
+    admin tayinlash/olib tashlash uchun — qarang: services.py::admin_idlari."""
+    uid = update.message.from_user.id
+    if uid != SUPER_ADMIN_ID:
+        await update.message.reply_text("⛔ Faqat super admin uchun.")
+        return
+    args = context.args
+    if not args or not args[0].isdigit():
+        await update.message.reply_text("❓ Format: `/addadmin 123456789`", parse_mode="Markdown")
+        return
+    new_id = int(args[0])
+    added  = qoshimcha_admin_qosh(new_id)
+    if added:
+        await update.message.reply_text(f"✅ `{new_id}` admin qilib tayinlandi.", parse_mode="Markdown")
+        try:
+            await context.bot.send_message(
+                chat_id=new_id,
+                text="✅ Sizga admin huquqi berildi! /start bosing."
+            )
+        except Exception:
+            pass
+    else:
+        await update.message.reply_text(f"ℹ️ `{new_id}` allaqachon admin.", parse_mode="Markdown")
+
+
+async def removeadmin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/removeadmin <id> — admin huquqini olib tashlaydi (faqat super admin).
+    Whitelist'dan chiqarmaydi — odam oddiy foydalanuvchi sifatida qolaveradi."""
+    uid = update.message.from_user.id
+    if uid != SUPER_ADMIN_ID:
+        await update.message.reply_text("⛔ Faqat super admin uchun.")
+        return
+    args = context.args
+    if not args or not args[0].isdigit():
+        await update.message.reply_text("❓ Format: `/removeadmin 123456789`", parse_mode="Markdown")
+        return
+    rem_id = int(args[0])
+    if rem_id == SUPER_ADMIN_ID:
+        await update.message.reply_text("⛔ Super adminni olib tashlab bo'lmaydi.")
+        return
+    removed = qoshimcha_admin_ochir(rem_id)
+    if removed:
+        whitelist_qosh(rem_id)   # demote qilingach ham botdan foydalana olsin
+        await update.message.reply_text(
+            f"✅ `{rem_id}` admin huquqidan chiqarildi (oddiy foydalanuvchi sifatida qoladi).",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.message.reply_text(
+            f"ℹ️ `{rem_id}` dinamik adminlar ro'yxatida topilmadi "
+            "(balki .env orqali qo'shilgan eski admin — u endi avtomatik admin emas).",
+            parse_mode="Markdown"
+        )
+
+
 async def users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/users — whitelist va adminlar ro'yxati (faqat super admin)."""
     uid = update.message.from_user.id
@@ -261,9 +323,10 @@ async def users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ Faqat super admin uchun.")
         return
     wl = whitelist_yuklash()
+    admins = admin_idlari()
     lines = ["👥 *Foydalanuvchilar ro'yxati:*\n"]
-    lines.append("🔑 *Adminlar (ADMIN\\_IDS):*")
-    for aid in sorted(ADMIN_IDS):
+    lines.append("🔑 *Adminlar:*")
+    for aid in sorted(admins):
         marker = " ← siz" if aid == SUPER_ADMIN_ID else ""
         lines.append(f"  `{aid}`{marker}")
     lines.append("")
@@ -285,7 +348,7 @@ async def chatid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Telegram linkidan (t.me/c/...) qidirishga hojat qolmaydi — bu oddiy
     (topic'siz) guruhlarda umuman ishlamaydi."""
     uid = update.message.from_user.id
-    if ADMIN_IDS and uid not in ADMIN_IDS:
+    if _admin_emasmi(uid):
         return  # guruhdagi boshqa a'zolarga javob bermaymiz
     chat = update.effective_chat
     msg  = update.message
@@ -2076,7 +2139,7 @@ async def perexod_kunlik_tekshiruv(context: ContextTypes.DEFAULT_TYPE) -> None:
     if avto_keldi_lines:
         xabar += "Avtomatik KELDI qilindi:\n" + "\n".join(avto_keldi_lines)
 
-    for aid in ADMIN_IDS:
+    for aid in admin_idlari():
         try:
             await context.bot.send_message(chat_id=aid, text=xabar.strip(), parse_mode="Markdown")
         except Exception:

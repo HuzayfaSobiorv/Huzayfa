@@ -46,6 +46,7 @@ from config import BOT_TOKEN, logger, xlsx_refresh
 from handlers import (
     start, callback_handler, text_keldi, fayl_keldi, adduser_cmd,
     removeuser_cmd, users_cmd, chatid_cmd, perexod_kunlik_tekshiruv,
+    addadmin_cmd, removeadmin_cmd,
 )
 
 try:
@@ -86,6 +87,8 @@ def main() -> None:
     app.add_handler(CommandHandler("adduser",    adduser_cmd, filters=private))
     app.add_handler(CommandHandler("removeuser", removeuser_cmd, filters=private))
     app.add_handler(CommandHandler("users",      users_cmd,   filters=private))
+    app.add_handler(CommandHandler("addadmin",   addadmin_cmd,   filters=private))
+    app.add_handler(CommandHandler("removeadmin", removeadmin_cmd, filters=private))
     app.add_handler(CommandHandler("chatid",     chatid_cmd))
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(private & filters.Document.ALL, fayl_keldi))

@@ -176,10 +176,67 @@ def konteyner_tarix_qoshish(konteynerlar: list) -> None:
         logger.error(f"konteyner_tarix_qoshish yozishda xato: {e}")
 
 
+# ── Qo'shimcha adminlar (dinamik, .env kerak emas) ────────────────────────────
+# 2026-07-16 (Huzayfa: serverga jismonan/AnyDesk orqali kirmasdan admin
+# holatini boshqarish kerak bo'ldi — eski ADMIN_IDS .env faylida edi, uni
+# o'zgartirish har safar serverga kirishni talab qilardi). Shu nuqtadan
+# boshlab "kim admin" degan savolga javob IKKI manbadan keladi:
+# SUPER_ADMIN_ID (.env, o'zgarmas, yagona bosh admin) + shu fayl (dinamik,
+# /addadmin va /removeadmin komandalari orqali, Telegram ichidan
+# boshqariladi). Eski .env'dagi ko'p qiymatli ADMIN_IDS ENDI avtorizatsiya
+# uchun ishlatilmaydi (config.ADMIN_IDS hali mavjud, lekin faqat tarixiy/
+# backup sifatida qoladi) — shuning uchun admin_idlari() ishlatilishi kerak,
+# config.ADMIN_IDS TO'G'RIDAN-TO'G'RI EMAS.
+_ADMIN_FILE = BOT_HOLAT_DIR / "qoshimcha_adminlar.json"
+
+
+def qoshimcha_admin_yuklash() -> set[int]:
+    if not _ADMIN_FILE.exists():
+        return set()
+    try:
+        return set(json.loads(_ADMIN_FILE.read_text(encoding="utf-8")))
+    except Exception:
+        return set()
+
+
+def qoshimcha_admin_saqlash(ids: set[int]) -> None:
+    atomic_json_write(_ADMIN_FILE, sorted(ids))
+
+
+def qoshimcha_admin_qosh(uid: int) -> bool:
+    """ID ni admin qilib tayinlaydi. True — yangi qo'shildi, False — allaqachon bor."""
+    ids = qoshimcha_admin_yuklash()
+    if uid in ids:
+        return False
+    ids.add(uid)
+    qoshimcha_admin_saqlash(ids)
+    return True
+
+
+def qoshimcha_admin_ochir(uid: int) -> bool:
+    """ID ni admin ro'yxatidan chiqaradi. True — chiqarildi, False — topilmadi."""
+    ids = qoshimcha_admin_yuklash()
+    if uid not in ids:
+        return False
+    ids.discard(uid)
+    qoshimcha_admin_saqlash(ids)
+    return True
+
+
+def admin_idlari() -> set[int]:
+    """Hozirgi HAQIQIY admin ID'lar to'plami — SUPER_ADMIN_ID + dinamik
+    ro'yxat (/addadmin bilan tayinlanganlar). Har qanday avtorizatsiya
+    tekshiruvi shu funksiyadan foydalanishi kerak."""
+    from config import SUPER_ADMIN_ID
+    ids = qoshimcha_admin_yuklash()
+    if SUPER_ADMIN_ID:
+        ids.add(SUPER_ADMIN_ID)
+    return ids
+
+
 def kirish_ruxsati(uid: int) -> bool:
     """Foydalanuvchi kirish huquqiga ega ekanligini tekshiradi."""
-    from config import ADMIN_IDS
-    if uid in ADMIN_IDS:
+    if uid in admin_idlari():
         return True
     return uid in whitelist_yuklash()
 
