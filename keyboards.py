@@ -60,6 +60,7 @@ def settings_kb_user(lang: str) -> ReplyKeyboardMarkup:
     """Filyal foydalanuvchisi sozlamalari."""
     return rkb(
         [t(lang, "b_lang")],
+        [t(lang, "b_sorov_yuborish")],
         [t(lang, "b_boglanish")],
         [t(lang, "back")],
     )
@@ -120,6 +121,7 @@ def settings_kb(lang: str, admin: bool = False) -> ReplyKeyboardMarkup:
         [t(lang, "b_lang")],
         [t(lang, "b_tozala_buy")],
         [t(lang, "b_tozala_xitoy")],
+        [t(lang, "b_sorovlar_royxat")],
     ]
     rows.append([t(lang, "back")])
     return rkb(*rows)

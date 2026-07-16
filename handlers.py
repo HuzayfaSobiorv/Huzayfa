@@ -165,6 +165,7 @@ from services import (
     konteyner_tarix_olish, konteyner_tarix_qoshish, konteyner_tarix_kalit,
     kirish_ruxsati, whitelist_qosh, whitelist_ochir, whitelist_yuklash,
     admin_idlari, qoshimcha_admin_qosh, qoshimcha_admin_ochir,
+    sorov_qoshish, sorovlar_excel_yarat,
 )
 from parsers import xitoy_ostatka_oqi, ai_ostatka_fayl_mi, ai_ostatka_fayl_oqi
 from keyboards import grafik_tovar_ikb
@@ -233,7 +234,15 @@ async def adduser_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=new_id,
-                text="✅ Botga kirish huquqi berildi! /start bosing."
+                text=(
+                    "Assalomu alaykum! Sizga botdan foydalanish huquqi berildi.\n\n"
+                    "Bu — katta tizimning bir bo'lagi, sizga ishingiz uchun kerakli "
+                    "qism ko'rsatiladi.\n\n"
+                    "Ma'lumotlar bilan ehtiyotkor bo'lishingizni so'rayman — ular "
+                    "faqat ichki foydalanish uchun mo'ljallangan.\n\n"
+                    "Botda biror kamchilik yoki noto'g'ri narsa uchrasa, "
+                    "\"Sozlamalar → Bog'lanish\" orqali menga murojaat qiling."
+                ),
             )
         except Exception:
             pass
@@ -1094,6 +1103,19 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
     # ─────────────────────────────────────────────────────────────────────────
 
+    # ── Foydalanuvchi so'rovi (buyurtma so'rovi) — bir nechta xabar ketma-ket
+    # yozilishi mumkin, faqat "Orqaga"/menyu tugmasi bosilganda tugaydi ───────
+    if isinstance(kut, tuple) and kut[0] == "sorov_matn":
+        _back_texts = {t("cyr", "back"), t("lat", "back"), "⬅️ Орқага", "⬅️ Orqaga", "← Orqaga"}
+        if text in _back_texts or bool(get_action(lang, screen, text)):
+            context.user_data.pop("kutilmoqda", None)
+        else:
+            ism = update.message.from_user.full_name or str(uid)
+            sorov_qoshish(uid, ism, text)
+            await msg.reply_text(t(lang, "sorov_qabul"))
+            return   # kutilmoqda TOZALANMAYDI — yana yozishi mumkin
+    # ─────────────────────────────────────────────────────────────────────────
+
     _KAT_MATN = {
         "truba":  "grafik_truba",  "profil": "grafik_profil",
         "list":   "grafik_list",   "bal":    "grafik_bal",
@@ -1613,6 +1635,24 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "yolda_excel":
         # Admin bilan bir xil — Power BI Excelidan yo'lda holat
         await yolda_ko_rish(msg, context, lang)
+
+    elif action == "sorov_yuborish":
+        # 2026-07-16: filial foydalanuvchisi mahsulot kamayganini yozib
+        # yuboradi — bir nechta xabarni ketma-ket yozishi mumkin, "Orqaga"
+        # bosgunicha shu rejimda qoladi (matn text_keldi'dagi "sorov_matn"
+        # holatida qayta ishlanadi).
+        context.user_data["kutilmoqda"] = ("sorov_matn",)
+        await msg.reply_text(t(lang, "sorov_matn_sor"))
+
+    elif action == "sorovlar_royxat":
+        if _admin_emasmi(uid):
+            await msg.reply_text("❌ Bu funksiya faqat admin uchun.")
+            return
+        bio = sorovlar_excel_yarat()
+        if bio is None:
+            await msg.reply_text(t(lang, "sorovlar_yoq"))
+        else:
+            await msg.reply_document(document=bio, filename="Sorovlar.xlsx")
 
 
 async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -234,6 +234,82 @@ def admin_idlari() -> set[int]:
     return ids
 
 
+# ── Foydalanuvchi so'rovlari (buyurtma so'rovi va h.k.) ───────────────────────
+# 2026-07-16 (Huzayfa): filial foydalanuvchilari mahsulot kamayganini yozib
+# yuborishi mumkin bo'lgan kanal. Har bir xabar SHU YERGA (doimiy jurnalga)
+# yoziladi — adminga darhol xabar SHAKLIDA yubormaymiz (20+ kishi bo'lsa,
+# uzluksiz xabar oqimi bo'lib qoladi, deb Huzayfa aytdi) — buning o'rniga
+# admin xohlagan vaqtida "📊 Foydalanuvchi so'rovlari" tugmasi bilan
+# to'plangan hammasini Excel qilib oladi. Jurnal HECH QACHON tozalanmaydi
+# (Huzayfa: "eski so'rovlar Excelda pastga tushib ketaversin") — Excel har
+# safar ENG YANGISI TEPADA bo'ladigan tartibda tuziladi.
+_SOROV_FILE = BOT_HOLAT_DIR / "foydalanuvchi_sorovlari.json"
+
+
+def sorov_qoshish(uid: int, ism: str, matn: str) -> None:
+    try:
+        d = []
+        if _SOROV_FILE.exists():
+            d = json.loads(_SOROV_FILE.read_text(encoding="utf-8"))
+        d.append({
+            "vaqt":    datetime.now().strftime("%d.%m.%Y %H:%M"),
+            "user_id": uid,
+            "ism":     ism,
+            "matn":    matn,
+        })
+        atomic_json_write(_SOROV_FILE, d, indent=2)
+    except Exception as e:
+        logger.error(f"sorov_qoshish xato: {e}")
+
+
+def sorovlar_olish() -> list:
+    if not _SOROV_FILE.exists():
+        return []
+    try:
+        return json.loads(_SOROV_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def sorovlar_excel_yarat() -> BytesIO | None:
+    """To'plangan foydalanuvchi so'rovlarini Excel qilib qaytaradi (eng
+    yangisi tepada). Hech narsa bo'lmasa None qaytaradi."""
+    sorovlar = sorovlar_olish()
+    if not sorovlar:
+        return None
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "So'rovlar"
+    sarlavha = ["Vaqt", "Foydalanuvchi", "ID", "Xabar"]
+    ws.append(sarlavha)
+    hdr_fill = PatternFill("solid", fgColor="305496")
+    hdr_font = Font(bold=True, color="FFFFFF")
+    for col_i, _ in enumerate(sarlavha, start=1):
+        c = ws.cell(row=1, column=col_i)
+        c.fill = hdr_fill
+        c.font = hdr_font
+        c.alignment = Alignment(horizontal="center")
+
+    for row in reversed(sorovlar):   # eng yangisi tepada
+        ws.append([row.get("vaqt", ""), row.get("ism", ""),
+                   row.get("user_id", ""), row.get("matn", "")])
+
+    ws.column_dimensions["A"].width = 16
+    ws.column_dimensions["B"].width = 22
+    ws.column_dimensions["C"].width = 14
+    ws.column_dimensions["D"].width = 60
+    for r in ws.iter_rows(min_row=2):
+        r[3].alignment = Alignment(wrap_text=True, vertical="top")
+
+    bio = BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    return bio
+
+
 def kirish_ruxsati(uid: int) -> bool:
     """Foydalanuvchi kirish huquqiga ega ekanligini tekshiradi."""
     if uid in admin_idlari():

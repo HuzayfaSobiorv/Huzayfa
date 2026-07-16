@@ -216,8 +216,10 @@ def get_action(lang: str, screen: str, text: str):
             t(lang, "b_tozala_buy"):    "tozala_buy",
             t(lang, "b_tozala_xitoy"):  "tozala_xitoy",
             t(lang, "b_yolga_kont"):    "yolga_kont",
+            t(lang, "b_sorovlar_royxat"): "sorovlar_royxat",
             # User settings
             t(lang, "b_boglanish"):     "boglanish",
+            t(lang, "b_sorov_yuborish"): "sorov_yuborish",
         },
     }
     return MAP.get(screen, {}).get(text)
