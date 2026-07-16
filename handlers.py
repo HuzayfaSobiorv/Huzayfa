@@ -128,6 +128,18 @@ from telegram.ext import ContextTypes
 import config
 from config import BOT_HOLAT_DIR, CH_KEY, BACK_MAP, BASE_DIR, KONT_DIR, XITOY_PARSED_DIR, ADMIN_IDS, SUPER_ADMIN_ID, SUPPORT_PHONE, SUPPORT_USERNAME
 from config import xlsx_refresh as _xlsx_refresh
+
+
+# 2026-07-16 (Huzayfa: 20+ tashqi foydalanuvchi whitelist'ga qo'shilishi
+# oldidan): markazlashtirilgan "faqat admin" tekshiruvi — menyu tugmasini
+# yashirish YETARLI EMAS (agar kimdir matnni boshqa yo'l bilan yuborsa,
+# harakat baribir bajarilib ketmasligi kerak). Xavfli amallar (Ma'lumotlarni
+# yangilash — bu pm2 restart qiladi, Konteyner holatini o'zgartirish,
+# Buyurtma/Xitoy ostatka tozalash) shu funksiya bilan qayta tekshiriladi —
+# "Yo'lga konteyner qo'shish"da avvaldan bor bo'lgan naqsh bilan bir xil.
+def _admin_emasmi(uid: int) -> bool:
+    """True — bu odam ADMIN_IDS ichida emas (xavfli amalga ruxsati yo'q)."""
+    return bool(ADMIN_IDS) and uid not in ADMIN_IDS
 from kont_rasm import generate_kelgan_rasm
 from texts import t
 from keyboards import (
@@ -1353,10 +1365,16 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await go_screen(msg, context, "konteyner")
 
     elif action == "keldi_belgi":
+        if _admin_emasmi(uid):
+            await msg.reply_text("❌ Bu funksiya faqat admin uchun.")
+            return
         context.user_data["screen"] = "keldi_menu"
         await kont_holat_royhat(msg, context, change_kb=True)
 
     elif action == "yangilash":
+        if _admin_emasmi(uid):
+            await msg.reply_text("❌ Bu funksiya faqat admin uchun.")
+            return
         loop = asyncio.get_event_loop()
         async with yuklash_animatsiya(
             msg, context,
@@ -1495,20 +1513,25 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text("🇺🇿 Тилни танланг:", reply_markup=til_ikb())
 
     elif action == "tozala_buy":
+        if _admin_emasmi(uid):
+            await msg.reply_text("❌ Bu funksiya faqat admin uchun.")
+            return
         await msg.reply_text(
             t(lang, "tozala_sor_buy"),
             reply_markup=tozala_kanal_ikb(lang, "b"),
         )
 
     elif action == "tozala_xitoy":
+        if _admin_emasmi(uid):
+            await msg.reply_text("❌ Bu funksiya faqat admin uchun.")
+            return
         await msg.reply_text(
             t(lang, "tozala_sor_xitoy"),
             reply_markup=tozala_kanal_ikb(lang, "x"),
         )
 
     elif action == "yolga_kont":
-        uid = update.message.from_user.id
-        if ADMIN_IDS and uid not in ADMIN_IDS:
+        if _admin_emasmi(uid):
             await msg.reply_text("❌ Bu funksiya faqat admin uchun.")
             return
         context.user_data["kutilmoqda"] = ("kont_tp", None)
