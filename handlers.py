@@ -512,12 +512,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             iso    = _iso_from_stem(old_path.stem)   # 2026-07-15: F_ prefiksi tashlanadi
             sana_f = old_path.stem.rsplit("_", 1)[-1]
 
-            # ── Rasmni ALBATTA belgilashdan oldin tayyorlaymiz — aks holda
-            # main.py qayta hisoblagach "Yuklangan sana" "Архив" ga almashadi ──
-            rasm = generate_kelgan_rasm(iso)
-
+            # 2026-07-16 (Huzayfa: qat'iy talab): KELDI qilish FAQAT status
+            # o'zgartiradi — rasm chizish/guruhga yuborish so'rovi BU YERDA
+            # UMUMAN YO'Q. Guruhga rasm yuborishning yagona yo'li — 🖼 tugmasi
+            # (kont_rasm_qayta). Ikkalasi endi to'liq mustaqil harakatlar.
             _keldi_sana_yoz(f"{old_path.stem}_D.xlsx")
-            _rasm_pending_ochirish(fname)   # 2026-07-16: qo'lda KELDI qilindi — kuzatuvdan chiqar
+            _rasm_pending_ochirish(fname)   # qo'lda KELDI qilindi — kuzatuvdan chiqar
             old_path.rename(XITOY_PARSED_DIR / f"{old_path.stem}_D.xlsx")
             _main_py_ishga_tushir()
             await query.answer(f"✅ {iso} — KELDI!", show_alert=False)
@@ -529,27 +529,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
             context.user_data["screen"] = "keldi_menu"
-
-            # ── Kelgan konteyner rasmi tayyor — guruhga yuborish so'raymiz ──
-            if rasm:
-                sent = await query.message.reply_photo(
-                    photo=rasm,
-                    caption=(
-                        f"🖼 *{iso}* — kelgan yuklar ro'yxati.\n"
-                        "Guruhga yuborilsinmi?"
-                    ),
-                    parse_mode="Markdown",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("📤 Guruhga jo'natish", callback_data=f"kg_send:{iso}")],
-                        [InlineKeyboardButton("❌ Bekor qilish", callback_data=f"kg_cancel:{iso}")],
-                    ]),
-                )
-                context.user_data["kg_pending"] = {
-                    "iso": iso,
-                    "file_id": sent.photo[-1].file_id,
-                }
-            else:
-                await kont_holat_royhat(query.message, context)
+            await kont_holat_royhat(query.message, context)
 
     elif query.data.startswith("kont_bir_qayt:"):
         fname = query.data[len("kont_bir_qayt:"):].split("|", 1)[0]
@@ -692,25 +672,23 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Hech narsa tanlanmagan.", show_alert=True)
         else:
             await query.answer("Ishlanmoqda...")
+            # 2026-07-16 (Huzayfa: qat'iy talab): KELDI qilish FAQAT status
+            # o'zgartiradi — rasm chizish/guruhga yuborish BU YERDA YO'Q,
+            # bittalik yo'l bilan bir xil mantiq (yagona yo'l — 🖼 tugmasi).
             isos = []
-            rasmlar = []   # (iso, BytesIO) — belgilashdan OLDIN tayyorlanadi,
-                            # aks holda main.py "Yuklangan sana"ni "Архив" qilib qo'yadi
             for fname in list(selected):
                 old_path = XITOY_PARSED_DIR / fname
                 if old_path.exists():
                     iso = _iso_from_stem(old_path.stem)   # 2026-07-15: F_ tashlanadi
-                    rasm = generate_kelgan_rasm(iso)
                     _keldi_sana_yoz(f"{old_path.stem}_D.xlsx")
+                    _rasm_pending_ochirish(fname)   # qo'lda KELDI qilindi — kuzatuvdan chiqar
                     old_path.rename(XITOY_PARSED_DIR / f"{old_path.stem}_D.xlsx")
                     isos.append(iso)
-                    if rasm:
-                        rasmlar.append((iso, rasm))
             context.user_data.pop("kg_multi_sel", None)
             context.user_data["screen"] = "keldi_menu"
 
             if not isos:
                 await query.message.reply_text("❌ Tanlangan fayllar topilmadi.")
-                await kont_holat_royhat(query.message, context)
             else:
                 _main_py_ishga_tushir()
                 try:
@@ -720,30 +698,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
                 except Exception:
                     pass
-
-                media_items = [InputMediaPhoto(media=rasm) for _, rasm in rasmlar]
-                ok_isos = [iso for iso, _ in rasmlar]
-
-                if not media_items:
-                    await query.message.reply_text("⚠️ Rasm yaratib bo'lmadi.")
-                    await kont_holat_royhat(query.message, context)
-                else:
-                    sent_msgs = await context.bot.send_media_group(
-                        chat_id=query.message.chat_id,
-                        media=media_items,
-                    )
-                    file_ids = [m.photo[-1].file_id for m in sent_msgs if m.photo]
-                    context.user_data["kg_pending_multi"] = {
-                        "isos": ok_isos,
-                        "file_ids": file_ids,
-                    }
-                    await query.message.reply_text(
-                        f"🖼 {len(ok_isos)} ta konteyner rasmi tayyor.\nGuruhga yuborilsinmi?",
-                        reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("📤 Guruhga jo'natish", callback_data="kg_send_multi")],
-                            [InlineKeyboardButton("❌ Bekor qilish", callback_data="kg_cancel_multi")],
-                        ]),
-                    )
+            await kont_holat_royhat(query.message, context)
 
     elif query.data == "kg_send_multi":
         pending = context.user_data.get("kg_pending_multi")
@@ -2398,3 +2353,4 @@ async def kont_holat_royhat(msg, context, change_kb: bool = False):
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(buttons),
     )
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
