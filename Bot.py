@@ -40,13 +40,38 @@ from telegram.ext import (
     MessageHandler, filters,
 )
 
+from datetime import time as _time
+
 from config import BOT_TOKEN, logger, xlsx_refresh
-from handlers import start, callback_handler, text_keldi, fayl_keldi, adduser_cmd, removeuser_cmd, users_cmd, chatid_cmd
+from handlers import (
+    start, callback_handler, text_keldi, fayl_keldi, adduser_cmd,
+    removeuser_cmd, users_cmd, chatid_cmd, perexod_kunlik_tekshiruv,
+)
+
+try:
+    from zoneinfo import ZoneInfo
+    _TZ = ZoneInfo("Asia/Tashkent")
+except Exception:
+    _TZ = None
 
 
 def main() -> None:
     xlsx_refresh(force=True)
     app = Application.builder().token(BOT_TOKEN).build()
+
+    # 2026-07-16: "rasm yuborilgan, hali KELDI qilinmagan" konteynerlarni
+    # har kuni tekshiradi — eslatma yuboradi, 4 kun o'tsa avtomatik KELDI
+    # qiladi (handlers.py::perexod_kunlik_tekshiruv). Soat 09:00 (Toshkent).
+    if app.job_queue is not None:
+        app.job_queue.run_daily(
+            perexod_kunlik_tekshiruv,
+            time=_time(hour=9, minute=0, tzinfo=_TZ) if _TZ else _time(hour=4, minute=0),
+        )
+    else:
+        logger.warning(
+            "JobQueue mavjud emas — perexod eslatmasi ishlamaydi. "
+            "requirements.txt'da 'python-telegram-bot[job-queue]' borligini tekshiring."
+        )
     # DIQQAT: botning butun menyu/navigatsiya tizimi FAQAT shaxsiy (private)
     # chat uchun mo'ljallangan — "Kelgan yuklar" kabi guruhlar faqat botdan
     # xabar QABUL qiladi, hech qachon botga buyruq/matn YUBORMAYDI. Shu

@@ -65,6 +65,64 @@ def _keldi_bugunmi(fname: str) -> bool:
     except Exception:
         return False
 
+
+# 2026-07-16 (Huzayfa: "rasm yuborish" va "KELDI qilish" ajratildi — real
+# omborga tushish rasm yuborilgan kundan 3-4 kun kech qoladi, shu oraliqda
+# konteyner "yo'lda" bo'lib qolishi kerak, aks holda tovar na yo'lda, na
+# qoldiqda ko'rinmay qolib, ortiqcha buyurtma yozib yuboradi). Bu fayl
+# "rasm yuborilgan, lekin hali qo'lda KELDI qilinmagan" konteynerlarni
+# kuzatadi — kunlik job (perexod_kunlik_tekshiruv) shundan foydalanadi.
+def _rasm_pending_fayl():
+    from config import BOT_HOLAT_DIR as _BHD
+    return _BHD / "rasm_yuborilgan.json"
+
+
+def _rasm_pending_belgila(fname: str) -> None:
+    """Yo'lda konteyner uchun rasm birinchi marta yuborilgan sanani qayd
+    etadi. Faqat BIRINCHI marta yozadi — qayta yuborish (masalan guruhga
+    ketmay qolgani uchun) muddatni "reset" QILMAYDI."""
+    import json as _json
+    from datetime import date as _date
+    try:
+        f = _rasm_pending_fayl()
+        d = {}
+        if f.exists():
+            d = _json.loads(f.read_text(encoding="utf-8"))
+        if fname not in d:
+            d[fname] = _date.today().isoformat()
+            from common import atomic_json_write
+            atomic_json_write(f, d, indent=2)
+    except Exception:
+        logger.exception("rasm_pending_belgila xato")
+
+
+def _rasm_pending_ochirish(fname: str) -> None:
+    """Konteyner KELDI qilingach (qo'lda yoki avtomatik) kuzatuvdan chiqaradi."""
+    import json as _json
+    try:
+        f = _rasm_pending_fayl()
+        if not f.exists():
+            return
+        d = _json.loads(f.read_text(encoding="utf-8"))
+        if fname in d:
+            del d[fname]
+            from common import atomic_json_write
+            atomic_json_write(f, d, indent=2)
+    except Exception:
+        logger.exception("rasm_pending_ochirish xato")
+
+
+def _rasm_pending_royxat() -> dict:
+    import json as _json
+    try:
+        f = _rasm_pending_fayl()
+        if not f.exists():
+            return {}
+        return _json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
 from telegram.ext import ContextTypes
 
 import config
@@ -459,6 +517,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             rasm = generate_kelgan_rasm(iso)
 
             _keldi_sana_yoz(f"{old_path.stem}_D.xlsx")
+            _rasm_pending_ochirish(fname)   # 2026-07-16: qo'lda KELDI qilindi — kuzatuvdan chiqar
             old_path.rename(XITOY_PARSED_DIR / f"{old_path.stem}_D.xlsx")
             _main_py_ishga_tushir()
             await query.answer(f"✅ {iso} — KELDI!", show_alert=False)
@@ -533,8 +592,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not old_path.exists():
             await query.answer("Fayl topilmadi.", show_alert=True)
         else:
-            stem_no_d = old_path.stem[:-2] if old_path.stem.endswith("_D") else old_path.stem
+            is_dan_keldi = old_path.stem.endswith("_D")
+            stem_no_d = old_path.stem[:-2] if is_dan_keldi else old_path.stem
             iso = _iso_from_stem(stem_no_d)
+            if not is_dan_keldi:
+                # 2026-07-16: hali yo'lda — rasm yuborish BILAN KELDI qilish
+                # ENDI ajratildi. Sana shu yerda qayd etiladi, faylga/statusga
+                # tegilmaydi — real omborga tushishi kutiladi (kunlik job
+                # tekshiradi, PEREXOD_KUN_CHEGARA kundan keyin avtomatik KELDI).
+                _rasm_pending_belgila(fname)
             await query.answer("Tayyorlanmoqda...")
             rasm = generate_kelgan_rasm(iso)
             if not rasm:
@@ -1967,6 +2033,76 @@ def _main_py_ishga_tushir():
         )
     except Exception:
         pass
+
+
+# 2026-07-16 (Huzayfa): "rasm yuborish" (mashina jismonan yetib keldi) va
+# "KELDI qilish" (real ombor hisobotiga tushdi, tizimda yo'lda-dan chiqadi)
+# orasida 3-4 kunlik tabiiy kechikish bor. Shu muddat ichida konteyner
+# ATAYLAB "yo'lda" bo'lib qolaveradi (buyurtma hisobida hisobga olinishi
+# uchun) — foydalanuvchi tarix faylga qarab tekshiradi; PEREXOD_KUN_CHEGARA
+# kun o'tsa, tizim o'zi avtomatik KELDI qilib qo'yadi (tekshirishni
+# unutib qo'ysa ham, konteyner abadiy "yo'lda"da osilib qolmasin uchun).
+PEREXOD_KUN_CHEGARA = 4
+
+
+async def perexod_kunlik_tekshiruv(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Bot.py'da job_queue.run_daily() orqali har kuni ishga tushadi.
+    Rasm yuborilgan, hali qo'lda KELDI qilinmagan konteynerlarni tekshiradi:
+      - PEREXOD_KUN_CHEGARA kundan kam — faqat eslatma xabari.
+      - PEREXOD_KUN_CHEGARA kun yoki ko'p — avtomatik KELDI (fayl _D ga
+        o'zgaradi, main.py qayta ishga tushadi) + xabarda alohida ko'rsatiladi.
+    """
+    from datetime import date as _date
+
+    pending = _rasm_pending_royxat()
+    if not pending:
+        return
+
+    kutilmoqda_lines: list[str] = []
+    avto_keldi_lines: list[str] = []
+    avto_boldimi = False
+
+    for fname, sana_str in list(pending.items()):
+        old_path = XITOY_PARSED_DIR / fname
+        if not old_path.exists() or old_path.stem.endswith("_D"):
+            # boshqa yo'l bilan (qo'lda) allaqachon KELDI bo'lgan/o'chirilgan
+            _rasm_pending_ochirish(fname)
+            continue
+        try:
+            sana = _date.fromisoformat(sana_str)
+        except Exception:
+            _rasm_pending_ochirish(fname)
+            continue
+
+        kun_otdi = (_date.today() - sana).days
+        iso = _iso_from_stem(old_path.stem)
+
+        if kun_otdi >= PEREXOD_KUN_CHEGARA:
+            _keldi_sana_yoz(f"{old_path.stem}_D.xlsx")
+            old_path.rename(XITOY_PARSED_DIR / f"{old_path.stem}_D.xlsx")
+            _rasm_pending_ochirish(fname)
+            avto_keldi_lines.append(f"✅ {iso} — {kun_otdi} kun o'tdi, avtomatik KELDI qilindi")
+            avto_boldimi = True
+        else:
+            kutilmoqda_lines.append(f"⏳ {iso} — rasm yuborilganiga {kun_otdi} kun bo'ldi")
+
+    if avto_boldimi:
+        _main_py_ishga_tushir()
+
+    if not kutilmoqda_lines and not avto_keldi_lines:
+        return
+
+    xabar = "🔄 *Perexod kuzatuvi*\n\n"
+    if kutilmoqda_lines:
+        xabar += "Hali kutilmoqda:\n" + "\n".join(kutilmoqda_lines) + "\n\n"
+    if avto_keldi_lines:
+        xabar += "Avtomatik KELDI qilindi:\n" + "\n".join(avto_keldi_lines)
+
+    for aid in ADMIN_IDS:
+        try:
+            await context.bot.send_message(chat_id=aid, text=xabar.strip(), parse_mode="Markdown")
+        except Exception:
+            logger.exception(f"Perexod xabari yuborilmadi: {aid}")
 
 
 def _kod_sintaksisi_togrimi() -> tuple:
