@@ -148,12 +148,16 @@ def til_ikb() -> InlineKeyboardMarkup:
 
 
 def grafik_kat_ikb() -> InlineKeyboardMarkup:
+    # 2026-07-16 (Huzayfa): faqat Труба/Профильда emoji-"стикер" qoladi —
+    # qolgan kategoriyalardagi (mos kelmaydigan/tasodifiy ko'ринadigan)
+    # emojilar oddiy foydalanuvchilar uchun professional ko'rinmasligi
+    # sababli olib tashlandi.
     return ikb(
         [("🔘 Труба",        "karta_kat:truba"),  ("🔲 Профиль",       "karta_kat:profil")],
-        [("📄 Лист",         "karta_kat:list"),   ("📏 Баласина",       "karta_kat:bal")],
-        [("🔩 Стойка",       "karta_kat:stoyka"), ("🎯 Чашка",          "karta_kat:chas")],
-        [("🍄 Қузиқорин",    "karta_kat:kuz"),    ("🔵 Шар",            "karta_kat:shar")],
-        [("💿 Соққа",        "karta_kat:sokka"),  ("🪟 Ойна держатель", "karta_kat:oyna")],
+        [("Лист",            "karta_kat:list"),   ("Баласина",         "karta_kat:bal")],
+        [("Стойка",          "karta_kat:stoyka"), ("Чашка",            "karta_kat:chas")],
+        [("Қузиқорин",       "karta_kat:kuz"),    ("Шар",              "karta_kat:shar")],
+        [("Соққа",           "karta_kat:sokka"),  ("Ойна держатель",   "karta_kat:oyna")],
         [("🔍 Umumiy qidiruv", "karta_umumiy")],
     )
 

@@ -87,13 +87,20 @@ def _set_row(ws, row_i: int, values: list, fills: list = None,
         ws.row_dimensions[row_i].height = height
 
 
-def yolda_excel(data_file: str | Path, stats: dict | None = None) -> io.BytesIO | None:
+def yolda_excel(data_file: str | Path, stats: dict | None = None,
+                 chiqarib_tashlash: set | None = None) -> io.BytesIO | None:
     """
     data_file — NEJAVIYKA_POWER_BI.xlsx yo'li.
     Qaytaradi BytesIO (Excel fayli) yoki None (ma'lumot yo'q).
     stats — bo'sh dict berilsa, unga xulosa yoziladi (2026-07-14):
         n (konteynerlar soni), kechikdi (nechta kechikkan),
         tonna (jami og'irlik, t), eng_yaqin ((id, kun) yoki None)
+    chiqarib_tashlash — 2026-07-16 (Huzayfa): rasm allaqachon guruhga
+        yuborilgan (lekin hali qo'lda KELDI qilinmagan) konteynerlarning
+        ISO raqamlari to'plami — shu Excel'dan chiqarib tashlanadi, chunki
+        foydalanuvchi allaqachon kelgan yukni "hali yo'lda" deb ko'rmasin.
+        Buyurtma hisob-kitobiga ta'sir qilmaydi (qarang: services.py::
+        rasm_pending_iso_royxati).
     """
     try:
         df = pd.read_excel(data_file, sheet_name="Контейнерлар")
@@ -102,6 +109,8 @@ def yolda_excel(data_file: str | Path, stats: dict | None = None) -> io.BytesIO 
 
     # КЕЛДИ ✅ ni olib tashlash
     df = df[df["Холат"] != "КЕЛДИ ✅"].copy()
+    if chiqarib_tashlash:
+        df = df[~df["Контейнер"].astype(str).isin(chiqarib_tashlash)].copy()
     if df.empty:
         return None
 

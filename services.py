@@ -310,6 +310,34 @@ def sorovlar_excel_yarat() -> BytesIO | None:
     return bio
 
 
+def rasm_pending_iso_royxati() -> set[str]:
+    """Rasm allaqachon guruhga yuborilgan, lekin hali qo'lda KELDI
+    qilinmagan konteynerlarning ISO raqamlari. 2026-07-16 (Huzayfa):
+    "Yo'ldagi yuklar" Excel'idan shu konteynerlarni chiqarib tashlash
+    uchun — aks holda foydalanuvchi (kimga rasmi allaqachon guruhga
+    ketgan bo'lsa ham) bu yukni "hali yo'lda" deb ko'radi. Buyurtma
+    hisob-kitobiga (zanjir_sim) BU TA'SIR QILMAYDI — u main.py orqali,
+    fayl statusidan (hali _D ga o'zgarmagan) hisoblanadi, alohida.
+    Fayl nomi qoidasi handlers.py::_iso_from_stem bilan bir xil bo'lishi
+    kerak (F_ prefiksi tashlanadi, oxirgi "_sana" qismi olib tashlanadi)."""
+    f = BOT_HOLAT_DIR / "rasm_yuborilgan.json"
+    if not f.exists():
+        return set()
+    try:
+        d = json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        return set()
+    isos = set()
+    for fname in d.keys():
+        stem = fname[:-5] if fname.lower().endswith(".xlsx") else fname
+        if stem.startswith("F_"):
+            stem = stem[2:]
+        iso = stem.rsplit("_", 1)[0]
+        if iso:
+            isos.add(iso)
+    return isos
+
+
 def kirish_ruxsati(uid: int) -> bool:
     """Foydalanuvchi kirish huquqiga ega ekanligini tekshiradi."""
     if uid in admin_idlari():

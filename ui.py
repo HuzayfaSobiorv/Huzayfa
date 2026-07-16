@@ -19,7 +19,7 @@ from services import (
     inventar_olish, kamomat_olish, kritiklar_text,
     buyurtma_yuklash, xitoy_yuklash, asosiy_styled_excel_yarat,
     draft_excel_yarat, grafik_qidirish, qidiruv_text,
-    xlsx_mavjud,
+    xlsx_mavjud, rasm_pending_iso_royxati,
 )
 from kamomat_engine import kamomat_stats_v2, kamomat_excel_v2
 from yolda_excel import yolda_excel
@@ -250,6 +250,11 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba"):
         yolda_j = float(r0.get("Йўлда_Жами", 0) or 0)
         holat   = str(r0.get("Холат", ""))
         kont_list, kont_rows = [], []
+        # 2026-07-16 (Huzayfa): rasm allaqachon guruhga yuborilgan konteyner
+        # DISPLAY'da (kont_rows — "Yo'ldagi konteynerlar" matnida) ko'rinmasin
+        # — lekin kont_list (buyurtma hisob-kitobi, zanjir_sim) ga TA'SIR
+        # qilmaydi, xuddi Yo'lda Excel'dagi bilan bir xil mantiq.
+        rasm_yuborilganlar = rasm_pending_iso_royxati()
         try:
             kont   = _get_kont()
             kont   = kont[kont["Холат"].astype(str).str.strip() != "КЕЛДИ ✅"].copy()
@@ -264,8 +269,11 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba"):
                 if mq <= 0:
                     continue
                 kont_list.append((kq, mq))
+                kont_nomi = str(r.get("Контейнер", "—"))
+                if kont_nomi in rasm_yuborilganlar:
+                    continue   # hisobga kiradi, lekin ko'rsatilmaydi
                 kont_rows.append({
-                    "nom":    str(r.get("Контейнер", "—")),
+                    "nom":    kont_nomi,
                     "miqdor": int(mq),
                     "yukl":   str(r.get("Юкланган_Сана", "—")),
                     "kelish": str(r.get("Келиш_Санаси", "—")),
@@ -435,7 +443,10 @@ async def yolda_ko_rish(msg, context, lang: str):
         text_lat="Konteynerlar tayyorlanmoqda",
     ):
         stats: dict = {}
-        bio = yolda_excel(DATA_FILE, stats=stats)
+        # 2026-07-16: rasm allaqachon guruhga yuborilgan konteynerlar bu
+        # ro'yxatda ko'rinmasin (qarang: services.py::rasm_pending_iso_royxati)
+        chiqarib = rasm_pending_iso_royxati()
+        bio = yolda_excel(DATA_FILE, stats=stats, chiqarib_tashlash=chiqarib)
         if bio is None:
             await msg.reply_text(t(lang, "yolda_yoq"))
             return
