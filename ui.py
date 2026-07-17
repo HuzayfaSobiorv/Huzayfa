@@ -296,6 +296,19 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba"):
         return
 
     holat, qoldiq, min_z, yolda_j, sim, kont_list, kont_rows = result
+
+    # 2026-07-16 (Huzayfa): min-zaxira 0 bo'lgan ("meyor yo'q", buyurtmada
+    # kuzatilmaydigan) tovar qidiruvda ICHKI holat (min-zaxira yo'q) sifatida
+    # emas, mijozbop "aksiya mahsulot sifatida sotuvdan chiqarilgan" deb
+    # ko'rsatiladi — boshqa hech qanday hisob-kitob/grafik chiqmaydi.
+    if min_z <= 0:
+        await msg.reply_text(
+            f"🏷 *{tovar}*\n\n"
+            "Bu mahsulot aksiya mahsulot sifatida sotuvdan chiqarilgan.",
+            parse_mode="Markdown",
+        )
+        return
+
     uzilish = sim.get("uzilish_kun")
     taklif  = sim.get("taklif", 0)
 
@@ -334,7 +347,7 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba"):
     text_card = (
         f"📊 *{tovar}*\n\n"
         f"{holat}\n"
-        f"Qoldiq: *{int(qoldiq):,}* | Min: *{int(min_z):,}*\n"
+        f"Qoldiq: *{int(qoldiq):,}*\n"
         f"Yo'lda jami: *{int(yolda_j):,}*\n\n"
         f"▬▬▬▬▬▬▬▬▬▬▬▬\n\n"
         f"{kont_txt}\n\n"
