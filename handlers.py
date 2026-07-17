@@ -2427,6 +2427,15 @@ async def _kont_list_yuborish(msg, query_key: str, is_keldi: bool,
             sana_f = f.stem.rsplit("_", 1)[-1]
             lbl    = f"\U0001f6a2 {iso} ({sana_f})"
             cb     = f"kont_bir_keldi:{f.name}|{query_key}"
+            # 2026-07-17 (Huzayfa: real omborga tushishi 2-3 kun keyin bo'lsa
+            # ham, guruhga rasmni HOZIR yubormoqchi — KELDI qilmasdan turib):
+            # yo'ldagi konteyner uchun ham 🖼 tugmasi ko'rsatiladi, statusga
+            # tegmaydi (kont_rasm_qayta — mustaqil harakat).
+            buttons.append([
+                InlineKeyboardButton(lbl, callback_data=cb),
+                InlineKeyboardButton("\U0001f5bc", callback_data=f"kont_rasm_qayta:{f.name}"),
+            ])
+            continue
         else:
             stem_no_d = f.stem[:-2]
             iso    = stem_no_d.rsplit("_", 1)[0]
@@ -2442,7 +2451,6 @@ async def _kont_list_yuborish(msg, query_key: str, is_keldi: bool,
                 InlineKeyboardButton("\U0001f5bc", callback_data=f"kont_rasm_qayta:{f.name}"),
             ])
             continue
-        buttons.append([InlineKeyboardButton(lbl, callback_data=cb)])
 
     await msg.reply_text(sarlavha, parse_mode="Markdown",
                          reply_markup=InlineKeyboardMarkup(buttons))
@@ -2457,7 +2465,13 @@ def _kg_multi_kb(fayllar, query_key: str, selected: set) -> InlineKeyboardMarkup
         mark   = "\u2705" if f.name in selected else "\u2b1c"
         lbl    = f"{mark} {iso} ({sana_f})"
         cb     = f"kg_tgl:{f.name}|{query_key}"
-        buttons.append([InlineKeyboardButton(lbl, callback_data=cb)])
+        # 2026-07-17: bu yerda ham \ud83d\uddbc tugmasi \u2014 KELDI qilmasdan turib rasmni
+        # guruhga yuborish imkoni (qarang: _kont_list_yuborish, bitta-natija
+        # holati uchun bir xil mantiq).
+        buttons.append([
+            InlineKeyboardButton(lbl, callback_data=cb),
+            InlineKeyboardButton("\U0001f5bc", callback_data=f"kont_rasm_qayta:{f.name}"),
+        ])
     n = len(selected)
     buttons.append([InlineKeyboardButton(
         f"\u2705 Tanlanganlarni KELDI qilish ({n} ta)" if n else "\u2705 Tanlanganlarni KELDI qilish",
