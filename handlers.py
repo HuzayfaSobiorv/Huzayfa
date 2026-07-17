@@ -186,18 +186,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Adminlarga xabar yuborish
         full_name = (user.full_name or "").strip() or "Noma'lum"
         username  = f"@{user.username}" if user.username else "(username yo'q)"
+        # 2026-07-16 (Huzayfa: yangi user so'rovi adminga yetib bormayapti):
+        # parse_mode="Markdown" ISHLATILMAYDI — ism/username ichida "_" "*"
+        # "`" kabi belgi bo'lsa (Telegram username'larida "_" juda keng
+        # tarqalgan), Markdown parser xabarni butunlay RAD ETARDI va bu
+        # pastdagi except tomonidan JIMGINA yutib yuborilardi — admin hech
+        # qachon bilmasdi. Oddiy matn (parse_mode yo'q) — hech qanday belgi
+        # xabarni buzolmaydi, yetkazilishi kafolatlanadi.
         notif = (
-            f"🔔 *Yangi kirish so'rovi*\n\n"
+            f"🔔 Yangi kirish so'rovi\n\n"
             f"👤 {full_name} {username}\n"
-            f"🆔 `{uid}`\n\n"
-            f"Qo'shish uchun: `/adduser {uid}`"
+            f"🆔 {uid}\n\n"
+            f"Qo'shish uchun: /adduser {uid}"
         )
         logger.info(f"Kirish so'rovi: uid={uid}, SUPER_ADMIN_ID={SUPER_ADMIN_ID}")
         if SUPER_ADMIN_ID:
             try:
-                await context.bot.send_message(
-                    chat_id=SUPER_ADMIN_ID, text=notif, parse_mode="Markdown"
-                )
+                await context.bot.send_message(chat_id=SUPER_ADMIN_ID, text=notif)
                 logger.info(f"Admin ga xabar yuborildi: {SUPER_ADMIN_ID}")
             except Exception as e:
                 logger.error(f"Admin ga xabar yuborish XATO: {e}")
