@@ -173,6 +173,7 @@ from ui import (
     build_screen, go_screen, get_action,
     yuklash_animatsiya, grafik_ko_rsatish,
     draft_buyurtma_yubor, yolda_ko_rish,
+    aktiv_inline_tozala, aktiv_inline_belgila,
 )
 from yuklatish_rejasi import main_with_data
 
@@ -391,6 +392,27 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("⛔ Kirish huquqi yo'q.", show_alert=True)
         return
 
+    # ── 2026-07-17 (Huzayfa: userlar eski ekrandan qolgan tugmani bosib
+    # chalkashib ketyapti): agar bu xabar hozirgi "faol" ekran sifatida
+    # kuzatilayotgan bo'lsa-yu (aktiv_inline), bosilgan tugma BOSHQA (eski)
+    # xabarga tegishli bo'lsa — demak foydalanuvchi allaqachon boshqa
+    # ekranga o'tib ketgan va endi eskirgan tugmani bosyapti. Bunday holda
+    # amalni bajarmaymiz, faqat ogohlantiramiz va tugmani o'chiramiz.
+    # aktiv_inline hali kuzatilmagan (None) bo'lsa — tekshirmaymiz (xavfsiz,
+    # eski xatti-harakatlarni buzmaslik uchun).
+    aktiv = context.user_data.get("aktiv_inline")
+    if aktiv is not None and query.message is not None and \
+            aktiv != (query.message.chat_id, query.message.message_id):
+        await query.answer(
+            "⚠️ Bu tugma eskirgan — siz boshqa ekrandasiz. Menyudan qaytadan oching.",
+            show_alert=True,
+        )
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        return
+
     if query.data.startswith("lang:"):
         lang = query.data.split(":")[1]
         context.user_data["lang"]   = lang
@@ -401,7 +423,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await go_screen(query.message, context, "main")
 
     elif query.data == "lang_pick":
-        await query.message.reply_text("🇺🇿 Тилни танланг:", reply_markup=til_ikb())
+        sent = await query.message.reply_text("🇺🇿 Тилни танланг:", reply_markup=til_ikb())
+        aktiv_inline_belgila(context, sent)
 
     elif query.data.startswith("xitoy:"):
         # xitoy:ha/yoq/ishlatsin/yangi:{kanal}
@@ -569,6 +592,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = context.user_data.get("lang", "cyr")
         context.user_data["kutilmoqda"] = ("kont_keldi_sana",)
         context.user_data["screen"] = "keldi_ekran"
+        # 2026-07-17: shu tugma bosilgach, xabarning o'zidagi ikkala tugma
+        # ("Keldiga o'zgartirish"/"Qaytarish") eskirgan bo'lib qoladi —
+        # tozalaymiz, aks holda foydalanuvchi sana o'rniga eski tugmani
+        # bosib chalkashib ketishi mumkin.
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        context.user_data.pop("aktiv_inline", None)
         from telegram import ReplyKeyboardMarkup as _RKM
         orqaga_kb = _RKM([[t(lang, "back")]], resize_keyboard=True)
         await query.message.reply_text(
@@ -583,6 +615,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = context.user_data.get("lang", "cyr")
         context.user_data["kutilmoqda"] = ("kont_qaytarish_sana",)
         context.user_data["screen"] = "keldi_ekran"
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        context.user_data.pop("aktiv_inline", None)
         from telegram import ReplyKeyboardMarkup as _RKM
         orqaga_kb = _RKM([[t(lang, "back")]], resize_keyboard=True)
         await query.message.reply_text(
@@ -693,6 +730,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         [InlineKeyboardButton("❌ Bekor qilish", callback_data=f"kg_cancel:{iso}")],
                     ]),
                 )
+                aktiv_inline_belgila(context, sent)
                 context.user_data["kg_pending"] = {
                     "iso": iso,
                     "file_id": sent.photo[-1].file_id,
@@ -717,6 +755,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_reply_markup(reply_markup=None)
             except Exception:
                 pass
+            context.user_data.pop("aktiv_inline", None)
             await query.message.reply_text(
                 "✏️ Rasm ostiga yoziladigan matnni kiriting:",
                 reply_markup=orqaga_kb,
@@ -730,6 +769,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_reply_markup(reply_markup=None)
         except Exception:
             pass
+        context.user_data.pop("aktiv_inline", None)
         context.user_data["screen"] = "keldi_menu"
         await kont_holat_royhat(query.message, context)
 
@@ -1142,7 +1182,8 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data.pop("grafik_natijalar", None)
                 context.user_data.pop("grafik_back", None)
                 await go_screen(msg, context, "search")
-                await msg.reply_text(t(lang, "karta_kat_sor"), reply_markup=grafik_kat_ikb())
+                sent = await msg.reply_text(t(lang, "karta_kat_sor"), reply_markup=grafik_kat_ikb())
+                aktiv_inline_belgila(context, sent)
                 return
             # Boshqa menyu tugmasi
             context.user_data.pop("kutilmoqda", None)
@@ -1160,11 +1201,12 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await grafik_ko_rsatish(msg, tovs[0], kanal, kat)
             else:
                 context.user_data["grafik_natijalar"] = tovs
-                await msg.reply_text(
+                sent = await msg.reply_text(
                     t(lang, "grafik_tanlang"),
                     parse_mode="Markdown",
                     reply_markup=grafik_tovar_ikb(tovs),
                 )
+                aktiv_inline_belgila(context, sent)
             return
 
     # ── Umumiy (kategoriyasiz) qidiruv ───────────────────────────────────────
@@ -1173,7 +1215,8 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text == t(lang, "back"):
             context.user_data.pop("kutilmoqda", None)
             await go_screen(msg, context, "search")
-            await msg.reply_text(t(lang, "karta_kat_sor"), reply_markup=grafik_kat_ikb())
+            sent = await msg.reply_text(t(lang, "karta_kat_sor"), reply_markup=grafik_kat_ikb())
+            aktiv_inline_belgila(context, sent)
             return
         if get_action(lang, screen, text):
             # Boshqa menyu tugmasi — holatni tozalab, odatiy amalga o'tamiz
@@ -1191,7 +1234,8 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # (grafik bilan) bir bosishda ochish uchun.
                 tovs = df["Товар"].tolist()
                 context.user_data["grafik_natijalar"] = tovs
-                await msg.reply_text(matn, reply_markup=grafik_tovar_ikb(tovs))
+                sent = await msg.reply_text(matn, reply_markup=grafik_tovar_ikb(tovs))
+                aktiv_inline_belgila(context, sent)
             return  # kutilmoqda saqlanadi — davomli qidiruv uchun
 
     if isinstance(kut, tuple):
@@ -1228,7 +1272,8 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parent = BACK_MAP.get(screen, "main")
         await go_screen(msg, context, parent)
         if parent == "search":
-            await msg.reply_text(t(lang, "karta_kat_sor"), reply_markup=grafik_kat_ikb())
+            sent = await msg.reply_text(t(lang, "karta_kat_sor"), reply_markup=grafik_kat_ikb())
+            aktiv_inline_belgila(context, sent)
         return
 
     # Amal topish
@@ -1237,7 +1282,9 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if action is None:
         # search ekranida (kategoriya tanlash) — matn yozilsa eslatma
         if screen == "search":
-            await msg.reply_text(t(lang, "karta_kat_sor"), reply_markup=grafik_kat_ikb())
+            await aktiv_inline_tozala(context, msg.get_bot())
+            sent = await msg.reply_text(t(lang, "karta_kat_sor"), reply_markup=grafik_kat_ikb())
+            aktiv_inline_belgila(context, sent)
             return
         # Tanilmagan tugma — joriy ekranni qayta ko'rsatamiz
         await go_screen(msg, context, screen)
@@ -1266,6 +1313,7 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if action == "excel":
         # Avval Xitoy ostatka haqida so'raymiz.
         # Mavjud JSON bor bo'lsa — uni ishlatish/yangilash/hisobsiz tanlash.
+        await aktiv_inline_tozala(context, msg.get_bot())
         mavjud = xitoy_yuklash(kanal)
         ch     = t(lang, CH_KEY[kanal])
 
@@ -1285,11 +1333,12 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Xitoy ostatka bor
             n    = len(mavjud["tovarlar"])
             sana = mavjud.get("sana", "?")
-            await msg.reply_text(
+            sent = await msg.reply_text(
                 t(lang, "xitoy_mavjud").format(ch=ch, n=n, sana=sana) + b_line,
                 parse_mode="Markdown",
                 reply_markup=xitoy_mavjud_ikb(lang, kanal),
             )
+            aktiv_inline_belgila(context, sent)
         elif mavjud is not None:
             # xitoy_saqlash({}) chaqirilgan — oxirgi safar "Yo'q — shundayicha
             # ber" tanlangan edi, hech qanday haqiqiy ma'lumot SAQLANMAGAN.
@@ -1302,18 +1351,20 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             hdr_cyr = f"📦 *{ch}* — ⚠️ Хитой: захирасиз юборилган"
             hdr_lat = f"📦 *{ch}* — ⚠️ Xitoy: zahirasiz yuborilgan"
             hdr = hdr_cyr if lang == "cyr" else hdr_lat
-            await msg.reply_text(
+            sent = await msg.reply_text(
                 hdr + b_line + "\n" + t(lang, "xitoy_sorash"),
                 parse_mode="Markdown",
                 reply_markup=xitoy_sorash_ikb(lang, kanal),
             )
+            aktiv_inline_belgila(context, sent)
         else:
             # Birinchi marta — hech qanday xitoy ma'lumot yo'q
-            await msg.reply_text(
+            sent = await msg.reply_text(
                 t(lang, "xitoy_sorash"),
                 parse_mode="Markdown",
                 reply_markup=xitoy_sorash_ikb(lang, kanal),
             )
+            aktiv_inline_belgila(context, sent)
 
     elif action == "tasdiq":
         context.user_data["kutilmoqda"] = ("buyurtma_tasdiq", kanal)
@@ -1443,11 +1494,17 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await go_screen(msg, context, "load_channel", kanal=kanal)
 
     elif action == "karta":
+        # 2026-07-17: bu — asosiy menyudan "Qidiruv" bosilganda ishga
+        # tushadigan aynan ekran (go_screen ORQALI EMAS, to'g'ridan-to'g'ri).
+        # Shuning uchun eski ekrandan qolgan inline tugmalarni shu yerda
+        # qo'lda tozalaymiz — aks holda ular chatda ko'rinishda qolib ketadi.
+        await aktiv_inline_tozala(context, msg.get_bot())
         context.user_data["screen"] = "search"
         # reply keyboard ni o'rnatish (Orqaga tugmasi)
         await msg.reply_text("🔍", reply_markup=search_kb(lang))
         # kategoriya inline keyboard
-        await msg.reply_text(t(lang, "karta_kat_sor"), reply_markup=grafik_kat_ikb())
+        sent = await msg.reply_text(t(lang, "karta_kat_sor"), reply_markup=grafik_kat_ikb())
+        aktiv_inline_belgila(context, sent)
 
     elif action == "yolda":
         pass  # Eski tugma — hozircha bo'sh
@@ -1630,13 +1687,15 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text(t(lang, "kont_tp_kut"), parse_mode="Markdown")
 
     elif action == "boglanish":
+        await aktiv_inline_tozala(context, msg.get_bot())
         ikb_kb = boglanish_ikb(lang, SUPPORT_PHONE, SUPPORT_USERNAME)
         lines = []
         if SUPPORT_PHONE:
             lines.append(f'<a href="tel:{SUPPORT_PHONE}">📞 {SUPPORT_PHONE}</a>')
         sarlavha = "👤 <b>Admin bilan bog'lanish:</b>" if lang == "lat" else "👤 <b>Admin билан боғланиш:</b>"
         matn = sarlavha + "\n\n" + "\n".join(lines) if lines else "Bog'lanish ma'lumoti hali kiritilmagan."
-        await msg.reply_text(matn, parse_mode="HTML", reply_markup=ikb_kb)
+        sent = await msg.reply_text(matn, parse_mode="HTML", reply_markup=ikb_kb)
+        aktiv_inline_belgila(context, sent)
 
     elif action == "yolda_excel":
         # Admin bilan bir xil — Power BI Excelidan yo'lda holat
@@ -2467,6 +2526,9 @@ async def kont_holat_royhat(msg, context, change_kb: bool = False):
     """
     lang = context.user_data.get("lang", "cyr")
     if change_kb:
+        # Bottom menyudan yangi kirish \u2014 eski ekrandan qolgan inline
+        # tugmalarni (masalan qidiruv ekranidan) tozalaymiz.
+        await aktiv_inline_tozala(context, msg.get_bot())
         from telegram import ReplyKeyboardMarkup as _RKM
         only_back = _RKM([[t(lang, "back")]], resize_keyboard=True)
         await msg.reply_text("\U0001f504", reply_markup=only_back)
@@ -2480,8 +2542,9 @@ async def kont_holat_royhat(msg, context, change_kb: bool = False):
             "\u21a9\ufe0f KELDI ni qaytarish",
             callback_data="kont_qaytarish_ask")],
     ]
-    await msg.reply_text(
+    sent = await msg.reply_text(
         f"\U0001f69a Yo'lda: *{n_y}* ta",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(buttons),
     )
+    aktiv_inline_belgila(context, sent)

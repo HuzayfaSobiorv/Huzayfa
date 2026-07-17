@@ -156,8 +156,40 @@ def build_screen(screen: str, lang: str, context) -> tuple:
            main_kb_user(lang) if not admin else main_kb(lang)
 
 
+async def aktiv_inline_tozala(context, bot):
+    """2026-07-17 (Huzayfa: userlar eski ekrandan qolib ketgan inline
+    tugmalarni bosib chalkashib ketyapti — masalan qidiruvda Труба tugmasi
+    hali ko'rinib turibdi, keyin Sozlamalarga o'tib o'sha eski tugmani
+    bosadi va bot buni joriy ekranga tegishli deb noto'g'ri qayta ishlaydi).
+
+    Har safar foydalanuvchi YANGI ekranga o'tganda shu funksiya chaqiriladi:
+    oldingi ekrandan qolgan inline (bosiladigan) tugmalarni FIZIK o'chiradi,
+    shunda eski xabar oddiy matnga aylanadi va boshqa bosib bo'lmaydi.
+    """
+    aktiv = context.user_data.pop("aktiv_inline", None)
+    if not aktiv:
+        return
+    chat_id, message_id = aktiv
+    try:
+        await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=None)
+    except Exception:
+        pass   # xabar allaqachon o'zgargan / o'chirilgan / juda eski — muammo emas
+
+
+def aktiv_inline_belgila(context, sent_msg):
+    """Yuborilgan xabarda inline tugma bo'lsa, uni 'joriy faol ekran' deb
+    belgilaydi — keyingi ekran o'tishida shu xabar tozalanadi (yuqoridagi
+    aktiv_inline_tozala orqali)."""
+    try:
+        if sent_msg is not None and sent_msg.reply_markup is not None:
+            context.user_data["aktiv_inline"] = (sent_msg.chat_id, sent_msg.message_id)
+    except Exception:
+        pass
+
+
 async def go_screen(msg, context, screen: str, kanal: str | None = None):
     """Yangi ekranga o'tadi va reply keyboard ni yangilaydi."""
+    await aktiv_inline_tozala(context, msg.get_bot())
     lang = context.user_data.get("lang", "cyr")
     if kanal:
         context.user_data["kanal"] = kanal
