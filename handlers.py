@@ -383,6 +383,34 @@ async def chatid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
+async def _yangi_konteyner_xabar_yubor(context: ContextTypes.DEFAULT_TYPE,
+                                        qoshilganlar: list, exclude_uid: int | None = None) -> None:
+    """2026-07-17 (Huzayfa: yangi yuk yuklanganda userlarga qisqa xabar
+    kerak): yo'lga yangi qo'shilgan konteynerlar haqida BARCHA (whitelist +
+    admin) foydalanuvchilarga qisqa xabar yuboradi — ISO va yuklangan sana
+    bilan, hamda "Yo'ldagi yuklar" tugmasi orqali to'liq ro'yxatni ko'rish
+    mumkinligini eslatadi. Amalni bajargan odamga (exclude_uid) qayta
+    yuborilmaydi — u allaqachon tasdiq xabarini oldi."""
+    n = len(qoshilganlar)
+    if n == 0:
+        return
+    satrlar = [f"• {k['iso']} — {k.get('sana', '?')}" for k in qoshilganlar]
+    xabar = (
+        f"🚛 *{n} ta yangi konteyner yuklandi:*\n"
+        + "\n".join(satrlar)
+        + "\n\nTo'liq ro'yxatni \"🚛 Yo'ldagi yuklar\" tugmasi orqali "
+          "Excelda ko'rishingiz mumkin."
+    )
+    recipients = whitelist_yuklash() | admin_idlari()
+    if exclude_uid is not None:
+        recipients.discard(exclude_uid)
+    for rid in recipients:
+        try:
+            await context.bot.send_message(chat_id=rid, text=xabar, parse_mode="Markdown")
+        except Exception:
+            logger.warning(f"Yangi konteyner xabari yuborilmadi: {rid}")
+
+
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Til tanlash va Xitoy sorash uchun (inline keyboard)."""
     query = update.callback_query
@@ -1075,6 +1103,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 t(lang, "kont_qoshildi").format(n=n_ok),
                 parse_mode="Markdown"
             )
+            if qoshilganlar:
+                await _yangi_konteyner_xabar_yubor(context, qoshilganlar, exclude_uid=uid)
 
 
 async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):

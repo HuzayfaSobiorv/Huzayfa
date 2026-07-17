@@ -498,26 +498,15 @@ async def yolda_ko_rish(msg, context, lang: str):
         # 2026-07-14: xabar endi haqiqiy xulosa beradi (ilgari yulduzchali
         # xom matn chiqardi — parse_mode berilmagan edi) va tartib to'g'risi
         # yoziladi (kechikkanlar avval, keyin kelishiga oz qolganlar).
-        n     = stats.get("n", 0)
-        kech  = stats.get("kechikdi", 0)
-        tonna = stats.get("tonna", 0)
-        yaqin = stats.get("eng_yaqin")
-        if lang == "lat":
-            qatorlar = [f"🚛 Yo'ldagi konteynerlar: {n} ta"]
-            if kech:
-                qatorlar.append(f"⚠️ Kechikkan: {kech} ta")
-            qatorlar.append(f"⚖️ Jami yuk: {tonna} t")
-            if yaqin:
-                qatorlar.append(f"🕐 Eng yaqini: {yaqin[0]} — {yaqin[1]} kun qoldi")
-        else:
-            qatorlar = [f"🚛 Йўлдаги контейнерлар: {n} та"]
-            if kech:
-                qatorlar.append(f"⚠️ Кечиккан: {kech} та")
-            qatorlar.append(f"⚖️ Жами юк: {tonna} т")
-            if yaqin:
-                qatorlar.append(f"🕐 Энг яқини: {yaqin[0]} — {yaqin[1]} кун қолди")
+        # 2026-07-17 (Huzayfa: qisqa va sodda bo'lsin — faqat nechta
+        # konteyner yo'lda ekani ko'rinsin): n allaqachon rasm-yuborilgan
+        # (guruhga tashlangan, lekin hali qo'lda KELDI qilinmagan)
+        # konteynerlarni chiqarib tashlagan holda hisoblanadi (yuqoridagi
+        # `chiqarib` orqali yolda_excel()ga uzatiladi).
+        n = stats.get("n", 0)
+        caption = f"Yo'lda - 🚛{n} ta" if lang == "lat" else f"Йўлда - 🚛{n} та"
         await msg.reply_document(
             document=bio,
             filename="Yolda.xlsx",
-            caption="\n".join(qatorlar),
+            caption=caption,
         )
