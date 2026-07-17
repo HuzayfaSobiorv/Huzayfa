@@ -208,7 +208,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.error(f"Admin ga xabar yuborish XATO: {e}")
         await update.message.reply_text(
             "⛔ Kechirasiz, sizda kirish huquqi yo'q.\n\n"
-            "Admin bilan bog'laning — so'rovingiz yuborildi."
+            "Admin bilan bog'laning — so'rovingiz yuborildi. "
+            "Ruxsat berilgach, /start bosib boshlashingiz mumkin."
         )
         return
 
@@ -243,10 +244,10 @@ async def adduser_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Assalomu alaykum! Sizga botdan foydalanish huquqi berildi.\n\n"
                     "Bu — katta tizimning bir bo'lagi, sizga ishingiz uchun kerakli "
                     "qism ko'rsatiladi.\n\n"
-                    "Ma'lumotlar bilan ehtiyotkor bo'lishingizni so'rayman — ular "
+                    "Ma'lumotlar bilan ehtiyotkor bo'lishingizni so'raymiz — ular "
                     "faqat ichki foydalanish uchun mo'ljallangan.\n\n"
                     "Botda biror kamchilik yoki noto'g'ri narsa uchrasa, "
-                    "\"Sozlamalar → Bog'lanish\" orqali menga murojaat qiling."
+                    "\"Sozlamalar → Bog'lanish\" orqali adminga murojaat qiling."
                 ),
             )
         except Exception:
