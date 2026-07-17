@@ -376,10 +376,18 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba"):
         kont_txt = "🚢 Yo'lda konteyner yo'q"
 
     # ── 2. Matn kartasi — ZUDLIK BILAN yuboramiz ─────────────────────────────
+    # 2026-07-17 (Huzayfa: yo'lda yetarli bo'lgani uchun "Uzilish yo'q"
+    # chiqsa ham, ombordagi HAQIQIY zaxira (qoldiq) min-zaxiradan kam
+    # bo'lishi mumkin — bu holda yo'ldagi yuk kechiksa xavf bor. Qisqa
+    # ogohlantirish qo'shildi.
+    kam_ombor_txt = ""
+    if uzilish is None and qoldiq < min_z:
+        kam_ombor_txt = "\n⚠️ Omborda kam qoldi"
+
     text_card = (
         f"📊 *{tovar}*\n\n"
         f"{holat}\n"
-        f"Qoldiq: *{int(qoldiq):,}*\n"
+        f"Qoldiq: *{int(qoldiq):,}*{kam_ombor_txt}\n"
         f"Yo'lda jami: *{int(yolda_j):,}*\n\n"
         f"▬▬▬▬▬▬▬▬▬▬▬▬\n\n"
         f"{kont_txt}\n\n"
