@@ -511,16 +511,15 @@ async def yolda_ko_rish(msg, context, lang: str):
         if lang == "lat":
             caption = (
                 f"Yo'lda - 🚛{n} ta\n\n"
-                "_Yangi konteyner yuklansa — bot sizga alohida xabar beradi._"
+                "Yangi konteyner yuklansa — bot sizga alohida xabar beradi."
             )
         else:
             caption = (
                 f"Йўлда - 🚛{n} та\n\n"
-                "_Янги контейнер юкланса — бот сизга алоҳида хабар беради._"
+                "Янги контейнер юкланса — бот сизга алоҳида хабар беради."
             )
         await msg.reply_document(
             document=bio,
             filename="Yolda.xlsx",
             caption=caption,
-            parse_mode="Markdown",
         )
