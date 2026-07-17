@@ -504,9 +504,23 @@ async def yolda_ko_rish(msg, context, lang: str):
         # konteynerlarni chiqarib tashlagan holda hisoblanadi (yuqoridagi
         # `chiqarib` orqali yolda_excel()ga uzatiladi).
         n = stats.get("n", 0)
-        caption = f"Yo'lda - 🚛{n} ta" if lang == "lat" else f"Йўлда - 🚛{n} та"
+        # 2026-07-17 (Huzayfa: userlarga eslatma kerak — yangi konteyner
+        # yuklanganda ular allaqachon avtomatik xabar olishadi, buni shu
+        # yerda ham ko'rsatib qo'yamiz, video-o'qitishda alohida aytishga
+        # hojat qolmasin).
+        if lang == "lat":
+            caption = (
+                f"Yo'lda - 🚛{n} ta\n\n"
+                "_Yangi konteyner yuklansa — bot sizga alohida xabar beradi._"
+            )
+        else:
+            caption = (
+                f"Йўлда - 🚛{n} та\n\n"
+                "_Янги контейнер юкланса — бот сизга алоҳида хабар беради._"
+            )
         await msg.reply_document(
             document=bio,
             filename="Yolda.xlsx",
             caption=caption,
+            parse_mode="Markdown",
         )
