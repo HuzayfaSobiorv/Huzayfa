@@ -176,6 +176,16 @@ def zanjir_sim(qoldiq: float, min_z: float,
         min_nuqta   = min(min_nuqta, joriy)
         if joriy < min_z and uzilish_kun is None:
             uzilish_kun = _uzilish_hisobla(joriy_oldin, joriy_kun)
+        if joriy < 0:
+            # 2026-07-18 (Huzayfa bilan kelishildi -- "lost sales" modeli):
+            # qoldiq 0 ga tushgach sotuv TO'XTAYDI -- minus to'planmaydi.
+            # Ilgari minus yig'ilib (mas. -9000), o'sha "yo'qotilgan sotuv"
+            # ham buyurtmaga qo'shilib, 2 baravar shishgan zakaz chiqardi
+            # (real hodisa: Пр. 20х20 ст 0,7 -- 20 400 o'rniga ~11 200
+            # to'g'ri). Mijoz tovar yo'qligida boshqa joydan oladi, u
+            # sotuv "qarz" bo'lib kutmaydi. min_nuqta/uzilish_kun clamp
+            # OLDIDAN yozildi -- KRITIK aniqlash o'zgarmagan.
+            joriy = 0.0
         joriy    += miqdor
         joriy_kun = kun_q
 
@@ -187,6 +197,8 @@ def zanjir_sim(qoldiq: float, min_z: float,
         min_nuqta   = min(min_nuqta, joriy)
         if joriy < min_z and uzilish_kun is None:
             uzilish_kun = _uzilish_hisobla(joriy_oldin, joriy_kun)
+        if joriy < 0:
+            joriy = 0.0   # 2026-07-18: lost-sales clamp (yuqoridagi izohga qarang)
 
     qoldiq_gorizont = joriy                                   # 55-kun prognozi
     kech_jami  = sum(m for k, m in kont if k > horizon)       # 55+ kunda keladiganlar

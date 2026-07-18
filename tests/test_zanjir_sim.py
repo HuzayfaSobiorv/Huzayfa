@@ -30,10 +30,11 @@ class TestGorizont:
         40-55 kunlardagi tanqislikni ko'rmasdi (taklif 2500 chiqardi).
         YANGI: 55-kungacha qaraladi → taklif 7000."""
         s = zanjir_sim(qoldiq=2500, min_z=MIN, konteynerlar=[(10, 2000)])
-        # 55-kun prognoz: 2500 + 2000 - 100*55 = -1000
-        # nishon: 3000 + 100*30 = 6000 → taklif = 6000 - (-1000) = 7000
-        assert s["taklif"] == 7000
-        assert s["min_nuqta"] == -1000
+        # 2026-07-18 (lost-sales clamp): 55-kun prognoz endi 0 da to'xtaydi
+        # (minus "yo'qotilgan sotuv" buyurtmaga qo'shilmaydi).
+        # nishon: 3000 + 100*30 = 6000 → taklif = 6000 - 0 = 6000
+        assert s["taklif"] == 6000
+        assert s["min_nuqta"] == -1000   # min_nuqta clamp'siz (axborot uchun)
         assert s["xavf"] == "KRITIK"
 
     def test_uzilish_kuni_gorizont_ichida(self):
@@ -45,10 +46,10 @@ class TestGorizont:
         """55+ kunda keladigan konteyner: uzilishni oldini olmaydi,
         lekin buyurtma hajmidan ayiriladi (ikki marta buyurmaslik)."""
         s = zanjir_sim(qoldiq=3000, min_z=MIN, konteynerlar=[(60, 5000)])
-        # 55-kun: 3000 - 5500 = -2500 → uzilish bor
+        # 55-kun: 3000 - 5500 → clamp bilan 0 → uzilish bor
         assert s["xavf"] == "KRITIK"
-        # nishon 6000 - (-2500 + 5000) = 3500
-        assert s["taklif"] == 3500
+        # 2026-07-18 (lost-sales clamp): nishon 6000 - (0 + 5000) = 1000
+        assert s["taklif"] == 1000
 
 
 class TestOrderUpTo:
