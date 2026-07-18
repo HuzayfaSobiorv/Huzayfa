@@ -164,8 +164,19 @@ def _kichikmi(tovar: str, cat: str) -> bool:
     return False
 
 
-MIN_KICHIK_DONA = 2  # kichik tovar shundan kam bo'lsa (masalan 1 dona) -- yuklanmaydi
+MIN_KICHIK_DONA = 10  # 2026-07-18 (Huzayfa): 2 -> 10, mayda tovar 10 donadan kam bo'lsa yuklanmaydi
 MIN_KICHIK_PARCHA = 20  # qisman joylashtirishda bundan kichik "bo'lak" qabul qilinmaydi
+# 2026-07-18 (Huzayfa, "kulgili 1-2 dona" muammosi): vazn-asosli minimal qator.
+# Qator (bitta konteynerdagi bitta tovar yozuvi) "mayda" hisoblanadi, agar
+# DONA ham (< MIN_KICHIK_PARCHA), VAZN ham (< MIN_QATOR_KG) past bo'lsa --
+# og'ir tovar (mas. 2 dona x 150 kg list ~ 300 kg) kam donada ham normal,
+# yengil tovar esa faqat sezilarli partiyada yuklanadi.
+MIN_QATOR_KG = 150.0
+
+
+def _mayda_qatormi(dona: float, vazn_dona: float) -> bool:
+    """Qator ham dona, ham vazn bo'yicha chegaradan past bo'lsa -- "mayda"."""
+    return dona < MIN_KICHIK_PARCHA and dona * vazn_dona < MIN_QATOR_KG
 
 
 def optimallashtir(
@@ -174,14 +185,17 @@ def optimallashtir(
     abc_map: dict | None = None,
     max_yuklar: int = 20,
     xitoy_vazn: dict | None = None,
-) -> tuple[list[dict], list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], list[dict], list[dict]]:
     """kerak_df: Товар|Холат|Кам  mavjud_df: Товар|Миқдор
     xitoy_vazn: {tovar_nomi: 1_dona_kg} — vazn_lookup da yo'q tovarlar uchun fallback
-    Qaytaradi: (yuklar, qolgan, kerak_yoq)
-      qolgan    — kerakli edi, lekin oylik/konteyner limiti yetmadi
+    Qaytaradi: (yuklar, qolgan, kerak_yoq, vazn_yoq)
+      qolgan    — limit yoki minimal-miqdor qoidasi tufayli yuklanmadi
       kerak_yoq — hozircha doim bo'sh ro'yxat (2026-07-11: Кам-cheklovi
                   bekor qilindi -- Xitoyda tayyor bo'lgan HAMMASI yana
                   yuklanadi, "juda cheklovchi/qulay emas" bo'lib chiqdi)
+      vazn_yoq  — 2026-07-18: vazni HECH QAYERDAN topilmagan tovarlar
+                  (avval jimgina tashlab ketilardi -- endi Excelda
+                  ogohlantirish bloki bilan ko'rsatiladi)
     """
     if abc_map is None:
         abc_map = abc_map_yuklash()
@@ -194,6 +208,7 @@ def optimallashtir(
     yuklar: list[dict] = []
     qolgan: list[dict] = []
     kerak_yoq: list[dict] = []   # 2026-07-11: cheklov bekor qilindi, doim bo'sh
+    vazn_yoq: list[dict] = []    # 2026-07-18: vazni topilmagan tovarlar
 
     for _, row in kerak.iterrows():
         tovar      = row["Товар"]
@@ -201,20 +216,38 @@ def optimallashtir(
         bor_dona   = int(mavjud.get(tovar, 0))
         if bor_dona <= 0:
             continue
+        cat  = get_category(tovar)
+        turi = yuk_turi(tovar, cat)
+        if cat in ("\u0411\u043e\u0448\u049b\u0430",):
+            # Aksessuar/boshqa toifa -- vazn ataylab hisoblanmaydi (loyiha qarori)
+            continue
         vazn_dona = tovar_vazni(tovar)
         # Xitoy faylidan fallback: vazn_lookup da yo'q tovar uchun
         if (not vazn_dona or vazn_dona <= 0) and xitoy_vazn:
             vazn_dona = xitoy_vazn.get(str(tovar).strip())
         if not vazn_dona or vazn_dona <= 0:
-            continue
-        cat  = get_category(tovar)
-        turi = yuk_turi(tovar, cat)
-        if cat in ("\u0411\u043e\u0448\u049b\u0430",):
+            # 2026-07-18: 3-zaxira -- nomdan formula bilan hisoblash
+            # (vazn_hisobla, Xitoy stenkasi -0.05 konventsiyasi bilan)
+            try:
+                from vazn_hisobla import tovar_vazni as _vazn_formula
+                vazn_dona = _vazn_formula(tovar, xitoy=True)
+            except Exception:
+                vazn_dona = None
+        if not vazn_dona or vazn_dona <= 0:
+            # 2026-07-18: avval jimgina tashlab ketilardi (foydalanuvchi
+            # tovar "sirli yo'qolgan"ini bilmasdi) -- endi ro'yxatga tushadi
+            vazn_yoq.append({"tovar": tovar, "dona": bor_dona})
             continue
         kichik = _kichikmi(tovar, cat)
         if kichik and bor_dona < MIN_KICHIK_DONA:
-            # 2026-07-10: mayda tovar juda oz (masalan 1 dona) -- yuklanmaydi,
-            # "qolgan" ro'yxatiga tushadi (keyingi safar to'planganda yuklanadi)
+            # 2026-07-10: mayda tovar juda oz -- yuklanmaydi, "qolgan"
+            # ro'yxatiga tushadi (keyingi safar to'planganda yuklanadi)
+            qolgan.append({"tovar": tovar, "dona": bor_dona,
+                           "vazn_kg": round(bor_dona * vazn_dona, 2)})
+            continue
+        if _mayda_qatormi(bor_dona, vazn_dona):
+            # 2026-07-18: butun zaxira ham dona, ham vazn bo'yicha mayda
+            # (mas. katta tovardan 1-2 dona) -- kulgili qator yaratmaymiz
             qolgan.append({"tovar": tovar, "dona": bor_dona,
                            "vazn_kg": round(bor_dona * vazn_dona, 2)})
             continue
@@ -250,16 +283,13 @@ def optimallashtir(
                 sig_dona    = int(sig_kg // vazn_dona)
                 if sig_dona <= 0:
                     continue
-                if sig_dona < qoldi and sig_dona < MIN_KICHIK_PARCHA:
-                    # 2026-07-10 (tuzatildi, endi BARCHA tovarga tegishli):
-                    # bu konteynerda (boshqa tovarlar joy egallagani sababli)
-                    # faqat MAYDA bo'lak (masalan 1-2-3 dona) sig'sa -- bu
-                    # yerga tashlab qo'yilmaydi, boshqa (yoki yangi)
-                    # konteyner qidiriladi. Agar sig'adigan miqdor
-                    # SEZILARLI bo'lsa (>= MIN_KICHIK_PARCHA), shu
-                    # konteynerga "to'liq bag'ishlangan ulush" sifatida
-                    # qabul qilinadi -- katta hajm shunday yirik
-                    # bo'laklarda taqsimlanadi, mayda qirindilar bilan emas.
+                if sig_dona < qoldi and _mayda_qatormi(sig_dona, vazn_dona):
+                    # 2026-07-10 (2026-07-18 vazn-asosli qilindi): bu
+                    # konteynerda faqat MAYDA bo'lak (dona ham, vazn ham past)
+                    # sig'sa -- bu yerga tashlab qo'yilmaydi, boshqa (yoki
+                    # yangi) konteyner qidiriladi. Endi og'ir tovarning kichik
+                    # (lekin >= MIN_QATOR_KG) bo'lagi qabul qilinadi --
+                    # to'ldirish yaxshilanadi, qirindi baribir bloklanadi.
                     continue
                 dona = min(qoldi, sig_dona)
                 og   = round(dona * vazn_dona, 2)
@@ -271,7 +301,18 @@ def optimallashtir(
                 mavjud[tovar] = mavjud.get(tovar, 0) - dona
                 if qoldi == 0:
                     break
+                if _mayda_qatormi(qoldi, vazn_dona):
+                    # 2026-07-18 (DUM-QOIDASI, "kulgili 1-2 dona" tuzatmasi):
+                    # asosiy qism joylashdi, qolgan "dum" mayda -- uni BOSHQA
+                    # konteynerga sochmaymiz (avval shu yerda 83+2 bo'lib
+                    # ikkinchi konteynerda yolg'iz "2 dona" qator chiqardi).
+                    break
             if qoldi == 0:
+                break
+            if qoldi < bor_dona and _mayda_qatormi(qoldi, vazn_dona):
+                # Dum "qolgan" ro'yxatiga -- keyingi safar to'planganda yuklanadi
+                qolgan.append({"tovar": tovar, "dona": qoldi,
+                               "vazn_kg": round(qoldi * vazn_dona, 2)})
                 break
             if len(yuklar) >= max_yuklar:
                 qolgan.append({"tovar": tovar, "dona": qoldi,
@@ -279,7 +320,7 @@ def optimallashtir(
                 break
             yuklar.append(_yangi_yuk(turi))
 
-    return yuklar, qolgan, kerak_yoq
+    return yuklar, qolgan, kerak_yoq, vazn_yoq
 
 
 def konteyner_xulosa(yuklar: list[dict]) -> dict:
