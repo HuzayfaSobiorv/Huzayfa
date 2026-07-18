@@ -360,11 +360,13 @@ def load_data(kanal: str = "asosiy"):
             mzv["_min"] = pd.to_numeric(mzv[mz_min_col], errors="coerce").fillna(0)
             mz_map = mzv.groupby("_k")["_min"].max()
             _k   = df["tovar"].astype(str).map(_norm_mz)
-            _ovr = _k.map(mz_map)
-            if "min_zaxira" in df.columns:
-                df["min_zaxira"] = _ovr.fillna(pd.to_numeric(df["min_zaxira"], errors="coerce"))
-            else:
-                df["min_zaxira"] = _ovr
+            # 2026-07-18 (Huzayfa, rangli listlar hodisasi): Min_Zaxira.xlsx'da
+            # YO'Q tovar uchun PB fallback ISHLATILMAYDI -- min=0 (buyurtma
+            # berilmaydi). Sabab: PB'da eski/chiqarilgan tovarlar (Лист-0,41,
+            # 0,61, 0,81 kabi) tarixiy Мин_Захира=50 bilan qolib ketgan va
+            # fallback orqali buyurtma olib ketayotgan edi. Qoida endi qat'iy:
+            # Min_Zaxira.xlsx = yagona katalog; faylda yo'q yoki 0 -> buyurtma yo'q.
+            df["min_zaxira"] = _k.map(mz_map).fillna(0)
 
     if "min_zaxira" not in df.columns:
         raise FileNotFoundError(
