@@ -101,10 +101,36 @@ def abc_map_yuklash() -> dict:
                 continue
             res[tovar.strip()] = abc_s
         wb.close()
+        # 2026-07-18 (tasdiqlangan bug, Huzayfa: "A tovarlarim yuklanmay
+        # qolishidan qo'rqaman"): Min_Zaxira'da "Лист- 0,4" (bo'shliq bilan),
+        # Инвентарda "Лист-0,4" (bo'shliqsiz) -- nom AYNAN mos kelmagani
+        # uchun 24 ta A-toifa tovar jimgina C bo'lib, navbat oxiriga tushib
+        # qolardi. Endi normallashtirilgan (bo'shliqqa chidamli) kalit ham
+        # qo'shiladi -- _abc_olish() ikkala shaklda ham topadi.
+        try:
+            from common import normalize_product_name as _n
+            for k, v in list(res.items()):
+                res.setdefault(_n(k), v)
+        except Exception as e:
+            logger.warning("abc_map normalizatsiya: %s", e)
         logger.info("abc_map (Min_Zaxira dan): %d ta tovar", len(res))
         return res
     except Exception as e:
         logger.error("abc_map_yuklash: %s", e); return {}
+
+
+def _abc_olish(abc_map: dict, tovar) -> str:
+    """Tovar ABC sinfini qaytaradi -- avval aynan, keyin normallashtirilgan
+    nom bilan qidiradi (bo'shliq/formatlash farqiga chidamli). Topilmasa C."""
+    t = str(tovar).strip()
+    v = abc_map.get(t)
+    if v:
+        return v
+    try:
+        from common import normalize_product_name as _n
+        return abc_map.get(_n(t), "C")
+    except Exception:
+        return "C"
 
 
 def tovar_vazni(tovar_nomi: str) -> float | None:
@@ -201,7 +227,7 @@ def optimallashtir(
         abc_map = abc_map_yuklash()
     mavjud = dict(zip(mavjud_df["Товар"], mavjud_df["Миқдор"]))
     kerak = kerak_df.copy()
-    kerak["_ar"] = kerak["Товар"].map(lambda t: ABC_RANK.get(abc_map.get(str(t).strip(), "C"), 2))
+    kerak["_ar"] = kerak["Товар"].map(lambda t: ABC_RANK.get(_abc_olish(abc_map, t), 2))
     kerak["_hr"] = kerak["Холат"].map(_holat_rank)
     kerak = kerak.sort_values(["_ar", "_hr", "Кам"], ascending=[True, True, False])
 
@@ -253,7 +279,7 @@ def optimallashtir(
             continue
         key     = "list_kg"          if cat == "\u041b\u0438\u0441\u0442" else "truba_profil_kg"
         lim_key = "list"             if cat == "\u041b\u0438\u0441\u0442" else "truba_profil"
-        abc_s   = abc_map.get(str(tovar).strip(), "C")
+        abc_s   = _abc_olish(abc_map, tovar)
         # 2026-07-10 (tuzatildi): ABC diversifikatsiya cheklovi (cap_pct)
         # BARCHA tovar uchun o'chirildi -- avval faqat "kichik" tovarlarga
         # qo'llanilgandi, lekin "katta" tovarlarda ham xuddi shu muammo
