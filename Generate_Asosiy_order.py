@@ -311,19 +311,26 @@ def load_data(kanal: str = "asosiy"):
     # o'z ulushicha, alohida-alohida chiqadi.
     min_col = {"sex": PB_COL_CEX, "osh": PB_COL_OSH}.get(kanal, PB_COL_ASOSIY)
     if min_col not in inv.columns:
-        min_col = PB_COL_MIN   # eski Power BI fayli (hali yangilanmagan) — backward-compat
+        # 2026-07-18 (Huzayfa: "min zaxirasi 0 ga tenglar buyurtma
+        # berilmasligi kerak"): ESKI backward-compat bu yerda Мин_Захира
+        # (UCH KANAL JAMI) ustuniga tushardi -- natijada faqat Tsex/Osh'ga
+        # kerak tovar (bu kanaldagi mini = 0) ASOSIY kanalda ham buyurtma
+        # olib ketardi. Endi PB'da kanal ustuni bo'lmasa, min to'g'ridan-
+        # to'g'ri Min_Zaxira.xlsx'ning KANALGA MOS ustunidan olinadi
+        # (pastdagi merge) -- jami ustun ISHLATILMAYDI.
+        min_col = None
 
     cols = [PB_COL_TOVAR, PB_COL_QOLDIQ]
     if PB_COL_YOLDA in inv.columns:
         cols.append(PB_COL_YOLDA)
-    if min_col in inv.columns:
+    if min_col:
         cols.append(min_col)
 
     df = inv[cols].rename(columns={
         PB_COL_TOVAR: "tovar",
         PB_COL_QOLDIQ: "qoldiq",
         PB_COL_YOLDA: "yoldagi",
-        min_col: "min_zaxira",
+        **({min_col: "min_zaxira"} if min_col else {}),
     }).dropna(subset=["tovar"])
 
     if "yoldagi" not in df.columns:
@@ -334,11 +341,23 @@ def load_data(kanal: str = "asosiy"):
             raise FileNotFoundError(f"Min zaxira fayli topilmadi: {MIN_ZAXIRA_FILE}")
         mz = pd.read_excel(MIN_ZAXIRA_FILE, sheet_name=MZ_SHEET)
         mz.columns = [str(c).strip() for c in mz.columns]  # 'Мин_Захира ' kabi bo'shliqlar
-        mz_missing = [c for c in [MZ_COL_TOVAR, MZ_COL_MIN] if c not in mz.columns]
+        # 2026-07-18: kanalga MOS ustun (Асосий/Цех/Ош_Захира) -- jami emas.
+        mz_min_col = {"sex": "Цех_Захира", "osh": "Ош_Захира"}.get(kanal, "Асосий_Захира")
+        if mz_min_col not in mz.columns:
+            mz_min_col = MZ_COL_MIN   # juda eski Min_Zaxira formati uchun
+        mz_missing = [c for c in [MZ_COL_TOVAR, mz_min_col] if c not in mz.columns]
         if mz_missing:
             raise ValueError(f"Min_Zaxira varaqida ustunlar yetishmaydi: {', '.join(mz_missing)}")
-        mz = mz.rename(columns={MZ_COL_TOVAR: "tovar", MZ_COL_MIN: "min_zaxira"})[["tovar", "min_zaxira"]]
-        df = df.merge(mz, on="tovar", how="left")
+        mz = mz.rename(columns={MZ_COL_TOVAR: "tovar", mz_min_col: "min_zaxira"})[["tovar", "min_zaxira"]]
+        # Nomlar IKKALA tomonda ham normallashtirilib kalit qilinadi --
+        # bo'shliq/formatlash farqlari SOXTA nomuvofiqlik (min=0 -> buyurtma
+        # yo'qolishi) bermasin. df.tovar asl holicha qoladi (ko'rsatish uchun).
+        from common import normalize_product_name as _norm_mz
+        mz["_k"] = mz["tovar"].astype(str).map(_norm_mz)
+        mz["min_zaxira"] = pd.to_numeric(mz["min_zaxira"], errors="coerce").fillna(0)
+        mz = mz.groupby("_k", as_index=False)["min_zaxira"].max()
+        df["_k"] = df["tovar"].astype(str).map(_norm_mz)
+        df = df.merge(mz, on="_k", how="left").drop(columns=["_k"])
 
     for col in ["qoldiq", "yoldagi", "min_zaxira"]:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
