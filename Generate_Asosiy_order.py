@@ -336,28 +336,40 @@ def load_data(kanal: str = "asosiy"):
     if "yoldagi" not in df.columns:
         df["yoldagi"] = 0
 
-    if "min_zaxira" not in df.columns:
-        if not MIN_ZAXIRA_FILE.exists():
-            raise FileNotFoundError(f"Min zaxira fayli topilmadi: {MIN_ZAXIRA_FILE}")
+    # ── 2026-07-18 (Huzayfa: "min zaxirasi 0 ga tenglar buyurtma
+    # berilmasligi kerak"): Min_Zaxira.xlsx — YAKUNIY (authoritative) manba.
+    # ILGARI min faqat PB Инвентар'dan olinardi; PB esa "Ma'lumotlarni
+    # yangilash"dagina qayta quriladi — Huzayfa Min_Zaxira.xlsx'da min'ni
+    # 0 qilsa ham, PB yangilanmaguncha buyurtma ESKI min bilan chiqaverardi.
+    # Endi Min_Zaxira.xlsx'dagi KANALGA MOS ustun har doim PB qiymatining
+    # USTIDAN yoziladi — faylni tahrirlagan zahoti kuchga kiradi. Faylda
+    # yo'q tovarlar uchun PB qiymati (bo'lsa) saqlanadi.
+    if MIN_ZAXIRA_FILE.exists():
         mz = pd.read_excel(MIN_ZAXIRA_FILE, sheet_name=MZ_SHEET)
         mz.columns = [str(c).strip() for c in mz.columns]  # 'Мин_Захира ' kabi bo'shliqlar
-        # 2026-07-18: kanalga MOS ustun (Асосий/Цех/Ош_Захира) -- jami emas.
         mz_min_col = {"sex": "Цех_Захира", "osh": "Ош_Захира"}.get(kanal, "Асосий_Захира")
         if mz_min_col not in mz.columns:
             mz_min_col = MZ_COL_MIN   # juda eski Min_Zaxira formati uchun
-        mz_missing = [c for c in [MZ_COL_TOVAR, mz_min_col] if c not in mz.columns]
-        if mz_missing:
-            raise ValueError(f"Min_Zaxira varaqida ustunlar yetishmaydi: {', '.join(mz_missing)}")
-        mz = mz.rename(columns={MZ_COL_TOVAR: "tovar", mz_min_col: "min_zaxira"})[["tovar", "min_zaxira"]]
-        # Nomlar IKKALA tomonda ham normallashtirilib kalit qilinadi --
-        # bo'shliq/formatlash farqlari SOXTA nomuvofiqlik (min=0 -> buyurtma
-        # yo'qolishi) bermasin. df.tovar asl holicha qoladi (ko'rsatish uchun).
-        from common import normalize_product_name as _norm_mz
-        mz["_k"] = mz["tovar"].astype(str).map(_norm_mz)
-        mz["min_zaxira"] = pd.to_numeric(mz["min_zaxira"], errors="coerce").fillna(0)
-        mz = mz.groupby("_k", as_index=False)["min_zaxira"].max()
-        df["_k"] = df["tovar"].astype(str).map(_norm_mz)
-        df = df.merge(mz, on="_k", how="left").drop(columns=["_k"])
+        if MZ_COL_TOVAR in mz.columns and mz_min_col in mz.columns:
+            # Nomlar IKKALA tomonda ham normallashtirilib kalit qilinadi --
+            # bo'shliq/formatlash farqlari SOXTA nomuvofiqlik bermasin.
+            from common import normalize_product_name as _norm_mz
+            mzv = mz[[MZ_COL_TOVAR, mz_min_col]].dropna(subset=[MZ_COL_TOVAR]).copy()
+            mzv["_k"]   = mzv[MZ_COL_TOVAR].astype(str).map(_norm_mz)
+            # Bo'sh katak = 0 (bu kanalda meyor yo'q -> buyurtma berilmaydi)
+            mzv["_min"] = pd.to_numeric(mzv[mz_min_col], errors="coerce").fillna(0)
+            mz_map = mzv.groupby("_k")["_min"].max()
+            _k   = df["tovar"].astype(str).map(_norm_mz)
+            _ovr = _k.map(mz_map)
+            if "min_zaxira" in df.columns:
+                df["min_zaxira"] = _ovr.fillna(pd.to_numeric(df["min_zaxira"], errors="coerce"))
+            else:
+                df["min_zaxira"] = _ovr
+
+    if "min_zaxira" not in df.columns:
+        raise FileNotFoundError(
+            f"Min zaxira manbasi topilmadi: PB'da kanal ustuni ham yo'q, "
+            f"Min_Zaxira.xlsx ham yo'q ({MIN_ZAXIRA_FILE})")
 
     for col in ["qoldiq", "yoldagi", "min_zaxira"]:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
