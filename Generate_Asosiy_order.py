@@ -100,20 +100,38 @@ SORTED_CATS = {"Труба","Профиль","Лист"}
 #     buyurtsa bo'ladi); Лист va boshqa kategoriyalarga daxli yo'q.
 MAYDA_LIMIT = 200
 
-# 2026-07-18 (Huzayfa qoidasi): qalin Лист (qalinligi 1,5 va undan yuqori,
-# marka muhim emas) buyurtmasi 50 ga YAXLITLANMAYDI — aniq son ochiq
-# yoziladi (og'ir/qimmat mahsulot, ortiqcha yaxlitlash katta pul).
+# 2026-07-18 (Huzayfa qoidasi): YIRIK/og'ir tovarlar buyurtmasi 50 ga
+# YAXLITLANMAYDI — aniq son ochiq yoziladi (og'ir/qimmat mahsulot,
+# yaxlitlash katta pulga aylanadi). Qamrov:
+#   * Лист    — qalinligi 1,5 va undan yuqori (marka muhim emas)
+#   * Труба   — diametri 76 dan KATTA (Ф-76 ning o'zi yaxlitlanADI)
+#   * Профиль — biror tomoni 60 va undan katta (60х40, 60х60, 80х80, 100х100...)
+# Безшовный труба alohida kategoriya — unga tegilmaydi (yaxlitlanadi).
 LIST_YAXLIT_QALINLIK = 1.5
+TRUBA_YAXLIT_DIA     = 76
+PROFIL_YAXLIT_TOMON  = 60
 
 def _list_yaxlitlanmasmi(tovar) -> bool:
-    """True — bu tovar qalin Лист, buyurtmasi yaxlitlanmasin."""
-    m = re.search(r'Лист-\s*([\d,\.]+)', str(tovar))
-    if not m:
-        return False
-    try:
-        return float(m.group(1).replace(',', '.')) >= LIST_YAXLIT_QALINLIK
-    except ValueError:
-        return False
+    """True — yirik tovar (qalin Лист / katta Труба / katta Профиль),
+    buyurtmasi yaxlitlanmasin. Kategoriya bilan himoyalangan — _dia_f/_d1_f
+    topilmasa 9999 qaytarishi noto'g'ri trigger bermasin."""
+    t   = str(tovar)
+    kat = get_category(t)
+    if kat == "Лист":
+        m = re.search(r'Лист-\s*([\d,\.]+)', t)
+        if not m:
+            return False
+        try:
+            return float(m.group(1).replace(',', '.')) >= LIST_YAXLIT_QALINLIK
+        except ValueError:
+            return False
+    if kat == "Труба":
+        d = _dia_f(t)
+        return d != 9999.0 and d > TRUBA_YAXLIT_DIA
+    if kat == "Профиль":
+        d1, d2 = _d1_f(t), _d2_f(t)
+        return d1 != 9999.0 and max(d1, d2) >= PROFIL_YAXLIT_TOMON
+    return False
 
 def mayda_buyurtma_limiti(tovar, kategoriya) -> int:
     """Tovar uchun minimal buyurtma chegarasi: mayda truba/profil -> 200,
