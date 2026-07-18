@@ -25,6 +25,11 @@ XITOY_DELTA = 0.05
 #   Inventar 1,5  -> Xitoy 1.45  (normal -0.05)
 STENKA_EXCEPTION = frozenset({1.35, 1.45})
 
+# 2026-07-18 (Huzayfa): Лист-0,4 uchun minusovka YO'Q — Xitoy ham bu
+# mahsulotni aynan 0,4 deb yozadi (boshqa listlardagi -0,05 siljish bu
+# mahsulotga tegishli emas). Faqat Лист'ga qo'llanadi (truba/profil emas).
+LIST_EXCEPTION = frozenset({0.4})
+
 
 def _to_float(s: str) -> float:
     cleaned = str(s).replace(',', '.').strip('.')
@@ -59,6 +64,8 @@ def xitoy_nomi(name: str) -> str:
     def _sub_list(m):
         old_val = _to_float(m.group(1))
         if old_val in STENKA_EXCEPTION:   # 1.35, 1.45 Лист uchun ham istisnо
+            return m.group(0)
+        if old_val in LIST_EXCEPTION:     # 2026-07-18: 0,4 minusovka bo'lmaydi
             return m.group(0)
         new_s   = _stenka_str(old_val - XITOY_DELTA)
         return m.group(0).replace(m.group(1), new_s, 1)

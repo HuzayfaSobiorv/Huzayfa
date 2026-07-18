@@ -102,7 +102,7 @@ def tovar_sort_key(nom: str, kat: str) -> tuple:
 # ZANJIR SIMULYATSIYASI
 # ============================================================
 def zanjir_sim(qoldiq: float, min_z: float,
-               konteynerlar: list) -> dict:
+               konteynerlar: list, yaxlitla: bool = True) -> dict:
     """
     Kun-ma-kun zanjir simulyatsiyasi (2026-07-14 qayta yozildi).
 
@@ -212,7 +212,9 @@ def zanjir_sim(qoldiq: float, min_z: float,
     if min_nuqta < min_z:
         nishon = min_z + kunlik * BUYURTMA_SIKL_KUN
         taklif = max(0.0, nishon - (qoldiq_gorizont + kech_jami))
-    taklif_50 = _50(taklif)
+    # 2026-07-18 (Huzayfa): yaxlitla=False -- qalin Лист (>=1,5) uchun
+    # buyurtma 50 ga yaxlitlanmaydi, aniq son ochiq qoldiriladi.
+    taklif_50 = _50(taklif) if yaxlitla else (int(math.ceil(taklif)) if taklif > 0 else 0)
 
     # Xavf darajasi
     if uzilish_kun is not None:

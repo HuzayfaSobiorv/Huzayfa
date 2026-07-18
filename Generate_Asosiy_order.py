@@ -100,6 +100,21 @@ SORTED_CATS = {"Труба","Профиль","Лист"}
 #     buyurtsa bo'ladi); Лист va boshqa kategoriyalarga daxli yo'q.
 MAYDA_LIMIT = 200
 
+# 2026-07-18 (Huzayfa qoidasi): qalin Лист (qalinligi 1,5 va undan yuqori,
+# marka muhim emas) buyurtmasi 50 ga YAXLITLANMAYDI — aniq son ochiq
+# yoziladi (og'ir/qimmat mahsulot, ortiqcha yaxlitlash katta pul).
+LIST_YAXLIT_QALINLIK = 1.5
+
+def _list_yaxlitlanmasmi(tovar) -> bool:
+    """True — bu tovar qalin Лист, buyurtmasi yaxlitlanmasin."""
+    m = re.search(r'Лист-\s*([\d,\.]+)', str(tovar))
+    if not m:
+        return False
+    try:
+        return float(m.group(1).replace(',', '.')) >= LIST_YAXLIT_QALINLIK
+    except ValueError:
+        return False
+
 def mayda_buyurtma_limiti(tovar, kategoriya) -> int:
     """Tovar uchun minimal buyurtma chegarasi: mayda truba/profil -> 200,
     qolganlarga 0 (ya'ni cheklovsiz)."""
@@ -401,7 +416,8 @@ def calculate(df, kont_map: dict | None = None):
             # bitta konteyner sifatida DELIVERY_DAYS kunda keladi deb faraz
             # qilamiz, shunda ham funksiya ishlayveradi.
             konts = [(DELIVERY_DAYS, row["yoldagi"])] if row["yoldagi"] > 0 else []
-        sim = zanjir_sim(row["qoldiq"], row["min_zaxira"], konts)
+        sim = zanjir_sim(row["qoldiq"], row["min_zaxira"], konts,
+                         yaxlitla=not _list_yaxlitlanmasmi(row["tovar"]))
         return sim["taklif"]
 
     df["buyurtma"] = df.apply(_buyurtma, axis=1).astype(int)
