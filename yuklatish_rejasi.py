@@ -666,37 +666,10 @@ def excel_yaz(yuklar: list[dict], qolgan: list[dict],
     vazn_yoq  = vazn_yoq or []
     qoldiq_yolda_map = qoldiq_yolda_map or {}
     wb = Workbook()
-    ws = wb.active
-    ws.title = "Yuklatish Rejasi"
-    ws.sheet_view.showGridLines = False
-    _set_widths(ws)
-
-    # ── Asosiy sarlavha ──────────────────────────────────────────────────────
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=NC)
-    c_main = ws.cell(row=1, column=1)
-    c_main.value = (
-        f"  🏭  NEJAVIYKA — Yuklatish Rejasi"
-        f"    │    Kanal: {kanal.upper()}"
-        f"    │    {datetime.now().strftime('%d.%m.%Y %H:%M')}"
-        f"    │    Jami: {len(yuklar)} konteyner"
-    )
-    c_main.font      = _font(bold=True, size=14, color=C_WHITE)
-    c_main.fill      = _fill(C_HDR_MAIN)
-    c_main.alignment = _align(h="left", indent=1)
-    c_main.border    = _border("medium", C_WHITE)
-    ws.row_dimensions[1].height = 40
-
-    row = 3  # 2-qator bo'sh
 
     start_sana_str = yuklar[0].get("yuklatish_sana", datetime.now().strftime("%d.%m.%Y")) if yuklar else "—"
 
-    # 2026-07-11: to'liq (>=85%) va chala (to'liq to'lmagan) konteynerlar
-    # alohida-alohida ko'rsatiladi -- chala aralashib, "hammasi tayyor"
-    # degan taassurot bermasin.
-    full_yuklar  = [y for y in yuklar if _yuk_toliqmi(y)]
-    chala_yuklar = [y for y in yuklar if not _yuk_toliqmi(y)]
-
-    def _render_bir_yuk(row: int, num: int, yuk: dict) -> int:
+    def _render_bir_yuk(ws, row: int, num: int, yuk: dict) -> int:
         row = _yuk_header(ws, row, num, yuk)
 
         # Kategoriya bo'yicha tartiblash va alternating rang
@@ -721,26 +694,77 @@ def excel_yaz(yuklar: list[dict], qolgan: list[dict],
 
         return _separator(ws, row)
 
-    for i, yuk in enumerate(full_yuklar, 1):
-        row = _render_bir_yuk(row, i, yuk)
+    def _sheet_toldir(ws, yuklar_t: list[dict], turi_label: str):
+        """Bitta varaqni (6m yoki 12m) to'ldiradi. 2026-07-18 (Huzayfa):
+        konteynerlar endi turi bo'yicha alohida varaqlarda -- mantiq
+        o'zgarmagan, faqat Excel tuzilishi. Sana tartibi varaq ichida
+        saqlanadi (yuklar ro'yxati allaqachon sana tartibida)."""
+        ws.sheet_view.showGridLines = False
+        _set_widths(ws)
 
-    if chala_yuklar:
-        row = _empty_rows(ws, row, 2)
-        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NC)
-        c_warn = ws.cell(row=row, column=1,
-                         value="  ⚠️   TO'LIQ TO'LMAGAN KONTEYNERLAR — qo'shimcha tovar bilan to'ldirish kerak")
-        c_warn.font      = _font(bold=True, size=12, color=C_WHITE)
-        c_warn.fill      = _fill("C0392B")
-        c_warn.alignment = _align(h="left", indent=1)
-        c_warn.border    = _border()
-        ws.row_dimensions[row].height = 28
-        row += 1
-        for i, yuk in enumerate(chala_yuklar, 1):
-            row = _render_bir_yuk(row, i, yuk)
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=NC)
+        c_main = ws.cell(row=1, column=1)
+        c_main.value = (
+            f"  🏭  NEJAVIYKA — Yuklatish Rejasi  │  {turi_label}"
+            f"    │    Kanal: {kanal.upper()}"
+            f"    │    {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+            f"    │    Jami: {len(yuklar_t)} ta"
+        )
+        c_main.font      = _font(bold=True, size=14, color=C_WHITE)
+        c_main.fill      = _fill(C_HDR_MAIN)
+        c_main.alignment = _align(h="left", indent=1)
+        c_main.border    = _border("medium", C_WHITE)
+        ws.row_dimensions[1].height = 40
 
-    row = _qolgan_blok(ws, row, qolgan)
-    row = _kerak_yoq_blok(ws, row, kerak_yoq)
-    _vazn_yoq_blok(ws, row, vazn_yoq)
+        row = 3  # 2-qator bo'sh
+
+        if not yuklar_t:
+            c = ws.cell(row=row, column=1, value="  Bu turdagi konteyner yo'q.")
+            c.font = _font(bold=False, size=11, color="777777")
+            return
+
+        # 2026-07-11: to'liq (>=85%) va chala (to'liq to'lmagan) konteynerlar
+        # alohida-alohida ko'rsatiladi -- chala aralashib, "hammasi tayyor"
+        # degan taassurot bermasin.
+        full_yuklar  = [y for y in yuklar_t if _yuk_toliqmi(y)]
+        chala_yuklar = [y for y in yuklar_t if not _yuk_toliqmi(y)]
+
+        for i, yuk in enumerate(full_yuklar, 1):
+            row = _render_bir_yuk(ws, row, i, yuk)
+
+        if chala_yuklar:
+            row = _empty_rows(ws, row, 2)
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NC)
+            c_warn = ws.cell(row=row, column=1,
+                             value="  ⚠️   TO'LIQ TO'LMAGAN KONTEYNERLAR — qo'shimcha tovar bilan to'ldirish kerak")
+            c_warn.font      = _font(bold=True, size=12, color=C_WHITE)
+            c_warn.fill      = _fill("C0392B")
+            c_warn.alignment = _align(h="left", indent=1)
+            c_warn.border    = _border()
+            ws.row_dimensions[row].height = 28
+            row += 1
+            for i, yuk in enumerate(chala_yuklar, 1):
+                row = _render_bir_yuk(ws, row, i, yuk)
+
+    # ── 2026-07-18: 1-varaq -- 6m konteynerlar, 2-varaq -- 12m mashinalar ────
+    yuk6  = [y for y in yuklar if y.get("turi") == "6m"]
+    yuk12 = [y for y in yuklar if y.get("turi") == "12m"]
+
+    ws6 = wb.active
+    ws6.title = "6m Konteynerlar"
+    _sheet_toldir(ws6, yuk6, "📦 6m Konteynerlar")
+
+    ws12 = wb.create_sheet("12m Mashinalar")
+    _sheet_toldir(ws12, yuk12, "🚛 12m Mashinalar")
+
+    # ── Yuklanmagan ro'yxatlar -- alohida varaq ──────────────────────────────
+    if qolgan or kerak_yoq or vazn_yoq:
+        wsq = wb.create_sheet("Yuklanmaganlar")
+        wsq.sheet_view.showGridLines = False
+        _set_widths(wsq)
+        row = _qolgan_blok(wsq, 1, qolgan)
+        row = _kerak_yoq_blok(wsq, row, kerak_yoq)
+        _vazn_yoq_blok(wsq, row, vazn_yoq)
 
     # Xulosa varaqi
     _xulosa_varaq(wb, yuklar, qolgan, kanal, start_sana_str)
