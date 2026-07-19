@@ -1003,7 +1003,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kat   = kut[2] if isinstance(kut, tuple) and len(kut) > 2 else "truba"
         if idx < len(tovs):
             await query.edit_message_text("⏳ Karta tayyorlanmoqda...")
-            await grafik_ko_rsatish(query.message, tovs[idx], kanal, kat)
+            await grafik_ko_rsatish(query.message, tovs[idx], kanal, kat,
+                                    context=context)
         else:
             await query.edit_message_text("❌ Xato — qayta urinib ko'ring.")
 
@@ -1228,7 +1229,8 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if len(tovs) == 1:
                 # kutilmoqda ni saqlaymiz — davomiy qidiruv uchun
                 await msg.reply_text("⏳ Grafik chizilmoqda...")
-                await grafik_ko_rsatish(msg, tovs[0], kanal, kat)
+                await grafik_ko_rsatish(msg, tovs[0], kanal, kat,
+                                        context=context)
             else:
                 context.user_data["grafik_natijalar"] = tovs
                 sent = await msg.reply_text(

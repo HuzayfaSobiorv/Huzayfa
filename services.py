@@ -605,7 +605,12 @@ def grafik_qidirish(query: str, kat: str, kanal: str) -> pd.DataFrame:
         parts = [p.strip() for p in query.split('->')]
     else:
         parts = [p.strip() for p in query.split()]
-    df = inventar_olish(kanal)
+    # 2026-07-18 (Huzayfa: "ko'plab tsex tovarlarini qidiruvdan topib
+    # bo'lmayapti", masalan Ж-1 lar): kanal filtri OLIB TASHLANDI — ilgari
+    # asosiy kanaldan qidirilganda ЦЕХ🏭 tovarlari (Ж-1 va h.k.) umuman
+    # topilmasdi. Umumiy qidiruvda bu 2026-07-14 da tuzatilgandi — endi
+    # kategoriyali (grafik) qidiruvda ham butun inventar qidiriladi.
+    df = inventar_olish(None)
     if df.empty or "Товар" not in df.columns:
         return pd.DataFrame()
 
@@ -653,11 +658,27 @@ def grafik_qidirish(query: str, kat: str, kanal: str) -> pd.DataFrame:
             return names.str.contains(f'ст {_qn(p)}', na=False, case=False)
         return names.str.contains(re.escape(p), na=False, case=False)
 
+    # 2026-07-18 (Huzayfa: "25 25 0,9 5,8 Ж 1 topilmayapti, ketma-ketlik
+    # muhim emas"): rol-mask juda qat'iy edi — masalan "Ж 1" dagi "1"
+    # tokeni STENKA deb qabul qilinib "ст 1" qidirilardi va hech narsa
+    # topilmasdi. Endi har token YO o'z roli bo'yicha, YO umumiy
+    # (raqam-chegarali substring) bo'yicha mos kelsa yetadi — "1" tokeni
+    # "Ж-1" dagi 1 ga ham mos keladi, "201"/"1220" larga esa adashmaydi.
+    def _token_mask(p: str):
+        p = p.strip()
+        pat = re.escape(p)
+        if p and p[0].isdigit():
+            pat = r'(?<!\d)' + pat
+        if p and p[-1].isdigit():
+            pat = pat + r'(?!\d)'
+        generic = names.str.contains(pat, na=False, case=False, regex=True)
+        return _rol_mask(p) | generic
+
     if kat == "truba":
         if len(parts) >= 1:
             mask &= names.str.contains(f'Ф-{_qn(parts[0])}', na=False, case=False)
         for p in parts[1:]:
-            mask &= _rol_mask(p)
+            mask &= _token_mask(p)
 
     elif kat == "profil":
         # "20 20 0,7 6 201" yoki "20х20 0,7 6 201" — ikkalasi ishlaydi
@@ -683,17 +704,16 @@ def grafik_qidirish(query: str, kat: str, kanal: str) -> pd.DataFrame:
         mask &= names.str.contains(r'Пр\.', na=False, regex=True)
         if olcham:
             mask &= names.str.contains(_qn(olcham), na=False, case=False)
-        # 2026-07-14: qolgan qismlar roli qiymatiga qarab (yuqoridagi _rol_mask)
+        # 2026-07-18: qolgan qismlar — rol YOKI umumiy moslik (_token_mask)
         for p in parts[idx:]:
-            mask &= _rol_mask(p)
+            mask &= _token_mask(p)
 
     elif kat == "list":
         if len(parts) >= 1:
             mask &= names.str.contains(f'Лист.*{_qn(parts[0])}', na=False, case=False)
-        if len(parts) >= 2:
-            mask &= names.str.contains(parts[1].strip(), na=False, case=False)
-        if len(parts) >= 3:
-            mask &= names.str.contains(parts[2].strip(), na=False, case=False)
+        # 2026-07-18: qolgan qismlar tartib-erkin, raqam-chegarali moslik
+        for p in parts[1:]:
+            mask &= _token_mask(p)
 
     elif kat == "bal":
         q = query.strip()

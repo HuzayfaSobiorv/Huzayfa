@@ -257,7 +257,8 @@ def get_action(lang: str, screen: str, text: str):
     return MAP.get(screen, {}).get(text)
 
 
-async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba"):
+async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
+                            context=None):
     """Tovar kartasi: matn zudlik bilan, grafik keyin alohida."""
     from kamomat_engine import grafik_chiz, zanjir_sim
     loop = asyncio.get_event_loop()
@@ -329,17 +330,57 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba"):
 
     holat, qoldiq, min_z, yolda_j, sim, kont_list, kont_rows = result
 
-    # 2026-07-16 (Huzayfa): min-zaxira 0 bo'lgan ("meyor yo'q", buyurtmada
-    # kuzatilmaydigan) tovar qidiruvda ICHKI holat (min-zaxira yo'q) sifatida
-    # emas, mijozbop "aksiya mahsulot sifatida sotuvdan chiqarilgan" deb
-    # ko'rsatiladi — boshqa hech qanday hisob-kitob/grafik chiqmaydi.
+    # 2026-07-18 (Huzayfa, qayta ishlandi — eski 2026-07-16 qoida faqat
+    # aksessuarlar uchun edi):
+    #   * Стойка/Балясина (aksessuar): eski "aksiya" matni qoladi.
+    #   * Труба/Профиль/Лист, min=0, YO'LDA yuk BOR: karta TO'LIQ
+    #     ko'rsatiladi (foydalanuvchi yo'ldagi holatini ko'ra olsin).
+    #   * Труба/Профиль/Лист, min=0, yo'lda ham YO'Q: "sotuvdan chiqarib
+    #     yuborilmoqda" deyiladi va shu tovarning BOSHQA UZUNLIKDAGI faol
+    #     variantlari tugma qilib taklif etiladi (Huzayfa 6м larni 0 qilgan,
+    #     5,8 qulay — 6м qidirgan user panikaga tushmasin, bir bosishda
+    #     5,8 variantidan "bahra olsin").
     if min_z <= 0:
-        await msg.reply_text(
-            f"🏷 *{tovar}*\n\n"
-            "Bu mahsulot aksiya mahsulot sifatida sotuvdan chiqarilgan.",
-            parse_mode="Markdown",
-        )
-        return
+        import re as _re
+        _tpl = bool(_re.match(r'^(\([^)]*\)\s*)?(Ф-|Пр\s*\.|Лист)',
+                              str(tovar).strip(), _re.I))
+        if not _tpl:
+            await msg.reply_text(
+                f"🏷 *{tovar}*\n\n"
+                "Bu mahsulot aksiya mahsulot sifatida sotuvdan chiqarilgan.",
+                parse_mode="Markdown",
+            )
+            return
+        yolda_bor = yolda_j > 0 or bool(kont_rows) or bool(kont_list)
+        if not yolda_bor:
+            # Boshqa uzunlikdagi faol (min>0) variantlarni topamiz
+            variants = []
+            try:
+                inv_all = _get_inv()
+                _uz = _re.compile(r'\s*\([\d,\.]+\s*м\)')
+                base = _uz.sub('', str(tovar)).strip()
+                for _, rr in inv_all.iterrows():
+                    nm = str(rr.get("Товар", "")).strip()
+                    if not nm or nm == str(tovar).strip():
+                        continue
+                    if _uz.sub('', nm).strip() == base and \
+                            float(rr.get("Мин_Захира", 0) or 0) > 0:
+                        variants.append(nm)
+            except Exception:
+                variants = []
+            txt = (f"🏷 *{tovar}*\n\n"
+                   "Bu mahsulot sotuvdan chiqarib yuborilmoqda.")
+            if variants and context is not None:
+                from keyboards import grafik_tovar_ikb
+                context.user_data["grafik_natijalar"] = variants
+                txt += "\n\n💡 Uning o'rniga quyidagi variantlari sotuvda bor:"
+                sent = await msg.reply_text(txt, parse_mode="Markdown",
+                                            reply_markup=grafik_tovar_ikb(variants))
+                aktiv_inline_belgila(context, sent)
+            else:
+                await msg.reply_text(txt, parse_mode="Markdown")
+            return
+        # yo'lda bor — karta odatdagidek davom etadi (pastda), faqat eslatma qo'shiladi
 
     uzilish = sim.get("uzilish_kun")
     taklif  = sim.get("taklif", 0)
@@ -384,9 +425,14 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba"):
     if uzilish is None and qoldiq < min_z:
         kam_ombor_txt = "\n⚠️ Omborda kam qoldi"
 
+    # 2026-07-18: min=0, lekin yo'lda yuk bor — foydalanuvchiga aniq aytamiz
+    meyor0_txt = ""
+    if min_z <= 0:
+        meyor0_txt = "\n🏷 Sotuvdan chiqarib yuborilmoqda — yo'ldagi yuk ma'lumoti:"
+
     text_card = (
         f"📊 *{tovar}*\n\n"
-        f"{holat}\n"
+        f"{holat}{meyor0_txt}\n"
         f"Qoldiq: *{int(qoldiq):,}*{kam_ombor_txt}\n"
         f"Yo'lda jami: *{int(yolda_j):,}*\n\n"
         f"▬▬▬▬▬▬▬▬▬▬▬▬\n\n"
