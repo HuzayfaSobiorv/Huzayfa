@@ -64,7 +64,18 @@ YOLDA_KUN       = KELISH_KUNI   # alias (eski kod uchun)
 # kamomat holat, qidiruv/grafik — bittasi ham boshqacha son ishlatmasin).
 # DIQQAT: bu KELISH_KUNI (55, haqiqiy yetib kelish vaqti) bilan ADASHTIRILMASIN
 # — u alohida, jismoniy konstanta, o'zgarishsiz qoladi.
-KUNLIK_SOTUV_BOLISH = 30
+#
+# 2026-07-21 (Huzayfa bilan kelishildi — "juda ko'p buyurtma beryapti"
+# shikoyati tekshirilgach): tarix/*.xlsx dagi haqiqiy kunlik sotuv bilan
+# solishtirilganda 30ga bo'lish deyarli hamma tovarda real sotuvdan
+# 1,6-2,9 baravar (ba'zan ko'proq) katta "kunlik" chiqarardi -- natijada
+# buyurtmalar shishib ketardi. Har tovar uchun ALOHIDA real-tarix hisobi
+# (real_kunlik_sotuv.py) sinovdan o'tkazildi va ishlagan bo'lsa-da,
+# Huzayfa buni ORTGA QAYTARDI (murakkab/xavfli, git revertlandi) va
+# o'rniga ODDIY, universal tuzatishni tanladi: 30 o'rniga 45ga bo'lish.
+# Bu 5ta sinov tovarida o'rtacha xatoni ~117%dan ~45%gacha kamaytiradi
+# (mukammal emas, lekin bir qatorlik, past xavfli tuzatish).
+KUNLIK_SOTUV_BOLISH = 45
 # 2026-07-14 (Huzayfa bilan kelishildi, "order-up-to" mantiq): buyurtma
 # berilganda zaxira min ustiga yana necha KUNlik savdoga yetadigan qilib
 # to'ldiriladi. Katta son = kam, lekin yirik buyurtmalar. Bu kamomat_engine

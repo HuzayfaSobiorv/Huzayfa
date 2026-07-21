@@ -1023,7 +1023,7 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
     ombor_map = (mavjud or {}).get("ombor") or {}
 
     _df, _kont_map = load_data(kanal=kanal)
-    df_calc = calculate(_df, _kont_map, kanal=kanal)
+    df_calc = calculate(_df, _kont_map)
 
     # ── Xitoy nomi to'qnashgan qatorlarni birlashtirish (2026-07-14) ────────
     # Inventarda IKKI XIL nom (masalan "ст 1,4" va "ст 1,35") Xitoy qoidasi

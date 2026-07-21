@@ -17,9 +17,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from kamomat_engine import zanjir_sim
 from common import KELISH_KUNI, KUNLIK_SOTUV_BOLISH, BUYURTMA_SIKL_KUN
 
-# Standart misol: min=3000 → kunlik = 100
+# Standart misol: min=3000 → kunlik = 66,67
+# (2026-07-21: KUNLIK_SOTUV_BOLISH 30 dan 45ga o'zgartirildi — pastdagi
+# barcha kutilgan sonlar shu divisor asosida qayta hisoblangan.)
 MIN = 3000
-KUNLIK = MIN / KUNLIK_SOTUV_BOLISH  # 100
+KUNLIK = MIN / KUNLIK_SOTUV_BOLISH  # 66,67
 
 
 class TestGorizont:
@@ -32,23 +34,23 @@ class TestGorizont:
         s = zanjir_sim(qoldiq=2500, min_z=MIN, konteynerlar=[(10, 2000)])
         # 2026-07-18 (lost-sales clamp): 55-kun prognoz endi 0 da to'xtaydi
         # (minus "yo'qotilgan sotuv" buyurtmaga qo'shilmaydi).
-        # nishon: 3000 + 100*30 = 6000 → taklif = 6000 - 0 = 6000
-        assert s["taklif"] == 6000
-        assert s["min_nuqta"] == -1000   # min_nuqta clamp'siz (axborot uchun)
+        # nishon: 3000 + 66,67*30 = 5000; 55-kun qoldiq ≈833 → taklif = 4200
+        assert s["taklif"] == 4200
+        assert s["min_nuqta"] == 833   # min_nuqta clamp'siz (axborot uchun)
         assert s["xavf"] == "KRITIK"
 
     def test_uzilish_kuni_gorizont_ichida(self):
         s = zanjir_sim(qoldiq=5900, min_z=MIN, konteynerlar=[])
-        # (5900-3000)/100 = 29-kun min chizig'i kesiladi
-        assert s["uzilish_kun"] == 29
+        # (5900-3000)/66,67 ≈ 43,5-kun min chizig'i kesiladi
+        assert s["uzilish_kun"] == 43
 
     def test_kech_konteyner_hisobga_olinadi_lekin_simga_kirmaydi(self):
         """55+ kunda keladigan konteyner: uzilishni oldini olmaydi,
         lekin buyurtma hajmidan ayiriladi (ikki marta buyurmaslik)."""
-        s = zanjir_sim(qoldiq=3000, min_z=MIN, konteynerlar=[(60, 5000)])
-        # 55-kun: 3000 - 5500 → clamp bilan 0 → uzilish bor
+        s = zanjir_sim(qoldiq=3000, min_z=MIN, konteynerlar=[(60, 4000)])
+        # 55-kun: 3000 - 3667 → clamp bilan 0 → uzilish bor
         assert s["xavf"] == "KRITIK"
-        # 2026-07-18 (lost-sales clamp): nishon 6000 - (0 + 5000) = 1000
+        # 2026-07-18 (lost-sales clamp): nishon 5000 - (0 + 4000) = 1000
         assert s["taklif"] == 1000
 
 
@@ -65,14 +67,14 @@ class TestOrderUpTo:
         """ESKI BUG: qoldiq=5800 da 200 talik mikro-taklif chiqardi.
         YANGI: trigger otilgach bir yo'la yirik buyurtma."""
         s = zanjir_sim(qoldiq=5800, min_z=MIN, konteynerlar=[])
-        # 55-kun: 300 → taklif = 6000 - 300 = 5700 (mayda emas!)
-        assert s["taklif"] == 5700
+        # 55-kun: ≈2133 → taklif = 5000 - 2133 = 2867 → 50ga yaxlit 2900 (mayda emas!)
+        assert s["taklif"] == 2900
         assert s["taklif"] >= KUNLIK * BUYURTMA_SIKL_KUN  # kamida ~1 oylik
 
     def test_trigger_chegarasi(self):
-        """Trigger aynan: qoldiq < min + 55 kunlik savdo (= 8500)."""
-        assert zanjir_sim(8500, MIN, [])["taklif"] == 0   # roppa-rosa yetadi
-        assert zanjir_sim(8400, MIN, [])["taklif"] > 0    # 100 ta kam — trigger
+        """Trigger aynan: qoldiq < min + 55 kunlik savdo (≈ 6667)."""
+        assert zanjir_sim(6667, MIN, [])["taklif"] == 0   # roppa-rosa yetadi
+        assert zanjir_sim(6666, MIN, [])["taklif"] > 0    # 1 ta kam — trigger
 
     def test_buyurtmadan_keyin_uzoq_jim(self):
         """Buyurtma berilgandan keyin (yo'lda deb hisoblasak) tovar

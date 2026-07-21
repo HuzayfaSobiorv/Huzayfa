@@ -102,19 +102,9 @@ def tovar_sort_key(nom: str, kat: str) -> tuple:
 # ZANJIR SIMULYATSIYASI
 # ============================================================
 def zanjir_sim(qoldiq: float, min_z: float,
-               konteynerlar: list, yaxlitla: bool = True,
-               kunlik_override: float | None = None) -> dict:
+               konteynerlar: list, yaxlitla: bool = True) -> dict:
     """
     Kun-ma-kun zanjir simulyatsiyasi (2026-07-14 qayta yozildi).
-
-    kunlik_override (2026-07-21, Huzayfa bilan kelishildi -- real
-    kunlik sotuv loyihasi): berilsa va > 0 bo'lsa, "kunlik" (qoldiq
-    kuniga qancha kamayishi) min_z/KUNLAR o'rniga shu qiymatdan
-    olinadi -- masalan real_kunlik_sotuv.py'dan hisoblangan HAQIQIY
-    tarixiy sotuv tezligi. Boshqa hech narsa o'zgarmaydi (nishon,
-    horizon, lost-sales clamp -- barchasi bir xil, faqat "kunlik"
-    manbasi almashadi). None yoki <=0 bo'lsa -- eski xatti-harakat
-    (min_z/KUNLAR) saqlanadi.
 
     Qoldiq kuniga (min_z / KUNLAR=30) kamayadi, har konteyner o'z kunida
     miqdorini qo'shadi. Gorizont — KELISH_KUNI (55) kun: bugun berilgan
@@ -152,8 +142,7 @@ def zanjir_sim(qoldiq: float, min_z: float,
     if min_z <= 0:
         return EMPTY
 
-    kunlik  = float(kunlik_override) if kunlik_override and kunlik_override > 0 \
-              else min_z / float(KUNLAR)
+    kunlik  = min_z / float(KUNLAR)
     horizon = float(KELISH_KUNI)
     kont    = sorted(konteynerlar, key=lambda x: x[0])
 
