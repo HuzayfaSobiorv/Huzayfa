@@ -153,19 +153,21 @@ COL_WIDTHS = [50, 12, 14]
 # 2026-07-13 (Huzayfa: "K va L ustunlarini ham ko'rsatib turish kerak"):
 # D ustuni BO'SH qoladi (ajratuvchi bo'shliq), E va F ustunlarida esa
 # Xitoy ostatka faylidagi K (Zakaz) va L (Tayyor) qiymatlari -- FAQAT
-# KO'RSATISH uchun (Buyurtma ustuni bularni hisobga olib ALLAQACHON
-# tuzatilgan, bu yerda qayta ayirilmaydi) -- admin har bir tovar uchun
-# Xitoydagi ostatkani buyurtma qatori yonida to'g'ridan-to'g'ri ko'radi.
+# KO'RSATISH uchun.
 EXTRA_COL_ZAKAZ  = 5   # E
-# 2026-07-14 (Huzayfa): "Tayyor" (L) ustuni olib tashlandi — faqat Zakaz (K)
-# qoladi va u "🇨🇳 Ostatka" deb nomlanadi. Qoldiq/Yo'lda F/G ga siljidi.
-# Bular FAQAT ko'rsatish uchun — taklif yonida sabab ko'rinib turadi.
-EXTRA_COL_QOLDIQ = 6   # F
-EXTRA_COL_YOLDA  = 7   # G
-EXTRA_HDRS       = {EXTRA_COL_ZAKAZ: "🇨🇳 Ostatka",
-                    EXTRA_COL_QOLDIQ: "Qoldiq", EXTRA_COL_YOLDA: "Yo'lda"}
-EXTRA_WIDTHS     = {EXTRA_COL_ZAKAZ: 14,
-                    EXTRA_COL_QOLDIQ: 12, EXTRA_COL_YOLDA: 12}
+# 2026-07-21 (Huzayfa: "Ostatkadan keyin Yo'lda, keyin Qoldiq, keyin Min
+# Zaxira tursin, Buyurtma ustuni Excel formula bo'lsin — Min Zaxirani
+# o'zgartirsam Buyurtma o'zi qayta hisoblansin"): tartib qayta qurildi va
+# Min Zaxira ustuni qo'shildi. E/F/G/H — FAQAT ko'rsatish uchun EMAS
+# endi, C ustunidagi formula shulardan foydalanadi (pastga qarang,
+# write_product va EXCEL_TAKLIF_FORMULA).
+EXTRA_COL_YOLDA  = 6   # F
+EXTRA_COL_QOLDIQ = 7   # G
+EXTRA_COL_MINZ   = 8   # H
+EXTRA_HDRS       = {EXTRA_COL_ZAKAZ: "🇨🇳 Ostatka", EXTRA_COL_YOLDA: "Yo'lda",
+                    EXTRA_COL_QOLDIQ: "Qoldiq", EXTRA_COL_MINZ: "Min Zaxira"}
+EXTRA_WIDTHS     = {EXTRA_COL_ZAKAZ: 14, EXTRA_COL_YOLDA: 12,
+                    EXTRA_COL_QOLDIQ: 12, EXTRA_COL_MINZ: 14}
 
 # ============================================================
 # 4. PARSING
@@ -608,6 +610,47 @@ def write_list_group_row(ws, row, label: str):
     return row + 1
 
 
+def excel_taklif_formula(row: int, yaxlitla: bool) -> str:
+    """
+    2026-07-21 (Huzayfa: "Min Zaxirani o'zgartirsam Buyurtma o'zi
+    qayta hisoblansin"): C ustunidagi (Buyurtma) qiymatni ZANJIR_SIM
+    bilan BIR XIL arifmetikada, lekin EXCEL FORMULASI sifatida qayta
+    quradi -- H (Min Zaxira) katakni tahrirlaganda, Excel o'zi C ni
+    qayta hisoblaydi.
+
+    DIQQAT — bu FAQAT taxminiy/ko'rib chiqish uchun, python dasturidagi
+    aniq natijadan farq qilishi mumkin, chunki:
+      * Bu yerda BUTUN "Yo'lda" miqdori GORIZONT OXIRIDA (55-kunda) bir
+        yo'la keladi deb faraz qilinadi -- aslida har konteyner O'Z
+        SANASIDA keladi (bu ma'lumot Excelda yo'q, faqat jami son bor).
+        Konteyner ERTAROQ kelsa, real dastur ODATDA KATTAROQ buyurtma
+        chiqaradi (chunki depletatsiya vaqti uzunroq) -- bu formula esa
+        "eng yaxshi holat"ni (hammasi oxirida keladi) faraz qiladi.
+      * "Tasdiqlangan buyurtma" (shu davrda allaqachon berilgan
+        qism) bu yerda ayirilmaydi -- bu ma'lumot ham Excelda yo'q.
+    Formula manbasi -- kamomat_engine.zanjir_sim bilan bir xil konstantalar
+    (common.py): KELISH_KUNI=55, KUNLIK_SOTUV_BOLISH=45, BUYURTMA_SIKL_KUN=30.
+      kunlik          = H/45
+      min_nuqta       = G - H*55/45  = G - H*11/9
+      qoldiq_gorizont = MAX(0, min_nuqta) + F
+      nishon          = H + H*30/45 = H*5/3
+      taklif_raw      = agar min_nuqta < H bo'lsa MAX(0, nishon-qoldiq_gorizont), aks holda 0
+      taklif_yaxlit   = CEILING(taklif_raw, 50)   (yoki 1 -- qalin Лист/yirik tovar uchun)
+      Buyurtma        = MAX(0, taklif_yaxlit - E)   (E = 🇨🇳 Ostatka)
+    """
+    e, f, g, h = f"E{row}", f"F{row}", f"G{row}", f"H{row}"
+    unit = 1 if not yaxlitla else 50
+    min_nuqta   = f"({g}-{h}*11/9)"
+    qol_goriz   = f"(MAX(0,{min_nuqta})+{f})"
+    nishon      = f"({h}*5/3)"
+    taklif_raw  = f"MAX(0,{nishon}-{qol_goriz})"
+    taklif_50   = f"IF({taklif_raw}>0,CEILING({taklif_raw},{unit}),0)"
+    return (f"=IF({h}<=0,0,"
+            f"IF({min_nuqta}<{h},"
+            f"MAX(0,{taklif_50}-{e}),"
+            f"0))")
+
+
 def write_product(ws, row, r) -> int:
     bg   = get_row_bg(row)
     fill = _fill(bg)
@@ -633,17 +676,10 @@ def write_product(ws, row, r) -> int:
     cb.border    = brd
     cb.alignment = _align(center=True)
 
-    # C — Buyurtma: qizil bold
-    cc = ws.cell(row=row, column=3, value=int(r["buyurtma"]))
-    cc.font      = Font(name=FONT_NAME, bold=True, size=FONT_SZ, color=RED)
-    cc.fill      = fill
-    cc.border    = brd
-    cc.alignment = _align(center=True)
-
-    # E/F — Zakaz (K) / Tayyor (L): Xitoy ostatkasi, FAQAT ko'rsatish uchun
-    # (Buyurtma ustuniga ta'sir qilmaydi -- u yuqorida allaqachon shu
-    # qiymatlarni hisobga olib tuzatilgan). Ma'lumot yo'q bo'lsa (masalan
-    # ostatka fayli hali yuklanmagan) -- 0 ko'rsatiladi, bo'sh emas.
+    # E — Zakaz (K): Xitoy ostatkasi, FAQAT ko'rsatish uchun EMAS endi --
+    # C ustunidagi formula buni ham hisobga oladi (pastga qarang).
+    # Ma'lumot yo'q bo'lsa (masalan ostatka fayli hali yuklanmagan) --
+    # 0 ko'rsatiladi, bo'sh emas.
     try:
         zakaz_v = int(float(r.get("zakaz", 0) or 0))
     except (ValueError, TypeError):
@@ -655,13 +691,20 @@ def write_product(ws, row, r) -> int:
     ce.border    = brd
     ce.alignment = _align(center=True)
 
-    # F/G — Qoldiq / Yo'lda (2026-07-14): bizdagi ombor holati, kulrang —
-    # Xitoy ustunlari (E/F, ko'k) dan vizual farqlansin.
+    # F/G/H — Yo'lda / Qoldiq / Min Zaxira (2026-07-21 qayta tartiblandi:
+    # Ostatka -> Yo'lda -> Qoldiq -> Min Zaxira). C ustunidagi formula
+    # aynan shu uch katakdan (F/G/H) + E dan foydalanadi.
     def _int0(v):
         try:
             return int(float(v or 0))
         except (ValueError, TypeError):
             return 0
+
+    cf = ws.cell(row=row, column=EXTRA_COL_YOLDA, value=_int0(r.get("yoldagi", 0)))
+    cf.font      = Font(name=FONT_NAME, size=FONT_SZ - 1, color="555555")
+    cf.fill      = fill
+    cf.border    = brd
+    cf.alignment = _align(center=True)
 
     cg = ws.cell(row=row, column=EXTRA_COL_QOLDIQ, value=_int0(r.get("qoldiq", 0)))
     cg.font      = Font(name=FONT_NAME, size=FONT_SZ - 1, color="555555")
@@ -669,11 +712,20 @@ def write_product(ws, row, r) -> int:
     cg.border    = brd
     cg.alignment = _align(center=True)
 
-    ch = ws.cell(row=row, column=EXTRA_COL_YOLDA, value=_int0(r.get("yoldagi", 0)))
-    ch.font      = Font(name=FONT_NAME, size=FONT_SZ - 1, color="555555")
+    ch = ws.cell(row=row, column=EXTRA_COL_MINZ, value=_int0(r.get("min_zaxira", 0)))
+    ch.font      = Font(name=FONT_NAME, size=FONT_SZ - 1, bold=True, color="1A5276")
     ch.fill      = fill
     ch.border    = brd
     ch.alignment = _align(center=True)
+
+    # C — Buyurtma: qizil bold, JONLI EXCEL FORMULA (E/F/G/H ga bog'liq --
+    # Min Zaxirani (H) tahrirlasangiz, C o'zi qayta hisoblanadi).
+    yaxlitla = not _list_yaxlitlanmasmi(r["tovar"])
+    cc = ws.cell(row=row, column=3, value=excel_taklif_formula(row, yaxlitla))
+    cc.font      = Font(name=FONT_NAME, bold=True, size=FONT_SZ, color=RED)
+    cc.fill      = fill
+    cc.border    = brd
+    cc.alignment = _align(center=True)
 
     return row + 1
 
