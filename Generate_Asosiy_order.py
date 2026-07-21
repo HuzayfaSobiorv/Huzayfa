@@ -441,7 +441,7 @@ def demo_data():
 # ============================================================
 # 6. HISOB
 # ============================================================
-def calculate(df, kont_map: dict | None = None):
+def calculate(df, kont_map: dict | None = None, kanal: str = "asosiy"):
     """
     2026-07-09: buyurtma miqdori endi zanjir-simulyatsiya bilan hisoblanadi
     (kamomat_engine.zanjir_sim) — har tovarning YO'LDAGI konteynerlari ANIQ
@@ -449,15 +449,26 @@ def calculate(df, kont_map: dict | None = None):
     formula (min_zaxira/30 * 55 kun) konteynerlar orasidagi bo'shliqlarni
     (masalan real misolda 23-42 kun oralig'ida yangi yuk kelmasligini)
     umuman hisobga olmas edi — shu sabab almashtirildi.
-    Kunlik sotuv qoidasi (yagona, hamma joyda bir xil): min_zaxira /
-    common.KUNLIK_SOTUV_BOLISH (30) — kamomat_engine.zanjir_sim ichida.
+    Kunlik sotuv qoidasi (Asosiy/O'sh — ikkalasi ham real sotuvga qarab
+    ishlaydi): min_zaxira / common.KUNLIK_SOTUV_BOLISH (2026-07-21dan
+    45) — kamomat_engine.zanjir_sim ichida.
+
+    2026-07-21 (Huzayfa bilan kelishildi — "Tsex aralashmasin" qoidasi):
+    Tsex (kanal=="sex") ehtiyoji kunlik sotuvdan EMAS, bir oylik
+    FIKSIRLANGAN ehtiyojdan kelib chiqadi (Цех_Захира) — shuning uchun
+    Asosiy/O'sh uchun tuzatilgan global KUNLIK_SOTUV_BOLISH (45) unga
+    TEGMASLIGI kerak. Tsex uchun eski, o'zgarmagan divisor (30) shu
+    yerda kunlik_override orqali MAJBURLANADI, global konstanta qanday
+    o'zgarsa ham Tsex buyurtmasi buzilmaydi.
     """
     from kamomat_engine import zanjir_sim
+    from common import KUNLIK_SOTUV_BOLISH as _GLOBAL_KUNLAR
     df = df.copy()
     for col in ["qoldiq","yoldagi","min_zaxira"]:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
     kont_map = kont_map or {}
+    TSEX_ESKI_DIVISOR = 30   # Tsex — qat'iy, global tuzatishdan mustasno
 
     def _buyurtma(row):
         konts = kont_map.get(str(row["tovar"]).strip())
@@ -467,8 +478,14 @@ def calculate(df, kont_map: dict | None = None):
             # bitta konteyner sifatida DELIVERY_DAYS kunda keladi deb faraz
             # qilamiz, shunda ham funksiya ishlayveradi.
             konts = [(DELIVERY_DAYS, row["yoldagi"])] if row["yoldagi"] > 0 else []
+
+        kunlik_override = None
+        if kanal == "sex" and row["min_zaxira"] > 0:
+            kunlik_override = row["min_zaxira"] / TSEX_ESKI_DIVISOR
+
         sim = zanjir_sim(row["qoldiq"], row["min_zaxira"], konts,
-                         yaxlitla=not _list_yaxlitlanmasmi(row["tovar"]))
+                         yaxlitla=not _list_yaxlitlanmasmi(row["tovar"]),
+                         kunlik_override=kunlik_override)
         return sim["taklif"]
 
     df["buyurtma"] = df.apply(_buyurtma, axis=1).astype(int)
