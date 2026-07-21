@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 import pandas as pd
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+from openpyxl.styles import Alignment, Font, PatternFill, Border, Side, Protection
 from openpyxl.utils import get_column_letter
 from openpyxl.cell.text import InlineFont
 from openpyxl.cell.rich_text import TextBlock, CellRichText
@@ -717,6 +717,13 @@ def write_product(ws, row, r) -> int:
     ch.fill      = fill
     ch.border    = brd
     ch.alignment = _align(center=True)
+    # 2026-07-21 (Huzayfa: "boshqa ustunlarga qo'l tegib o'zgarib
+    # ketmasin"): FAQAT H (Min Zaxira) qulfdan OCHIQ -- boshqa hamma
+    # katak (A/B/C/E/F/G) standart qulflangan holatda qoladi (openpyxl
+    # default: Protection(locked=True)). Qulf ws.protection.sheet=True
+    # bilan fill_sheet() oxirida yoqiladi (parol YO'Q -- xohlasa Excelda
+    # "Himoyani bekor qilish" bilan istalgan payt ocha oladi).
+    ch.protection = Protection(locked=False)
 
     # C — Buyurtma: qizil bold, JONLI EXCEL FORMULA (E/F/G/H ga bog'liq --
     # Min Zaxirani (H) tahrirlasangiz, C o'zi qayta hisoblanadi).
@@ -866,6 +873,15 @@ def fill_sheet(ws, cat_data, sorted_mode: bool):
     else:
         for _, r in cat_data.sort_values('tovar').iterrows():
             row = write_product(ws, row, r)
+
+    # 2026-07-21 (Huzayfa: "E/F/G ustunlar qulf holda tursin, faqat Min
+    # Zaxira ochiq bo'lsin, qo'l tegib o'zgarib ketmasin"): varaq
+    # himoyasi yoqiladi -- write_product() da H (Min Zaxira) allaqachon
+    # Protection(locked=False) qilingan, qolgan hamma katak standart
+    # qulflangan. Parol YO'Q -- Excel'ning "Review > Unprotect Sheet"
+    # bilan istalgan payt ochish mumkin, bu faqat tasodifiy bosilib
+    # ketishdan himoya, xavfsizlik devori emas.
+    ws.protection.sheet = True
 
 
 def build(df, meyor_yoq=None):
