@@ -320,6 +320,28 @@ def _marka_normallashtir(marka_raw) -> str:
     return marka
 
 
+# 2026-07-22 (Huzayfa: "J markani shakllantira olmayapti"): "201/J1",
+# "J4/201" kabi qo'shma marka satrida "J" (yoki "j") harfi borligi —
+# inventarda "(Ж-1)" deb saqlangan ALOHIDA variant Труба/Профиль
+# tovarlariga ishora qiladi (tekshirilgan: "Пр. 20х20 ст 0,9 (6 м)
+# (201 марка) (Ж-1)" haqiqatan inventarda mavjud). ILGARI
+# _marka_normallashtir() faqat "201"/"304" qismini olardi, "J..." qismi
+# BUTUNLAY TASHLAB YUBORILARDI.
+#
+# 2026-07-22 TUZATISH (Huzayfa aniqlashtirdi: "j1=j1, j2=j1, nechchi
+# bo'lishidan qat'iy nazar"): "J" dan keyingi RAQAM Xitoy tarafining
+# o'z ichki belgisi, biznikidagi "Ж-N" seriyasiga BEVOSITA mos EMAS —
+# "J" harfi uchragan HAR qanday holat (J1, J2, J3...) doim BITTA xil
+# "Ж-1" ga tenglashtiriladi, raqam o'zi e'tiborga olinmaydi. (Inventardagi
+# "(Ж-3)" kabi boshqa variantlar — bular Xitoyning "J"siga aloqasi yo'q,
+# butunlay boshqa mahsulot turi, masalan "Ярим овал" kabi.)
+# FAQAT Труба/Профиль uchun (_truba_spec_to_name ichida chaqiriladi) —
+# Лист uchun UMUMAN ishlatilmaydi.
+def _j_seriya_ajrat(marka_raw) -> str:
+    """Har qanday '...J<raqam>...' (J1, J2, J3...) -> doim 'Ж-1'. J yo'q -> ''."""
+    return "Ж-1" if re.search(r'[Jj]\s*-?\s*\d', str(marka_raw)) else ""
+
+
 # ── Yumaloq (Ф-N) vs kvadrat (Пр. NxN) profil o'lchamlari — INVENTARDAN ──
 # Muammo: Xitoy 3-qismli spec ("stenka*N*uzunlik") formatida N BUTUN son
 # bo'lganda, bu N yumaloq trubaning diametri (Ф-N) HAM, kvadrat profilning
@@ -367,7 +389,8 @@ def _truba_spec_to_name(spec: str, marka_raw, inv_set: set = None) -> str | None
     """
     spec  = str(spec).strip()
     marka = _marka_normallashtir(marka_raw)
-    marka_sfx = f" ({marka} марка)"
+    j_seriya = _j_seriya_ajrat(marka_raw)
+    marka_sfx = f" ({marka} марка)" + (f" ({j_seriya})" if j_seriya else "")
 
     # 4 qismli format: stenka * eni * balandligi * uzunligi — Профиль
     # (to'rtburchak, eni != balandligi bo'lishi ham mumkin: masalan 20х10)
