@@ -449,19 +449,36 @@ def _truba_spec_to_name(spec: str, marka_raw, inv_set: set = None) -> str | None
 
 # Inventarda List doim shu standart razmerlarda saqlanadi (Xitoy xom
 # spec'i deyarli har doim 1219x2438 yoki 1500x3000 keladi — bular mos
-# ravishda 1220x2440 va 1500x3000'ga aylantiriladi). Yaqin (≤15mm farq)
-# bo'lmasa xom qiymat o'zgarishsiz qoldiriladi (haqiqatan noodatiy o'lcham
-# bo'lishi mumkin — keyin inventarda topilmasa admin darhol ko'radi).
+# ravishda 1220x2440 va 1500x3000'ga aylantiriladi). Yaqin bo'lmasa xom
+# qiymat o'zgarishsiz qoldiriladi (haqiqatan noodatiy o'lcham bo'lishi
+# mumkin — keyin inventarda topilmasa admin darhol ko'radi).
 _STANDART_LIST_RAZMER = [
     (1220, 2440), (1500, 3000), (1220, 2700), (1220, 3000),
     (1250, 2700), (1000, 2000), (1250, 2500),
 ]
 
+# 2026-07-22 (Huzayfa: "listlarda kop notanish chiqmoqda"): haqiqiy
+# konteynerda "3,95 (1250х2440)" va "4,95 (1530х3000)" kabi qatorlar
+# topildi — bular aslida "Лист-4,0 (1220х2440)" va "Лист-5,0 (1500х3000)"
+# (inventarda mavjud, qidiruvda ham topiladi), lekin Xitoy xom o'lchami
+# ENI bo'yicha ANIQ +30mm katta (1250 vs 1220, 1530 vs 1500) beradi —
+# xuddi stenkadagi "-0,05mm" konvensiyasi kabi, faqat bu — o'lcham
+# tomonidagi o'ziga xos margin/qirqish farqi. Eski chegara (≤15mm) buni
+# UShLAMAY, xom (1250х2440) qiymatni o'zgarishsiz qoldirar edi — natijada
+# inventarda YO'Q nom hosil bo'lib, "notanish" deb belgilanardi. Chegara
+# 35mm ga oshirildi (30mm+xavfsizlik zaxirasi bilan) — ro'yxatdagi
+# standart o'lchamlar orasida bu kengaytirilgan chegara bilan ham
+# chalkashlik yo'q (eng yaqin ikkita standart o'lcham farqi — 1220↔1250 —
+# ham aniq, chunki ikkalasi ham ro'yxatda distinct qiymat sifatida bor,
+# `min()` baribir eng yaqinini tanlaydi).
+_LIST_RAZMER_TOLERANS = 35
+
 
 def _yaxlitla_list_razmer(en_raw: float, boy_raw: float) -> tuple[int, int]:
     best = min(_STANDART_LIST_RAZMER,
                key=lambda wh: abs(wh[0] - en_raw) + abs(wh[1] - boy_raw))
-    if abs(best[0] - en_raw) <= 15 and abs(best[1] - boy_raw) <= 15:
+    if (abs(best[0] - en_raw) <= _LIST_RAZMER_TOLERANS
+            and abs(best[1] - boy_raw) <= _LIST_RAZMER_TOLERANS):
         return best
     return (int(round(en_raw)), int(round(boy_raw)))
 
@@ -586,24 +603,52 @@ def _parse_truba_zhuangxiang(raw: bytes) -> dict:
     # (merge qilinmagan) katakda turadi. Faqat merged_cells.ranges'ni
     # tekshirish bunday hollarda ISO'ni butunlay o'tkazib yuborar edi —
     # shuning uchun endi HAR BIR katak tekshiriladi.
+    #
+    # 2026-07-22 (Huzayfa: "birlashtira olmayapti" — "小柜N" formatidagi
+    # YANGI bo'limlar TOPILDI): bu formatlarda "柜号：" YORLIG'I va uning
+    # QIYMATI ("INBU3748464") IKKI ALOHIDA katakda turadi (masalan C
+    # ustunida "柜号：", D ustunida "INBU3748464") — ilgari faqat "柜号:XXXX"
+    # BIR katakda birga yozilgan format qo'llab-quvvatlanardi. Natijada
+    # bunday bo'limlar 柜号'siz qolib, "if not iso: continue" orqali
+    # BUTUNLAY tashlab yuborilardi — konteynerning Труба/Профиль qismi
+    # yo'qolib, faqat Лист (出货清单) fayldagi qismi qolardi. Endi agar
+    # yorliq katakning O'ZIDA ISO topilmasa, YONIDAGI (keyingi 1-2) katak
+    # ham tekshiriladi.
+    def _yondosh_iso(row_cells, idx) -> str | None:
+        for j in (idx + 1, idx + 2):
+            if j < len(row_cells) and row_cells[j].value:
+                found = _iso(str(row_cells[j].value))
+                if found:
+                    return found
+        return None
+
     kont_at = {}  # row_idx → iso_no
     for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
-        for cell in row:
+        for idx, cell in enumerate(row):
             val = cell.value
             if val and '柜号' in str(val):
-                iso = _iso(str(val))
+                iso = _iso(str(val)) or _yondosh_iso(row, idx)
                 if iso:
                     kont_at[cell.row] = iso
                 break
 
     # 1.5) Mashina (车号/车牌) → qator raqami — konteyner raqami (柜号) YO'Q,
     # faqat yuk mashinasi bilan tashiladigan bo'limlar uchun FALLBACK.
+    # Xuddi 柜号 kabi — yorliq va qiymat alohida katakda bo'lishi mumkin,
+    # shu holatda ikkalasi BIRLASHTIRILIB (regex viloyat harfi+qiymatni
+    # bitta matn ichida kutadi) qayta tekshiriladi.
     mashina_at = {}  # row_idx → pseudo_id
     for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
-        for cell in row:
+        for idx, cell in enumerate(row):
             val = cell.value
             if val and ('车号' in str(val) or '车牌' in str(val)):
                 m_id = _mashina_raqam(str(val))
+                if not m_id:
+                    for j in (idx + 1, idx + 2):
+                        if j < len(row) and row[j].value:
+                            m_id = _mashina_raqam(str(val) + str(row[j].value))
+                            if m_id:
+                                break
                 if m_id:
                     mashina_at[cell.row] = m_id
                 break
