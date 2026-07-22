@@ -521,6 +521,43 @@ _LIST_RANG_MAP = {
     '8K黑钛': 'Кора',
 }
 
+# 2026-07-22 (Huzayfa: "GOLD 8K" va "Black 8K" ikkalasi ham "Матовый" bo'lib
+# chiqdi -- "gols va qora lislarni oddiy tarjima qilmoqda"): yuqoridagi
+# xarita FAQAT xitoycha kalitlar bilan ANIQ moslikni tekshiradi -- boshqa
+# firma (yuklash_royhati_3sana.xlsx) эса rus/xitoycha emas, ИНГЛИЗЧА rang
+# nomlarini ("GOLD 8K", "Black 8K", "Matte #4") ishlatadi, bular xaritada
+# hech qachon aniq mos kelmaydi va HAR DOIM standart "Матовый"ga tushib
+# qolardi. Natijada FIZIK JIHATDAN TURLI RANGDAGI (oltin va qora) tovarlar
+# BITTA nomga (demak bitta inventar yozuviga) qo'shilib ketgan edi -- jiddiy
+# xato, chunki miqdorlar ham aralashib ketardi. Endi aniq mos kelish
+# topilmasa, KALIT SO'Z asosida (tartib MUHIM -- aniq rang so'zi umumiy
+# "8K"dan OLDIN tekshiriladi, aks holda "GOLD 8K"dagi "8K" o'zi "GOLD"dan
+# oldin ushlanib, noto'g'ri "Глянцевый" chiqarardi) qo'shimcha aniqlanadi.
+_LIST_RANG_KEYWORDS = [
+    ('GOLD',   'Голд'),
+    ('黑',     'Кора'),
+    ('BLACK',  'Кора'),
+    ('MATTE',  'Матовый'),
+    ('MAT',    'Матовый'),
+    ('砂',     'Матовый'),
+    ('GLOSSY', 'Глянцевый'),
+    ('8K',     'Глянцевый'),
+]
+
+
+def _rang_nomini_aniqla(rang: str) -> str:
+    """rang (Xitoy 颜色名称) -> inventar rang yorlig'i. Avval ANIQ (xitoycha
+    kalitli) moslik tekshiriladi, topilmasa kalit-so'z asosida (ustuvorlik
+    tartibida) aniqlanadi, aks holda standart 'Матовый' qaytadi."""
+    rang_norm = str(rang).replace(' ', '').strip()
+    if rang_norm in _LIST_RANG_MAP:
+        return _LIST_RANG_MAP[rang_norm]
+    rang_upper = rang_norm.upper()
+    for kw, nomi in _LIST_RANG_KEYWORDS:
+        if kw in rang_upper:
+            return nomi
+    return 'Матовый'
+
 
 def _list_spec_to_name(spec: str, marka_raw, rang: str = '') -> str | None:
     """
@@ -565,8 +602,7 @@ def _list_spec_to_name(spec: str, marka_raw, rang: str = '') -> str | None:
 
     en, boy = _yaxlitla_list_razmer(en_raw, boy_raw)
 
-    rang_norm = str(rang).replace(' ', '').strip()
-    rang_nomi = _LIST_RANG_MAP.get(rang_norm, 'Матовый')
+    rang_nomi = _rang_nomini_aniqla(rang)
 
     return f"Лист-{q_s} ({en}х{boy}) ({rang_nomi}) ({marka} марка)"
 
