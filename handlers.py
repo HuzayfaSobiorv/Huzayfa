@@ -1964,7 +1964,24 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # QOLDIRILADI — bundan eskisi butunlay o'tkazib yuboriladi.
         oxirgi = oxirgi_malum_sana(XITOY_PARSED_DIR, tarix)
         soni_oldin = len(yuklar)
-        yuklar = faqat_sanadan_keyingi(yuklar, oxirgi)
+        # 2026-07-22 (Huzayfa: 出货清单-only fayl, haqiqiy 柜号/mashina raqami
+        # yo'q — 3 ta hech qachon ko'rilmagan yetkazish sanasi eski bo'lgani
+        # uchun global filtrda noto'g'ri "eski" deb chetlab tashlandi):
+        # "N-..." psevdo-ID (Лист parseridagi _notadan_pseudo_id — FAQAT
+        # haqiqiy 柜号 HAM, mashina raqami HAM topilmaganda, oxirgi chora
+        # sifatida yasaladi) global sana chegarasidan MUSTASNO — bevosita
+        # 2-QADAM (ISO-tarix) tekshiruviga o'tadi. Bu yuqoridagi izohdagi
+        # 2026-07-06 muammosini (mashina-plastinka ID QAYTA ISHLATILISHI
+        # tufayli eski kumulyativ qator noto'g'ri "yangi" bo'lib chiqishi)
+        # qayta tiklamaydi — "N-..." ID hech qachon boshqa faylda/sanada
+        # takrorlanmaydi (aks holda haqiqiy 柜号 yoki mashina raqami
+        # ishlatilgan bo'lardi), shuning uchun global chegara unga tegishli
+        # emas. Oddiy (haqiqiy 柜号/mashina-asosli) yozuvlar eski xavfsizlik
+        # to'sig'ida qoladi.
+        n_qator_yuklar = [k for k in yuklar if str(k["iso"]).startswith("N-")]
+        oddiy_yuklar   = [k for k in yuklar if not str(k["iso"]).startswith("N-")]
+        oddiy_yuklar = faqat_sanadan_keyingi(oddiy_yuklar, oxirgi)
+        yuklar = oddiy_yuklar + n_qator_yuklar
         eskisi_soni = soni_oldin - len(yuklar)
         if oxirgi and eskisi_soni:
             await msg.reply_text(
