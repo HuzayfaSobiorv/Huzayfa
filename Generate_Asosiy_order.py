@@ -85,8 +85,7 @@ CATEGORIES  = [
     "Соқка",
     "Отвод",
     "Чашка",       # Қўзиқорин ham shu varaqqa kiradi
-    "Полировка",
-    "Мыло",
+    "Полировка",   # 2026-07-21: Совун (sovun) ham shu varaqqa kiradi endi
 ]
 SORTED_CATS = {"Труба","Профиль","Лист"}
 
@@ -196,8 +195,23 @@ def get_category(name):
     if re.search(r'Чашк', s, re.I):                                return 'Чашка'
     # Қўзиқорин/Кузикорин → Чашка varag'iga (masalan: "51-Кузикорин", "25-Кузикорин")
     if re.search(r'К[уўy]зи[қк]?орин|Қ[уў]зиқорин', s, re.I):    return 'Чашка'
-    if any(k in s for k in ['Намат','Мелкий','Грубый','Капрон','Шлифовка','Полировка']): return 'Полировка'
-    if re.match(r'^Мыло', s, re.I):                                return 'Мыло'
+    # 2026-07-21 (Huzayfa: "Polirovka sahifasiga barcha sovunlarni qo'sh"):
+    # ESKI XATO -- kod "Мыло" (rus tilida sovun) so'zini qidirardi, lekin
+    # bizning katalogda sovunlar HAMMASI "Совун" (o'zbekcha, Min_Zaxira.xlsx
+    # tekshirilganda tasdiqlandi: "Совун- кичик", "Совун А-5" va h.k.) deb
+    # yozilgan -- "Мыло" bilan boshlanadigan tovar UMUMAN yo'q, shu sabab
+    # bitta ham sovun hech qachon 'Мыло' varag'iga (yoki boshqa hech qayerga
+    # -- 'Мыло' CATEGORIES ro'yxatida yo'q edi) tushmagan, butunlay
+    # KO'RINMAS bo'lib qolgan edi. Endi 'Совун' ham shu ro'yxatga qo'shildi
+    # va alohida 'Мыло' varag'i o'rniga TO'G'RIDAN-TO'G'RI 'Полировка'га
+    # yo'naltiriladi (Huzayfa qat'iy so'radi). Solishtirish endi katta-kichik
+    # harfga sezgir EMAS (.lower()) -- ilgari "Шлифовка" katta harf bilan
+    # yozilmagan variantlar ("Кичик шлифовка", "ШЛИФОВКАНИКИ") ham
+    # tushirib qoldirilardi.
+    if any(k.lower() in s.lower() for k in
+           ['Намат', 'Мелкий', 'Грубый', 'Капрон', 'Шлифовка', 'Полировка',
+            'Совун', 'Мыло']):
+        return 'Полировка'
     return 'Бошқа'
 
 def get_surface(name):
@@ -436,7 +450,7 @@ def demo_data():
         {"tovar":"Соқка-19мм",   "qoldiq":1500,"yoldagi":0,   "min_zaxira":2000},
         {"tovar":"Чашка-01",     "qoldiq":2000,"yoldagi":0,   "min_zaxira":3000},
         {"tovar":"Намат №-01",   "qoldiq":20,  "yoldagi":0,   "min_zaxira":50},
-        {"tovar":"Мыло-01",      "qoldiq":50,  "yoldagi":0,   "min_zaxira":80},
+        {"tovar":"Совун-01",     "qoldiq":50,  "yoldagi":0,   "min_zaxira":80},
     ]
     return pd.DataFrame(rows)
 
