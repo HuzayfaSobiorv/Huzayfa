@@ -1024,6 +1024,12 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
 
     _df, _kont_map = load_data(kanal=kanal)
     df_calc = calculate(_df, _kont_map, kanal=kanal)
+    # 2026-07-22 (Huzayfa: "buyurtma berilmagan tovarlarni alohida
+    # ko'rsatish kerak"): calculate() endi buyurtma==0 qatorlarni ham
+    # qaytaradi -- to'liq (filtrlanmagan) nusxani shu yerda saqlab
+    # qolamiz, pastda "nobuy" (buyurtma berilmagan) ro'yxatini shundan
+    # hisoblaymiz. df_calc esa pastda eskisidek buyurtma>0 ga filtrlanadi.
+    df_all_unfiltered = df_calc.copy()
 
     # ── Xitoy nomi to'qnashgan qatorlarni birlashtirish (2026-07-14) ────────
     # Inventarda IKKI XIL nom (masalan "ст 1,4" va "ст 1,35") Xitoy qoidasi
@@ -1064,6 +1070,12 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
                 yangi_rows.append(bosh)
             df_calc = pd.DataFrame(yangi_rows).reset_index(drop=True)
         df_calc = df_calc.drop(columns=["_xkey"])
+
+    # 2026-07-22: calculate() endi filtrlamagani uchun -- eski (har doim
+    # amal qilgan) kafolatni shu yerda tiklaymiz: bundan keyingi hamma
+    # mantiq (Xitoy ostatka ayirish, tasdiqlangan ayirish, mayda filtri)
+    # ILGARIDEK faqat buyurtma>0 qatorlar bilan ishlaydi.
+    df_calc = df_calc[df_calc["buyurtma"] > 0].copy()
 
     def _nomlar(tovar) -> list:
         """Kanonik nom -> ayirishda tekshiriladigan barcha nomlar."""
@@ -1142,7 +1154,30 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
     myoq_df = _df[_df["min_zaxira"] <= 0][["tovar", "qoldiq"]].copy()
     myoq_df = myoq_df.sort_values("qoldiq", ascending=False)
 
-    wb  = build(df_calc, meyor_yoq=myoq_df)
+    # "Buyurtma berilmagan" ro'yxati (2026-07-22, Huzayfa: "yo'lda va
+    # qoldiq norm bo'lsa berilmaydi va byurtma varag'ida bo'lmaydi,
+    # shularni alohida ko'rsatish kerak"): min_zaxira>0 bo'lgan-u, biror
+    # sababdan (zanjir_sim taklif=0 berdi, Xitoy ostatkasi qopladi,
+    # tasdiqlangan buyurtma qopladi yoki mayda limitga yetmadi) YAKUNIY
+    # df_calc'ga TUSHMAGAN tovarlar. "Меъёр йўқ" (min_zaxira<=0) bilan
+    # ARALASHMASIN -- ular alohida, o'z varag'ida qoladi.
+    ordered_nomlar = set(str(t).strip() for t in df_calc["tovar"])
+    for nomlar in merge_nomlar.values():
+        ordered_nomlar.update(str(t).strip() for t in nomlar)
+    nobuy_df = df_all_unfiltered[
+        (df_all_unfiltered["min_zaxira"] > 0)
+        & (~df_all_unfiltered["tovar"].astype(str).str.strip().isin(ordered_nomlar))
+    ].copy()
+    if not nobuy_df.empty:
+        nobuy_df["buyurtma"] = 0
+        nobuy_df["zakaz"] = nobuy_df["tovar"].apply(
+            lambda t: sum(xitoy_ostatka.get(n, 0) for n in _nomlar(t)) if xitoy_ostatka else 0
+        )
+        nobuy_df["tayyor"] = nobuy_df["tovar"].apply(
+            lambda t: sum(ombor_map.get(n, 0) for n in _nomlar(t)) if ombor_map else 0
+        )
+
+    wb  = build(df_calc, meyor_yoq=myoq_df, nobuy=nobuy_df)
     bio = BytesIO()
     wb.save(bio)
     bio.seek(0)

@@ -163,10 +163,25 @@ EXTRA_COL_ZAKAZ  = 5   # E
 EXTRA_COL_YOLDA  = 6   # F
 EXTRA_COL_QOLDIQ = 7   # G
 EXTRA_COL_MINZ   = 8   # H
+# 2026-07-23 (Huzayfa: "Ф-51 ni buyurtmasi 1650, real 8600 bo'lishi kerak
+# edi -- ANIQLANDI, JIDDIY BUG): C ustunidagi JONLI FORMULA (excel_taklif_
+# formula) "butun Yo'lda GORIZONT OXIRIDA bir yo'la keladi" deb soddalash-
+# tirilgan taxmin bilan ishlaydi -- lekin bu C ustunining O'ZIGA (asosiy
+# "Buyurtma" qiymatiga!) yozib qo'yilgan edi, real zanjir_sim() natijasini
+# BUTUNLAY ALMASHTIRIB. Konteynerlar bir necha sanaga bo'lib kelganda
+# (odatiy holat) bu ikkalasi KATTA farq qiladi (mana shu misolda: real
+# 8600, formula 1650 -- ~5 baravar kam!). ENDI: C ustuni yana real
+# zanjir_sim natijasi (statik, aniq son) -- buyurtma qarorlari SHUNGA
+# asoslanishi kerak. Jonli "agar Min Zaxira o'zgarsa-chi" ko'rish imkoni
+# YO'QOTILMAYDI, balki ALOHIDA, aniq "taxminiy" deb belgilangan ustunga
+# (I) ko'chirildi -- u yerda ham xuddi shunday ogohlantirish bor.
+EXTRA_COL_TAXMIN = 9   # I -- "Taxminiy (H o'zgarsa)" JONLI FORMULA, faqat ko'rib chiqish uchun
 EXTRA_HDRS       = {EXTRA_COL_ZAKAZ: "🇨🇳 Ostatka", EXTRA_COL_YOLDA: "Yo'lda",
-                    EXTRA_COL_QOLDIQ: "Qoldiq", EXTRA_COL_MINZ: "Min Zaxira"}
+                    EXTRA_COL_QOLDIQ: "Qoldiq", EXTRA_COL_MINZ: "Min Zaxira",
+                    EXTRA_COL_TAXMIN: "Taxminiy*"}
 EXTRA_WIDTHS     = {EXTRA_COL_ZAKAZ: 14, EXTRA_COL_YOLDA: 12,
-                    EXTRA_COL_QOLDIQ: 12, EXTRA_COL_MINZ: 14}
+                    EXTRA_COL_QOLDIQ: 12, EXTRA_COL_MINZ: 14,
+                    EXTRA_COL_TAXMIN: 14}
 
 # ============================================================
 # 4. PARSING
@@ -485,6 +500,16 @@ def calculate(df, kont_map: dict | None = None, kanal: str = "asosiy"):
 
     kont_map = kont_map or {}
     TSEX_ESKI_DIVISOR = 30   # Tsex — qat'iy, global tuzatishdan mustasno
+    # 2026-07-23 (Huzayfa bilan kelishildi, Ф-51 real misolida tekshirilgan):
+    # YANGI buyurtma berilgandan yetib kelgunga qadar real muddat = ~10 kun
+    # tayyorlash + ~5 kun yuklash + 55 kun dengiz yo'li = 70 kun. common.py
+    # dagi KELISH_KUNI(55) esa BOSHQA joyda (main.py -- ALLAQACHON yuklangan
+    # konteynerning transit vaqti, tavsiya.py) ham ishlatiladi va u yerda
+    # 55 TO'G'RI (konteyner allaqachon yuklangan, faqat dengiz yo'li qoladi)
+    # -- shu sabab umumiy konstanta o'zgartirilmaydi, faqat shu yerda (Asosiy/
+    # O'sh buyurtma hisob-kitobi) horizon_override orqali 70 majburlanadi.
+    # Tsex — alohida mavzu (Huzayfa: hozircha tegilmasin), eski 55da qoladi.
+    YANGI_BUYURTMA_HORIZON = 70
 
     def _buyurtma(row):
         konts = kont_map.get(str(row["tovar"]).strip())
@@ -495,17 +520,27 @@ def calculate(df, kont_map: dict | None = None, kanal: str = "asosiy"):
             # qilamiz, shunda ham funksiya ishlayveradi.
             konts = [(DELIVERY_DAYS, row["yoldagi"])] if row["yoldagi"] > 0 else []
 
-        kunlik_override = None
+        kunlik_override  = None
+        horizon_override = None
         if kanal == "sex" and row["min_zaxira"] > 0:
             kunlik_override = row["min_zaxira"] / TSEX_ESKI_DIVISOR
+        else:
+            horizon_override = YANGI_BUYURTMA_HORIZON
 
         sim = zanjir_sim(row["qoldiq"], row["min_zaxira"], konts,
                          yaxlitla=not _list_yaxlitlanmasmi(row["tovar"]),
-                         kunlik_override=kunlik_override)
+                         kunlik_override=kunlik_override,
+                         horizon_override=horizon_override)
         return sim["taklif"]
 
     df["buyurtma"] = df.apply(_buyurtma, axis=1).astype(int)
-    df             = df[df["buyurtma"] > 0].copy()
+    # 2026-07-22 (Huzayfa: "buyurtma berilmagan tovarlarni ham alohida
+    # ko'rsatish kerak, ro'yxat oxirida ajratib"): ILGARI bu yerda
+    # buyurtma==0 qatorlar BUTUNLAY o'chirilardi -- shu tovarlar qayerda
+    # ekani umuman ko'rinmasdi. Endi FILTRLANMAYDI -- chaqiruvchi
+    # (services.py::asosiy_styled_excel_yarat / build()) o'zi kerakli
+    # joyda ajratadi: asosiy buyurtma ro'yxati uchun buyurtma>0, "kerak
+    # emas" bo'limi uchun qolganlar.
 
     df["kategoriya"] = df["tovar"].apply(get_category)
     df["surface"]    = df["tovar"].apply(get_surface)
@@ -624,7 +659,7 @@ def write_list_group_row(ws, row, label: str):
     return row + 1
 
 
-def excel_taklif_formula(row: int, yaxlitla: bool) -> str:
+def excel_taklif_formula(row: int, yaxlitla: bool, kanal: str = "asosiy") -> str:
     """
     2026-07-21 (Huzayfa: "Min Zaxirani o'zgartirsam Buyurtma o'zi
     qayta hisoblansin"): C ustunidagi (Buyurtma) qiymatni ZANJIR_SIM
@@ -632,31 +667,41 @@ def excel_taklif_formula(row: int, yaxlitla: bool) -> str:
     quradi -- H (Min Zaxira) katakni tahrirlaganda, Excel o'zi C ni
     qayta hisoblaydi.
 
-    DIQQAT — bu FAQAT taxminiy/ko'rib chiqish uchun, python dasturidagi
-    aniq natijadan farq qilishi mumkin, chunki:
-      * Bu yerda BUTUN "Yo'lda" miqdori GORIZONT OXIRIDA (55-kunda) bir
-        yo'la keladi deb faraz qilinadi -- aslida har konteyner O'Z
-        SANASIDA keladi (bu ma'lumot Excelda yo'q, faqat jami son bor).
-        Konteyner ERTAROQ kelsa, real dastur ODATDA KATTAROQ buyurtma
-        chiqaradi (chunki depletatsiya vaqti uzunroq) -- bu formula esa
-        "eng yaxshi holat"ni (hammasi oxirida keladi) faraz qiladi.
+    DIQQAT — bu FAQAT taxminiy/ko'rib chiqish uchun (shuning uchun endi
+    ALOHIDA "Taxminiy*" ustunga, I, yoziladi -- 2026-07-23, qarang
+    write_product()), python dasturidagi aniq natijadan farq qilishi
+    mumkin, chunki:
+      * Bu yerda BUTUN "Yo'lda" miqdori GORIZONT OXIRIDA bir yo'la
+        keladi deb faraz qilinadi -- aslida har konteyner O'Z SANASIDA
+        keladi (bu ma'lumot Excelda yo'q, faqat jami son bor). Konteyner
+        ERTAROQ kelsa, real dastur ODATDA KATTAROQ buyurtma chiqaradi
+        (chunki depletatsiya vaqti uzunroq) -- bu formula esa "eng
+        yaxshi holat"ni (hammasi oxirida keladi) faraz qiladi. Haqiqiy
+        misolda (Ф-51 ст 0,9) bu ikkalasi 1650 va 8600 kabi FARQ qildi.
       * "Tasdiqlangan buyurtma" (shu davrda allaqachon berilgan
         qism) bu yerda ayirilmaydi -- bu ma'lumot ham Excelda yo'q.
     Formula manbasi -- kamomat_engine.zanjir_sim bilan bir xil konstantalar
-    (common.py): KELISH_KUNI=55, KUNLIK_SOTUV_BOLISH=45, BUYURTMA_SIKL_KUN=30.
-      kunlik          = H/45
-      min_nuqta       = G - H*55/45  = G - H*11/9
+    (common.py + Generate_Asosiy_order.calculate()dagi override'lar):
+      kanal=="sex":     kunlik_divisor=30 (TSEX_ESKI_DIVISOR), horizon=55 (o'zgarmagan)
+      boshqa (asosiy/osh): kunlik_divisor=45 (KUNLIK_SOTUV_BOLISH), horizon=70
+                            (2026-07-23dan, YANGI_BUYURTMA_HORIZON)
+      kunlik          = H/kunlik_divisor
+      min_nuqta       = G - H*horizon/kunlik_divisor
       qoldiq_gorizont = MAX(0, min_nuqta) + F
-      nishon          = H + H*30/45 = H*5/3
+      nishon          = H + H*30/kunlik_divisor
       taklif_raw      = agar min_nuqta < H bo'lsa MAX(0, nishon-qoldiq_gorizont), aks holda 0
       taklif_yaxlit   = CEILING(taklif_raw, 50)   (yoki 1 -- qalin Лист/yirik tovar uchun)
       Buyurtma        = MAX(0, taklif_yaxlit - E)   (E = 🇨🇳 Ostatka)
     """
+    if kanal == "sex":
+        kunlik_divisor, horizon = 30, 55
+    else:
+        kunlik_divisor, horizon = 45, 70
     e, f, g, h = f"E{row}", f"F{row}", f"G{row}", f"H{row}"
     unit = 1 if not yaxlitla else 50
-    min_nuqta   = f"({g}-{h}*11/9)"
+    min_nuqta   = f"({g}-{h}*{horizon}/{kunlik_divisor})"
     qol_goriz   = f"(MAX(0,{min_nuqta})+{f})"
-    nishon      = f"({h}*5/3)"
+    nishon      = f"({h}*(1+30/{kunlik_divisor}))"
     taklif_raw  = f"MAX(0,{nishon}-{qol_goriz})"
     taklif_50   = f"IF({taklif_raw}>0,CEILING({taklif_raw},{unit}),0)"
     return (f"=IF({h}<=0,0,"
@@ -665,7 +710,7 @@ def excel_taklif_formula(row: int, yaxlitla: bool) -> str:
             f"0))")
 
 
-def write_product(ws, row, r) -> int:
+def write_product(ws, row, r, kanal: str = "asosiy") -> int:
     bg   = get_row_bg(row)
     fill = _fill(bg)
     brd  = _border()
@@ -739,16 +784,67 @@ def write_product(ws, row, r) -> int:
     # "Himoyani bekor qilish" bilan istalgan payt ocha oladi).
     ch.protection = Protection(locked=False)
 
-    # C — Buyurtma: qizil bold, JONLI EXCEL FORMULA (E/F/G/H ga bog'liq --
-    # Min Zaxirani (H) tahrirlasangiz, C o'zi qayta hisoblanadi).
+    # C — Buyurtma: qizil bold, REAL zanjir_sim natijasi (STATIK son --
+    # 2026-07-23: JONLI FORMULA bu yerdan OLIB TASHLANDI, chunki u har
+    # konteynerning O'Z SANASINI hisobga OLMAYDI (hammasi 55-kunda bir
+    # yo'la keladi deb soddalashtiradi) va real natijadan bir necha
+    # baravar farq qilishi mumkin edi (haqiqiy voqea: Ф-51 uchun real 8600,
+    # formula 1650 ko'rsatgan). Buyurtma qarori shu ustunga -- ANIQ,
+    # backend natijasiga -- asoslanishi kerak.
     yaxlitla = not _list_yaxlitlanmasmi(r["tovar"])
-    cc = ws.cell(row=row, column=3, value=excel_taklif_formula(row, yaxlitla))
+    cc = ws.cell(row=row, column=3, value=int(r["buyurtma"]))
     cc.font      = Font(name=FONT_NAME, bold=True, size=FONT_SZ, color=RED)
     cc.fill      = fill
     cc.border    = brd
     cc.alignment = _align(center=True)
 
+    # I — Taxminiy (H o'zgarsa): xuddi shu JONLI FORMULA endi bu yerga
+    # ko'chirildi -- Min Zaxirani (H) qo'lda o'zgartirib sinab ko'rish
+    # imkoni SAQLANADI, lekin ANIQ "Buyurtma" (C) dan ajratilgan, taxminiy
+    # ekani ustun nomida ("Taxminiy*") ko'rinib turadi.
+    ci = ws.cell(row=row, column=EXTRA_COL_TAXMIN, value=excel_taklif_formula(row, yaxlitla, kanal))
+    ci.font      = Font(name=FONT_NAME, size=FONT_SZ - 1, italic=True, color="7B3F00")
+    ci.fill      = fill
+    ci.border    = brd
+    ci.alignment = _align(center=True)
+
     return row + 1
+
+
+def write_nobuy_section(ws, row, nobuy_df, kanal: str = "asosiy") -> int:
+    """
+    2026-07-22 (Huzayfa: "byurtma berilmaydigan tovarlar bor -- yo'lda va
+    qoldiq norm bo'lsa berilmaydi va byurtma varag'ida bo'lmaydi, shularni
+    alohida ro'yxat qilish kerak, ro'yxat oxirida ajralib tursin"):
+    shu kategoriyada HOZIRCHA buyurtma berilmagan (zaxira+yo'lda yetarli
+    deb hisoblangan, YOKI Xitoy ostatkasi/tasdiqlangan buyurtma yoki mayda
+    limit tufayli 0ga tushgan) tovarlar -- asosiy buyurtma ro'yxatidan
+    KEYIN, aniq ajratilgan alohida bo'lim sifatida bir-in ketin yoziladi.
+    Ustunlar bir xil (E/F/G/H, Buyurtma(C) ham doimgidek jonli formula --
+    Min Zaxirani qo'lda o'zgartirib sinab ko'rish mumkin, xuddi yuqoridagi
+    qatorlar kabi).
+    """
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NCOLS)
+    c = ws.cell(row=row, column=1,
+                value="  ⛔ BUYURTMA BERILMAGAN  (zaxira/yo'lda hozircha yetarli)")
+    c.font      = Font(name=FONT_NAME, bold=True, size=FONT_SZ, color="FFFFFF")
+    c.fill      = _fill("6B6B6B")
+    c.alignment = _align(indent=1)
+    c.border    = _border()
+    ws.row_dimensions[row].height = 28
+    row += 1
+
+    write_col_headers(ws, row)
+    row += 1
+
+    sort_cols = [sc for sc in ("surf_ord", "mark_ord", "size_ord", "_st_f", "tovar")
+                 if sc in nobuy_df.columns]
+    if not sort_cols:
+        sort_cols = ["tovar"]
+    for _, r in nobuy_df.sort_values(sort_cols).iterrows():
+        row = write_product(ws, row, r, kanal)
+
+    return row
 
 
 def write_size_separator(ws, row, next_size_ord: int = 1):
@@ -775,9 +871,14 @@ def write_size_separator(ws, row, next_size_ord: int = 1):
     return row + 1
 
 
-def fill_sheet(ws, cat_data, sorted_mode: bool):
+def fill_sheet(ws, cat_data, sorted_mode: bool, nobuy_data=None,
+                cat_name: str | None = None, kanal: str = "asosiy"):
     today = datetime.now().strftime("%d.%m.%Y")
-    cat   = cat_data["kategoriya"].iloc[0]
+    # 2026-07-22: cat_name endi tashqaridan (build()) uzatiladi -- cat_data
+    # BO'SH bo'lishi mumkin (bu kategoriyada faqat "buyurtma berilmagan"
+    # tovarlar bor, hech biriga buyurtma yo'q), o'sha holatda .iloc[0]
+    # xato berardi.
+    cat = cat_name if cat_name else cat_data["kategoriya"].iloc[0]
 
     set_cols(ws)
     row = 1
@@ -884,9 +985,15 @@ def fill_sheet(ws, cat_data, sorted_mode: bool):
             row += 1
             for _, r in quz_rows.sort_values('tovar').iterrows():
                 row = write_product(ws, row, r)
-    else:
+    elif not cat_data.empty:
         for _, r in cat_data.sort_values('tovar').iterrows():
             row = write_product(ws, row, r)
+
+    # 2026-07-22: shu kategoriyada buyurtma berilmagan (zaxira/yo'lda
+    # yetarli) tovarlar -- asosiy ro'yxatdan KEYIN, aniq ajratilgan
+    # alohida bo'lim. Qarang: write_nobuy_section().
+    if nobuy_data is not None and not nobuy_data.empty:
+        row = write_nobuy_section(ws, row, nobuy_data)
 
     # 2026-07-21 (Huzayfa: "E/F/G ustunlar qulf holda tursin, faqat Min
     # Zaxira ochiq bo'lsin, qo'l tegib o'zgarib ketmasin"): varaq
@@ -898,16 +1005,31 @@ def fill_sheet(ws, cat_data, sorted_mode: bool):
     ws.protection.sheet = True
 
 
-def build(df, meyor_yoq=None):
+def build(df, meyor_yoq=None, nobuy=None):
+    """
+    nobuy (2026-07-22, Huzayfa: "buyurtma berilmagan tovarlarni alohida
+    ko'rsatish kerak"): df bilan bir xil tuzilishdagi DataFrame -- shu
+    kanalda buyurtma=0 (hozircha kerak emas) bo'lgan tovarlar. Berilgan
+    bo'lsa, HAR BIR kategoriya varag'ining OXIRIDA, aniq ajratilgan
+    bo'lim sifatida ko'rsatiladi (write_nobuy_section()). Faqat df'da
+    o'sha kategoriyadan buyurtma bo'lmasa ham (butun kategoriya
+    "kerak emas"), varaq baribir yaratiladi -- shu kategoriya ham
+    ko'rinishi kerak.
+    """
     wb = Workbook()
     if wb.active:
         wb.remove(wb.active)
-    available   = list(df['kategoriya'].dropna().astype(str).unique())
+    cats_buy    = set(df['kategoriya'].dropna().astype(str)) if not df.empty else set()
+    cats_nobuy  = (set(nobuy['kategoriya'].dropna().astype(str))
+                   if nobuy is not None and not nobuy.empty else set())
+    available   = cats_buy | cats_nobuy
     ordered     = [cat for cat in CATEGORIES if cat in available]
     used_titles = set()
     for cat in ordered:
-        cd = df[df['kategoriya'] == cat]
-        if cd.empty:
+        cd    = df[df['kategoriya'] == cat] if not df.empty else df.iloc[0:0]
+        cd_nb = (nobuy[nobuy['kategoriya'] == cat]
+                 if nobuy is not None and not nobuy.empty else None)
+        if cd.empty and (cd_nb is None or cd_nb.empty):
             continue
         title = cat[:31]
         base  = title
@@ -918,7 +1040,7 @@ def build(df, meyor_yoq=None):
         used_titles.add(title)
         ws          = wb.create_sheet(title=title)
         sorted_mode = cat in SORTED_CATS
-        fill_sheet(ws, cd, sorted_mode)
+        fill_sheet(ws, cd, sorted_mode, nobuy_data=cd_nb, cat_name=cat)
 
     # ── "Меъёр йўқ" varag'i (2026-07-14, Huzayfa so'rovi) ────────────────
     # Min zaxirasi belgilanmagan tovarlar buyurtma hisobiga KIRMAYDI va
@@ -961,7 +1083,13 @@ def main():
     for c in ["qoldiq", "yoldagi", "min_zaxira"]:
         if c not in df_raw.columns:
             df_raw[c] = 0
-    df   = calculate(df_raw)
+    df_full = calculate(df_raw)
+    # 2026-07-22: calculate() endi filtrlamaydi (buyurtma==0 qatorlar ham
+    # qaytadi) -- standalone skript uchun eski xatti-harakatni saqlab
+    # qolish uchun shu yerda ajratamiz (nobuy bo'limi bu yerda ko'rsatilmaydi,
+    # faqat services.py::asosiy_styled_excel_yarat -- bot yo'li -- buni
+    # qo'llaydi).
+    df   = df_full[df_full["buyurtma"] > 0].copy()
     wb   = build(df)
     from datetime import datetime
     out  = BASE / "chiqish" / f"Buyurtma_taklif_asosiy_{datetime.now().strftime('%Y-%m-%d')}.xlsx"

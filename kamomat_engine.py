@@ -103,7 +103,8 @@ def tovar_sort_key(nom: str, kat: str) -> tuple:
 # ============================================================
 def zanjir_sim(qoldiq: float, min_z: float,
                konteynerlar: list, yaxlitla: bool = True,
-               kunlik_override: float | None = None) -> dict:
+               kunlik_override: float | None = None,
+               horizon_override: float | None = None) -> dict:
     """
     Kun-ma-kun zanjir simulyatsiyasi (2026-07-14 qayta yozildi).
 
@@ -117,6 +118,22 @@ def zanjir_sim(qoldiq: float, min_z: float,
     barchasi bir xil, faqat "kunlik" manbasi almashadi). None yoki
     <=0 bo'lsa — global KUNLIK_SOTUV_BOLISH asosidagi eski xatti-harakat
     saqlanadi.
+
+    horizon_override (2026-07-23, Huzayfa bilan kelishildi -- Ф-51 real
+    misolida "bugun buyurtma bersak, 70 kundan keyin kelib boshlaydi"
+    tekshiruvi asosida): berilsa va >0 bo'lsa, gorizont KELISH_KUNI(55)
+    o'rniga shu qiymatdan olinadi. SABAB: KELISH_KUNI (common.py)
+    BOSHQA joylarda (main.py'ning "allaqachon yuklangan konteyner qachon
+    yetib keladi" hisobi, tavsiya.py) HAM ishlatiladi -- u yerda 55 kun
+    TO'G'RI (bu FAQAT dengiz yo'li, konteyner ALLAQACHON yuklangan bo'lgani
+    uchun). Lekin YANGI buyurtma uchun gorizont bundan KATTAROQ bo'lishi
+    kerak -- chunki yangi buyurtma hali tayyorlanmagan/yuklanmagan (qo'shimcha
+    ~15 kun: tayyorlash+yuklash). Shu ikki tushunchani (allaqachon yo'ldagi
+    konteyner transit vaqti VS yangi buyurtma umumiy kutish vaqti) ADASH-
+    TIRMASLIK uchun umumiy KELISH_KUNI konstantasi O'ZGARTIRILMAYDI --
+    faqat BUYURTMA HISOB-KITOBI (Generate_Asosiy_order.calculate, kanal
+    Asosiy/O'sh) shu parametr orqali kengaytirilgan gorizontni (70) ishlatadi.
+    None yoki <=0 bo'lsa -- eski KELISH_KUNI(55) saqlanadi.
 
     Qoldiq kuniga (min_z / KUNLAR=30) kamayadi, har konteyner o'z kunida
     miqdorini qo'shadi. Gorizont — KELISH_KUNI (55) kun: bugun berilgan
@@ -156,7 +173,8 @@ def zanjir_sim(qoldiq: float, min_z: float,
 
     kunlik  = float(kunlik_override) if kunlik_override and kunlik_override > 0 \
               else min_z / float(KUNLAR)
-    horizon = float(KELISH_KUNI)
+    horizon = float(horizon_override) if horizon_override and horizon_override > 0 \
+              else float(KELISH_KUNI)
     kont    = sorted(konteynerlar, key=lambda x: x[0])
 
     joriy       = float(qoldiq)
