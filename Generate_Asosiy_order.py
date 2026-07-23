@@ -164,24 +164,22 @@ EXTRA_COL_YOLDA  = 6   # F
 EXTRA_COL_QOLDIQ = 7   # G
 EXTRA_COL_MINZ   = 8   # H
 # 2026-07-23 (Huzayfa: "Ф-51 ni buyurtmasi 1650, real 8600 bo'lishi kerak
-# edi -- ANIQLANDI, JIDDIY BUG): C ustunidagi JONLI FORMULA (excel_taklif_
-# formula) "butun Yo'lda GORIZONT OXIRIDA bir yo'la keladi" deb soddalash-
-# tirilgan taxmin bilan ishlaydi -- lekin bu C ustunining O'ZIGA (asosiy
-# "Buyurtma" qiymatiga!) yozib qo'yilgan edi, real zanjir_sim() natijasini
-# BUTUNLAY ALMASHTIRIB. Konteynerlar bir necha sanaga bo'lib kelganda
-# (odatiy holat) bu ikkalasi KATTA farq qiladi (mana shu misolda: real
-# 8600, formula 1650 -- ~5 baravar kam!). ENDI: C ustuni yana real
-# zanjir_sim natijasi (statik, aniq son) -- buyurtma qarorlari SHUNGA
-# asoslanishi kerak. Jonli "agar Min Zaxira o'zgarsa-chi" ko'rish imkoni
-# YO'QOTILMAYDI, balki ALOHIDA, aniq "taxminiy" deb belgilangan ustunga
-# (I) ko'chirildi -- u yerda ham xuddi shunday ogohlantirish bor.
-EXTRA_COL_TAXMIN = 9   # I -- "Taxminiy (H o'zgarsa)" JONLI FORMULA, faqat ko'rib chiqish uchun
+# edi -- ANIQLANDI, JIDDIY BUG, keyin "Taxminiy" ustuni ham "umuman
+# tushunarsiz, olib tashla" deb BEKOR QILINDI): C ustunidagi JONLI
+# FORMULA "butun Yo'lda GORIZONT OXIRIDA bir yo'la keladi" deb soddalash-
+# tirilgan taxmin bilan ishlaydi -- real konteyner sanalarini bila
+# olmagani uchun ba'zida son marta xato chiqargan (Ф-51: real 8600,
+# formula 1650). Alohida "Taxminiy*" ustunga ko'chirilgan edi, lekin bu
+# ham chalkashtirdi -- ENDI BUTUNLAY OLIB TASHLANDI. C ustuni FAQAT real
+# zanjir_sim natijasi (statik, aniq son). Excel ichida H (Min Zaxira)ni
+# o'zgartirish endi C ga TA'SIR QILMAYDI -- bunga qarshi yagona to'g'ri
+# yo'l Min_Zaxira.xlsx faylida haqiqiy o'zgartirish qilib, botdan qayta
+# "Buyurtma yig'ish" so'rash (shunda ANIQ, konteyner sanalarini hisobga
+# olgan natija chiqadi).
 EXTRA_HDRS       = {EXTRA_COL_ZAKAZ: "🇨🇳 Ostatka", EXTRA_COL_YOLDA: "Yo'lda",
-                    EXTRA_COL_QOLDIQ: "Qoldiq", EXTRA_COL_MINZ: "Min Zaxira",
-                    EXTRA_COL_TAXMIN: "Taxminiy*"}
+                    EXTRA_COL_QOLDIQ: "Qoldiq", EXTRA_COL_MINZ: "Min Zaxira"}
 EXTRA_WIDTHS     = {EXTRA_COL_ZAKAZ: 14, EXTRA_COL_YOLDA: 12,
-                    EXTRA_COL_QOLDIQ: 12, EXTRA_COL_MINZ: 14,
-                    EXTRA_COL_TAXMIN: 14}
+                    EXTRA_COL_QOLDIQ: 12, EXTRA_COL_MINZ: 14}
 
 # ============================================================
 # 4. PARSING
@@ -791,22 +789,11 @@ def write_product(ws, row, r, kanal: str = "asosiy") -> int:
     # baravar farq qilishi mumkin edi (haqiqiy voqea: Ф-51 uchun real 8600,
     # formula 1650 ko'rsatgan). Buyurtma qarori shu ustunga -- ANIQ,
     # backend natijasiga -- asoslanishi kerak.
-    yaxlitla = not _list_yaxlitlanmasmi(r["tovar"])
     cc = ws.cell(row=row, column=3, value=int(r["buyurtma"]))
     cc.font      = Font(name=FONT_NAME, bold=True, size=FONT_SZ, color=RED)
     cc.fill      = fill
     cc.border    = brd
     cc.alignment = _align(center=True)
-
-    # I — Taxminiy (H o'zgarsa): xuddi shu JONLI FORMULA endi bu yerga
-    # ko'chirildi -- Min Zaxirani (H) qo'lda o'zgartirib sinab ko'rish
-    # imkoni SAQLANADI, lekin ANIQ "Buyurtma" (C) dan ajratilgan, taxminiy
-    # ekani ustun nomida ("Taxminiy*") ko'rinib turadi.
-    ci = ws.cell(row=row, column=EXTRA_COL_TAXMIN, value=excel_taklif_formula(row, yaxlitla, kanal))
-    ci.font      = Font(name=FONT_NAME, size=FONT_SZ - 1, italic=True, color="7B3F00")
-    ci.fill      = fill
-    ci.border    = brd
-    ci.alignment = _align(center=True)
 
     return row + 1
 
