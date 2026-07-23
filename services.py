@@ -1177,7 +1177,7 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
             lambda t: sum(ombor_map.get(n, 0) for n in _nomlar(t)) if ombor_map else 0
         )
 
-    wb  = build(df_calc, meyor_yoq=myoq_df, nobuy=nobuy_df)
+    wb  = build(df_calc, meyor_yoq=myoq_df, nobuy=nobuy_df, kanal=kanal)
     bio = BytesIO()
     wb.save(bio)
     bio.seek(0)

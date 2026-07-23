@@ -913,7 +913,7 @@ def fill_sheet(ws, cat_data, sorted_mode: bool, nobuy_data=None,
                         row += 1
                     # Kichik format avval, katta keyin; КИЧИК/КATTA yozuvi YO'Q
                     for _, r in sg.sort_values(["size_ord", "_st_f", "tovar"]).iterrows():
-                        row = write_product(ws, row, r)
+                        row = write_product(ws, row, r, kanal)
                 else:
                     # Матовый / Глянцевый / Чёрный / Голд / Цветной:
                     # Har (marka, o'lcham) juftligi uchun: ── Матовый 201 (1220х2440) ──
@@ -945,7 +945,7 @@ def fill_sheet(ws, cat_data, sorted_mode: bool, nobuy_data=None,
                         label = "── " + " ".join(parts) + " ──"
                         row = write_list_group_row(ws, row, label)
                         for _, r in gdf.sort_values(["_st_f", "tovar"]).iterrows():
-                            row = write_product(ws, row, r)
+                            row = write_product(ws, row, r, kanal)
 
             else:
                 # ── Труба / Профиль ───────────────────────────────────────────
@@ -965,15 +965,15 @@ def fill_sheet(ws, cat_data, sorted_mode: bool, nobuy_data=None,
 
                     if cat == "Труба":
                         for _, r in mg.sort_values(["_dia_f", "_st_f", "tovar"]).iterrows():
-                            row = write_product(ws, row, r)
+                            row = write_product(ws, row, r, kanal)
                     elif cat == "Профиль":
                         for _, r in mg.sort_values(["_d1_f", "_d2_f", "_st_f", "tovar"]).iterrows():
-                            row = write_product(ws, row, r)
+                            row = write_product(ws, row, r, kanal)
     elif cat == "Чашка":
         chashka_rows = cat_data[cat_data["tovar"].str.match(r'^Чашк', case=False, na=False)]
         quz_rows     = cat_data[~cat_data["tovar"].str.match(r'^Чашк', case=False, na=False)]
         for _, r in chashka_rows.sort_values("tovar").iterrows():
-            row = write_product(ws, row, r)
+            row = write_product(ws, row, r, kanal)
         if not quz_rows.empty:
             ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NCOLS)
             c = ws.cell(row=row, column=1, value='── Қўзиқорин ──')
@@ -984,16 +984,16 @@ def fill_sheet(ws, cat_data, sorted_mode: bool, nobuy_data=None,
             ws.row_dimensions[row].height = 22
             row += 1
             for _, r in quz_rows.sort_values('tovar').iterrows():
-                row = write_product(ws, row, r)
+                row = write_product(ws, row, r, kanal)
     elif not cat_data.empty:
         for _, r in cat_data.sort_values('tovar').iterrows():
-            row = write_product(ws, row, r)
+            row = write_product(ws, row, r, kanal)
 
     # 2026-07-22: shu kategoriyada buyurtma berilmagan (zaxira/yo'lda
     # yetarli) tovarlar -- asosiy ro'yxatdan KEYIN, aniq ajratilgan
     # alohida bo'lim. Qarang: write_nobuy_section().
     if nobuy_data is not None and not nobuy_data.empty:
-        row = write_nobuy_section(ws, row, nobuy_data)
+        row = write_nobuy_section(ws, row, nobuy_data, kanal)
 
     # 2026-07-21 (Huzayfa: "E/F/G ustunlar qulf holda tursin, faqat Min
     # Zaxira ochiq bo'lsin, qo'l tegib o'zgarib ketmasin"): varaq
@@ -1005,7 +1005,7 @@ def fill_sheet(ws, cat_data, sorted_mode: bool, nobuy_data=None,
     ws.protection.sheet = True
 
 
-def build(df, meyor_yoq=None, nobuy=None):
+def build(df, meyor_yoq=None, nobuy=None, kanal: str = "asosiy"):
     """
     nobuy (2026-07-22, Huzayfa: "buyurtma berilmagan tovarlarni alohida
     ko'rsatish kerak"): df bilan bir xil tuzilishdagi DataFrame -- shu
@@ -1040,7 +1040,7 @@ def build(df, meyor_yoq=None, nobuy=None):
         used_titles.add(title)
         ws          = wb.create_sheet(title=title)
         sorted_mode = cat in SORTED_CATS
-        fill_sheet(ws, cd, sorted_mode, nobuy_data=cd_nb, cat_name=cat)
+        fill_sheet(ws, cd, sorted_mode, nobuy_data=cd_nb, cat_name=cat, kanal=kanal)
 
     # ── "Меъёр йўқ" varag'i (2026-07-14, Huzayfa so'rovi) ────────────────
     # Min zaxirasi belgilanmagan tovarlar buyurtma hisobiga KIRMAYDI va

@@ -367,13 +367,17 @@ def kamomat_excel_v2(data_file: Path, kanal: str,
     df = df.sort_values(["_c", "_s"]).reset_index(drop=True)
 
     # ── Zanjir simulyatsiyasi ──────────────────────────────────
+    # 2026-07-23: Buyurtma Excel bilan bir xil natija chiqishi uchun --
+    # Asosiy/O'sh 70 kunlik gorizont, Tsex eski 55da (alohida mavzu,
+    # hozircha tegilmadi).
+    _horizon_ov = None if kanal == "sex" else 70
     sims = []
     for _, row in df.iterrows():
         tovar  = str(row.get("Товар", ""))
         qoldiq = float(row.get("Қолдиқ", 0))
         min_z  = float(row.get("Мин_Захира", 0))
         kont_l = kont_map.get(tovar, [])
-        sims.append(zanjir_sim(qoldiq, min_z, kont_l))
+        sims.append(zanjir_sim(qoldiq, min_z, kont_l, horizon_override=_horizon_ov))
 
     # ── Excel ──────────────────────────────────────────────────
     wb = openpyxl.Workbook()

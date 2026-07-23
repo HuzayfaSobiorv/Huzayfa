@@ -315,7 +315,15 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
                 })
         except Exception:
             pass
-        sim = zanjir_sim(qoldiq, min_z, kont_list)
+        # 2026-07-23 (Huzayfa bilan kelishildi -- Ф-51 misolida grafik va
+        # Buyurtma Excel bir xil sonni ko'rsatishi kerak): Asosiy/O'sh uchun
+        # buyurtma hisob-kitobida endi 70 kunlik gorizont ishlatiladi
+        # (Generate_Asosiy_order.calculate()ga qarang) -- shu grafik ham
+        # ANIQ SHU natijani chizishi kerak, aks holda ikkalasi (Excel va
+        # grafik) turli raqam ko'rsatib, chalkashlik keltirib chiqaradi.
+        # Tsex -- alohida mavzu (hozircha tegilmadi), eski 55da qoladi.
+        horizon_override = None if kanal == "sex" else 70
+        sim = zanjir_sim(qoldiq, min_z, kont_list, horizon_override=horizon_override)
         return holat, qoldiq, min_z, yolda_j, sim, kont_list, kont_rows
 
     try:
