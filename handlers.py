@@ -239,6 +239,14 @@ async def adduser_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             filial_sorov_ochir(new_id)
         await update.message.reply_text(f"✅ `{new_id}` whitelist ga qo'shildi.", parse_mode="Markdown")
         try:
+            # 2026-07-24 (Huzayfa): ogohlantirish teksti ostiga "Ishni
+            # boshlash" tugmasi qo'shildi — bosilganda /start bilan bir
+            # xil natija beradi (tilni tanlang / mavjud bo'lsa to'g'ridan
+            # to'g'ri asosiy menyu), foydalanuvchi qo'lda /start yozishi
+            # shart emas.
+            ishga_bosh_ikb = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🚀 Ishni boshlash", callback_data="ishga_bosh")]]
+            )
             await context.bot.send_message(
                 chat_id=new_id,
                 text=(
@@ -250,6 +258,7 @@ async def adduser_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Botda biror kamchilik yoki noto'g'ri narsa uchrasa, "
                     "\"Sozlamalar → Bog'lanish\" orqali adminga murojaat qiling."
                 ),
+                reply_markup=ishga_bosh_ikb,
             )
         except Exception:
             pass
@@ -475,6 +484,27 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ism=(_u.full_name or "").strip(),
         username=(f"@{_u.username}" if _u.username else ""),
     )
+
+    # 2026-07-24 (Huzayfa: "ogohlantirish teksti ostiga ishni boshlash
+    # tugmasini qo'sh"): /adduser dan keyingi xush kelibsiz xabaridagi
+    # "🚀 Ishni boshlash" tugmasi — /start bilan AYNAN bir xil natija
+    # beradi (tilni tanlang, keyinchalik esa to'g'ridan-to'g'ri asosiy
+    # menyu), foydalanuvchi qo'lda /start yozishi shart emas.
+    if query.data == "ishga_bosh":
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        lang = context.user_data.get("lang")
+        if lang:
+            await go_screen(query.message, context, "main")
+        else:
+            sent = await query.message.reply_text(
+                "🇺🇿 Тилни танланг / Tilni tanlang:",
+                reply_markup=til_ikb(),
+            )
+            aktiv_inline_belgila(context, sent)
+        return
 
     # ── 2026-07-17 (Huzayfa: userlar eski ekrandan qolgan tugmani bosib
     # chalkashib ketyapti): agar bu xabar hozirgi "faol" ekran sifatida
