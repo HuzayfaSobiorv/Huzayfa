@@ -166,9 +166,24 @@ def filial_biriktir(uid: int, filial: str, ism: str = "", username: str = "") ->
 
 def user_filiali_olish(uid: int) -> str | None:
     """Bitta userning filialini qaytaradi (topilmasa None — qidiruvda
-    filial qatori shunchaki chiqmaydi)."""
+    filial qatori shunchaki chiqmaydi).
+
+    2026-07-24 TUZATISH: ilgari faqat user_filiallar.json'dan o'qir edi —
+    eski (whitelist'da bor-u hali filial yozuvi bo'lmagan) userlar uchun
+    bu HAR DOIM None qaytarardi, chunki avtomatik "Сергили база" migratsiyasi
+    faqat admin "Foydalanuvchilar ro'yxati" Excel tugmasini bosgandagina
+    (user_filiallari_yuklash() orqali) ishga tushardi — Qidiruvda emas.
+    Huzayfa buni sinab ko'rib, eski userlarga filial qatori umuman
+    chiqmayotganini aniqladi. Endi shu yerda ham fallback bor: agar aniq
+    yozuv topilmasa-yu, user whitelist'da bo'lsa — FILIAL_ESKI_DEFAULT
+    qaytariladi (diskka yozmasdan, faqat shu chaqiruv uchun — arzon va
+    har doim yangi natija beradi)."""
     row = _json_dict_yuklash(_USER_FILIAL_FILE).get(str(uid))
-    return row.get("filial") if row else None
+    if row and row.get("filial"):
+        return row["filial"]
+    if uid in whitelist_yuklash():
+        return FILIAL_ESKI_DEFAULT
+    return None
 
 
 def user_filiallari_yuklash() -> dict:
