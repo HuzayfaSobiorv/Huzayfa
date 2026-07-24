@@ -457,7 +457,7 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
             else:
                 kun_txt = "Bugun keladi 📬"
             kont_lines.append(
-                f"📦 *{kr['nom']}* — {kr['miqdor']} dona\n"
+                f"🚛 *{kr['nom']}* — {kr['miqdor']} dona\n"
                 f"   Yuklangan: {kr['yukl']}  |  Kelish: {kr['kelish']}  |  {kun_txt}"
             )
         kont_txt = "\n\n".join(kont_lines)
