@@ -7,7 +7,7 @@ from datetime import datetime
 from io import BytesIO
 
 import pandas as pd
-from config import BASE_DIR, DATA_FILE, BACK_MAP, CH_KEY, _MPL_LOCK, get_inv, get_kont
+from config import BASE_DIR, DATA_FILE, BACK_MAP, CH_KEY, _MPL_LOCK, get_inv, get_kont, get_filial_qoldiq
 from texts import t
 from keyboards import (
     main_kb, main_kb_user, order_kb, order_channel_kb, load_kb, load_channel_kb,
@@ -20,7 +20,9 @@ from services import (
     buyurtma_yuklash, xitoy_yuklash, asosiy_styled_excel_yarat,
     draft_excel_yarat, grafik_qidirish, qidiruv_text,
     xlsx_mavjud, rasm_pending_iso_royxati,
+    user_filiali_olish,
 )
+from common import normalize_product_name
 from kamomat_engine import kamomat_stats_v2, kamomat_excel_v2
 from yolda_excel import yolda_excel
 
@@ -249,6 +251,7 @@ def get_action(lang: str, screen: str, text: str):
             t(lang, "b_tozala_xitoy"):  "tozala_xitoy",
             t(lang, "b_yolga_kont"):    "yolga_kont",
             t(lang, "b_sorovlar_royxat"): "sorovlar_royxat",
+            t(lang, "b_userlar_royxat"): "userlar_royxat",
             # User settings
             t(lang, "b_boglanish"):     "boglanish",
             t(lang, "b_sorov_yuborish"): "sorov_yuborish",
@@ -336,7 +339,24 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
         # Tsex -- alohida mavzu (hozircha tegilmadi), eski 55da qoladi.
         horizon_override = None if kanal == "sex" else 70
         sim = zanjir_sim(qoldiq, min_z, kont_list, horizon_override=horizon_override)
-        return holat, qoldiq, min_z, yolda_j, sim, kont_list, kont_rows
+
+        # 2026-07-24 (Huzayfa: "har filial o'z qoldig'ini ko'rsin" funksiyasi):
+        # foydalanuvchining O'ZIGA biriktirilgan filialning shu tovar
+        # bo'yicha alohida qoldig'i — FAQAT o'zinikini ko'radi, boshqa
+        # filiallarnikini emas. Buyurtma hisob-kitobiga (yuqoridagi sim)
+        # HECH QANDAY ta'sir qilmaydi — sof ko'rsatish uchun.
+        filial_nomi, filial_dona = None, None
+        uid = context.user_data.get("user_id") if context is not None else None
+        if uid is not None:
+            f = user_filiali_olish(uid)
+            if f:
+                fq  = get_filial_qoldiq()
+                key = normalize_product_name(tv)
+                row = fq.get(key)
+                if row and f in row:
+                    filial_nomi, filial_dona = f, row[f]
+
+        return holat, qoldiq, min_z, yolda_j, sim, kont_list, kont_rows, filial_nomi, filial_dona
 
     try:
         result = await loop.run_in_executor(None, _data_olish)
@@ -348,7 +368,7 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
         await msg.reply_text(f"❌ Topilmadi: {tovar}")
         return
 
-    holat, qoldiq, min_z, yolda_j, sim, kont_list, kont_rows = result
+    holat, qoldiq, min_z, yolda_j, sim, kont_list, kont_rows, filial_nomi, filial_dona = result
 
     # 2026-07-18 (Huzayfa, qayta ishlandi — eski 2026-07-16 qoida faqat
     # aksessuarlar uchun edi):
@@ -450,11 +470,16 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
     if min_z <= 0:
         meyor0_txt = "\n🏷 Sotuvdan chiqarib yuborilmoqda — yo'ldagi yuk ma'lumoti:"
 
+    filial_txt = ""
+    if filial_nomi is not None:
+        filial_txt = f"{filial_nomi}: *{int(filial_dona):,}* ta\n"
+
     text_card = (
         f"📊 *{tovar}*\n\n"
         f"{holat}{meyor0_txt}\n"
         f"Qoldiq: *{int(qoldiq):,}*{kam_ombor_txt}\n"
-        f"Yo'lda jami: *{int(yolda_j):,}*\n\n"
+        f"Yo'lda jami: *{int(yolda_j):,}*\n"
+        f"{filial_txt}\n"
         f"▬▬▬▬▬▬▬▬▬▬▬▬\n\n"
         f"{kont_txt}\n\n"
         f"▬▬▬▬▬▬▬▬▬▬▬▬\n"

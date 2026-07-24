@@ -112,6 +112,126 @@ def whitelist_ochir(uid: int) -> bool:
     return True
 
 
+# ── Filial biriktirish (2026-07-24, "har filial o'z qoldig'ini ko'rsin") ──────
+# Ikki bosqichli: (1) foydalanuvchi /start bosib filial tanlaganda —
+# PENDING (hali admin tasdiqlamagan) sifatida saqlanadi; (2) admin
+# /adduser bilan qabul qilganda — YAKUNIY (committed) fayliga ko'chadi.
+_FILIAL_SOROV_FILE    = BOT_HOLAT_DIR / "filial_sorovlar.json"
+_USER_FILIAL_FILE     = BOT_HOLAT_DIR / "user_filiallar.json"
+FILIAL_ESKI_DEFAULT   = "Сергили база"   # 2026-07-24 Huzayfa qarori: eski
+                                          # userlar migratsiyada shu filialga
+
+
+def _json_dict_yuklash(path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def filial_sorov_saqla(uid: int, filial: str, ism: str = "", username: str = "") -> None:
+    """Foydalanuvchi /start bosib filial tanlagach — admin hali tasdiqlamagan
+    holatda PENDING ro'yxatga yozadi. adduser_cmd shu yerdan o'qib, whitelist
+    ga qo'shilgach YAKUNIY joyga ko'chiradi."""
+    d = _json_dict_yuklash(_FILIAL_SOROV_FILE)
+    d[str(uid)] = {"filial": filial, "ism": ism, "username": username,
+                    "vaqt": datetime.now().strftime("%d.%m.%Y %H:%M")}
+    atomic_json_write(_FILIAL_SOROV_FILE, d, indent=2)
+
+
+def filial_sorov_olish(uid: int) -> dict | None:
+    return _json_dict_yuklash(_FILIAL_SOROV_FILE).get(str(uid))
+
+
+def filial_sorov_ochir(uid: int) -> None:
+    d = _json_dict_yuklash(_FILIAL_SOROV_FILE)
+    if str(uid) in d:
+        del d[str(uid)]
+        atomic_json_write(_FILIAL_SOROV_FILE, d, indent=2)
+
+
+def filial_biriktir(uid: int, filial: str, ism: str = "", username: str = "") -> None:
+    """Userga YAKUNIY (tasdiqlangan) filialni biriktiradi."""
+    d = _json_dict_yuklash(_USER_FILIAL_FILE)
+    mavjud = d.get(str(uid), {})
+    d[str(uid)] = {
+        "filial":   filial,
+        "ism":      ism or mavjud.get("ism", ""),
+        "username": username or mavjud.get("username", ""),
+    }
+    atomic_json_write(_USER_FILIAL_FILE, d, indent=2)
+
+
+def user_filiali_olish(uid: int) -> str | None:
+    """Bitta userning filialini qaytaradi (topilmasa None — qidiruvda
+    filial qatori shunchaki chiqmaydi)."""
+    row = _json_dict_yuklash(_USER_FILIAL_FILE).get(str(uid))
+    return row.get("filial") if row else None
+
+
+def user_filiallari_yuklash() -> dict:
+    """{uid_str: {"filial":.., "ism":.., "username":..}} — barcha
+    tasdiqlangan userlar. Whitelist'da bor-u filiali hali yo'q eski
+    userlarni avtomatik FILIAL_ESKI_DEFAULT ga biriktirib qo'yadi
+    (Huzayfa qarori, 2026-07-24: "hammasini Sergili filialiga o'tkazamiz
+    — barchasi Sergili sklad sotuvchilari") — idempotent, xavfsiz."""
+    d  = _json_dict_yuklash(_USER_FILIAL_FILE)
+    wl = whitelist_yuklash()
+    ozgardi = False
+    for uid in wl:
+        if str(uid) not in d:
+            d[str(uid)] = {"filial": FILIAL_ESKI_DEFAULT, "ism": "", "username": ""}
+            ozgardi = True
+    if ozgardi:
+        atomic_json_write(_USER_FILIAL_FILE, d, indent=2)
+    return d
+
+
+def userlar_excel_yarat() -> BytesIO | None:
+    """Admin uchun: barcha whitelist foydalanuvchilarning Ism/Username/ID/
+    Filial ro'yxatini Excel qilib qaytaradi. Bo'sh bo'lsa None."""
+    wl = whitelist_yuklash()
+    if not wl:
+        return None
+    filiallar = user_filiallari_yuklash()
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Userlar"
+    sarlavha = ["Ism", "Username", "ID", "Filial"]
+    ws.append(sarlavha)
+    hdr_fill = PatternFill("solid", fgColor="305496")
+    hdr_font = Font(bold=True, color="FFFFFF")
+    for col_i, _ in enumerate(sarlavha, start=1):
+        c = ws.cell(row=1, column=col_i)
+        c.fill = hdr_fill
+        c.font = hdr_font
+        c.alignment = Alignment(horizontal="center")
+
+    for uid in sorted(wl):
+        row = filiallar.get(str(uid), {})
+        ws.append([
+            row.get("ism") or "—",
+            row.get("username") or "—",
+            uid,
+            row.get("filial") or "—",
+        ])
+
+    ws.column_dimensions["A"].width = 24
+    ws.column_dimensions["B"].width = 20
+    ws.column_dimensions["C"].width = 14
+    ws.column_dimensions["D"].width = 22
+
+    bio = BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    return bio
+
+
 # ── Konteyner qo'shish tarixi (fayl o'chsa ham unutilmasin) ───────────────────
 # MUHIM: kalit ISO emas, ISO+sana ("ISO|sana" shaklida) — chunki jismoniy
 # konteyner raqamlari (ISO) dunyoda qayta-qayta ishlatiladi va bitta ISO

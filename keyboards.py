@@ -122,6 +122,7 @@ def settings_kb(lang: str, admin: bool = False) -> ReplyKeyboardMarkup:
         [t(lang, "b_tozala_buy")],
         [t(lang, "b_tozala_xitoy")],
         [t(lang, "b_sorovlar_royxat")],
+        [t(lang, "b_userlar_royxat")],
     ]
     rows.append([t(lang, "back")])
     return rkb(*rows)
@@ -145,6 +146,21 @@ def til_ikb() -> InlineKeyboardMarkup:
         [("Кирилл (Ўзбекча)", "lang:cyr")],
         [("Lotin (O'zbekcha)", "lang:lat")],
     )
+
+
+def filial_tanlash_ikb() -> InlineKeyboardMarkup:
+    """2026-07-24 (Huzayfa: "har filial o'z qoldig'ini ko'rsin" funksiyasi):
+    yangi user /start bosganda filialini tanlaydigan inline klaviatura —
+    17 ta filial (15 Асосий + Ош + Промзона, common.py::FILIALLAR bilan
+    bir xil tartib), har qatorda 2 tadan, callback_data'da FAQAT indeks
+    ("filial_yangi:{i}") — Cyrill nom butunlay yubormaslik uchun (64 bayt
+    chegarasi va handlers.py'dagi qayta-topish oddiyroq bo'lishi uchun)."""
+    from common import FILIALLAR
+    rows = []
+    for i in range(0, len(FILIALLAR), 2):
+        chunk = FILIALLAR[i:i + 2]
+        rows.append([(nom, f"filial_yangi:{i + j}") for j, nom in enumerate(chunk)])
+    return ikb(*rows)
 
 
 def grafik_kat_ikb() -> InlineKeyboardMarkup:

@@ -152,6 +152,7 @@ from keyboards import (
     xitoy_sorash_ikb, xitoy_mavjud_ikb, xitoy_yana_ikb,
     tozala_kanal_ikb, tozala_tasdiq_ikb, zakaz_tasdiq_ikb,
     grafik_kat_ikb, kont_tasdiq_ikb, boglanish_ikb,
+    filial_tanlash_ikb,
 )
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from services import (
@@ -166,7 +167,10 @@ from services import (
     kirish_ruxsati, whitelist_qosh, whitelist_ochir, whitelist_yuklash,
     admin_idlari, qoshimcha_admin_qosh, qoshimcha_admin_ochir,
     sorov_qoshish, sorovlar_excel_yarat,
+    filial_sorov_saqla, filial_sorov_olish, filial_sorov_ochir,
+    filial_biriktir, user_filiali_olish, userlar_excel_yarat,
 )
+from common import FILIALLAR
 from parsers import xitoy_ostatka_oqi, ai_ostatka_fayl_mi, ai_ostatka_fayl_oqi
 from keyboards import grafik_tovar_ikb
 from ui import (
@@ -183,34 +187,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["user_id"] = uid
 
     # ── Kirish tekshiruvi ──────────────────────────────────────────────────────
+    # 2026-07-24 (Huzayfa: "har filial o'z qoldig'ini ko'rsin" funksiyasi):
+    # ilgari bu yerda to'g'ridan-to'g'ri adminga xabar ketardi. Endi ORASIGA
+    # bitta qadam qo'shildi — avval user filialini tanlaydi (inline tugma),
+    # SHUNDAN KEYIN admin(lar)ga filial nomi bilan so'rov boradi (qarang:
+    # callback_handler'dagi "filial_yangi:" bo'limi). Bu yerda faqat
+    # klaviaturani ko'rsatamiz, xabar ADMINGA HALI YUBORILMAYDI.
     if not kirish_ruxsati(uid):
-        # Adminlarga xabar yuborish
-        full_name = (user.full_name or "").strip() or "Noma'lum"
-        username  = f"@{user.username}" if user.username else "(username yo'q)"
-        # 2026-07-16 (Huzayfa: yangi user so'rovi adminga yetib bormayapti):
-        # parse_mode="Markdown" ISHLATILMAYDI — ism/username ichida "_" "*"
-        # "`" kabi belgi bo'lsa (Telegram username'larida "_" juda keng
-        # tarqalgan), Markdown parser xabarni butunlay RAD ETARDI va bu
-        # pastdagi except tomonidan JIMGINA yutib yuborilardi — admin hech
-        # qachon bilmasdi. Oddiy matn (parse_mode yo'q) — hech qanday belgi
-        # xabarni buzolmaydi, yetkazilishi kafolatlanadi.
-        notif = (
-            f"🔔 Yangi kirish so'rovi\n\n"
-            f"👤 {full_name} {username}\n"
-            f"🆔 {uid}\n\n"
-            f"Qo'shish uchun: /adduser {uid}"
-        )
-        logger.info(f"Kirish so'rovi: uid={uid}, SUPER_ADMIN_ID={SUPER_ADMIN_ID}")
-        if SUPER_ADMIN_ID:
-            try:
-                await context.bot.send_message(chat_id=SUPER_ADMIN_ID, text=notif)
-                logger.info(f"Admin ga xabar yuborildi: {SUPER_ADMIN_ID}")
-            except Exception as e:
-                logger.error(f"Admin ga xabar yuborish XATO: {e}")
+        logger.info(f"Kirish so'rovi (filial tanlash bosqichi): uid={uid}")
         await update.message.reply_text(
-            "⛔ Kechirasiz, sizda kirish huquqi yo'q.\n\n"
-            "Admin bilan bog'laning — so'rovingiz yuborildi. "
-            "Ruxsat berilgach, /start bosib boshlashingiz mumkin."
+            "👋 Assalomu alaykum!\n\n"
+            "Botdan foydalanish uchun avval filialingizni tanlang:",
+            reply_markup=filial_tanlash_ikb(),
         )
         return
 
@@ -237,6 +225,17 @@ async def adduser_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     new_id = int(args[0])
     added  = whitelist_qosh(new_id)
     if added:
+        # 2026-07-24: agar bu user oldin filial tanlagan bo'lsa (yangi
+        # onboarding oqimi) — endi YAKUNIY joyga ko'chiramiz. Eski uslubda
+        # (admin to'g'ridan-to'g'ri /adduser bilan, filial tanlashsiz)
+        # qo'shilgan bo'lsa — pending topilmaydi, filial keyinroq
+        # user_filiallari_yuklash() orqali FILIAL_ESKI_DEFAULT ga tushadi.
+        pending = filial_sorov_olish(new_id)
+        if pending:
+            filial_biriktir(new_id, pending["filial"],
+                             ism=pending.get("ism", ""),
+                             username=pending.get("username", ""))
+            filial_sorov_ochir(new_id)
         await update.message.reply_text(f"✅ `{new_id}` whitelist ga qo'shildi.", parse_mode="Markdown")
         try:
             await context.bot.send_message(
@@ -416,6 +415,53 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     uid = query.from_user.id
+
+    # 2026-07-24 (Huzayfa: "har filial o'z qoldig'ini ko'rsin" funksiyasi):
+    # bu tugma ATAYLAB kirish_ruxsati TEKSHIRUVIDAN OLDIN turadi — chunki
+    # buni bosayotgan odam, ta'rifi bo'yicha, HALI whitelist'da EMAS (u
+    # aynan shu tugma orqali kirish so'rayapti). Faqat filialni saqlab,
+    # adminga (filial nomi bilan) so'rov yuboradi — whitelist'ga hali
+    # QO'SHILMAYDI, buni admin /adduser bilan qiladi (pastda adduser_cmd
+    # shu pending yozuvni o'qib, tasdiqlangach YAKUNIY joyga ko'chiradi).
+    if query.data.startswith("filial_yangi:"):
+        try:
+            idx = int(query.data.split(":")[1])
+            filial = FILIALLAR[idx]
+        except (ValueError, IndexError):
+            await query.answer("❌ Xato — qaytadan /start bosing.", show_alert=True)
+            return
+        user      = query.from_user
+        full_name = (user.full_name or "").strip() or "Noma'lum"
+        username  = f"@{user.username}" if user.username else ""
+        filial_sorov_saqla(uid, filial, ism=full_name, username=username)
+        try:
+            await query.edit_message_text(
+                f"✅ Filial tanlandi: {filial}\n\n"
+                "So'rovingiz adminga yuborildi. Ruxsat berilgach, "
+                "/start bosib boshlashingiz mumkin."
+            )
+        except Exception:
+            pass
+        # Adminga (ilgari start()da yuborilardi, endi shu yerda —
+        # parse_mode="Markdown" ATAYLAB ishlatilmaydi, sabab 2026-07-16dagi
+        # eski izohda: username'dagi "_" Markdown'ni buzib, xabar
+        # yetkazilmay qolishi mumkin edi.)
+        username_txt = username or "(username yo'q)"
+        notif = (
+            f"🔔 Yangi kirish so'rovi\n\n"
+            f"👤 {full_name} {username_txt}\n"
+            f"🆔 {uid}\n"
+            f"🏢 Filial: {filial}\n\n"
+            f"Qo'shish uchun: /adduser {uid}"
+        )
+        logger.info(f"Kirish so'rovi (filial bilan): uid={uid}, filial={filial}")
+        if SUPER_ADMIN_ID:
+            try:
+                await context.bot.send_message(chat_id=SUPER_ADMIN_ID, text=notif)
+            except Exception as e:
+                logger.error(f"Admin ga xabar yuborish XATO: {e}")
+        return
+
     if not kirish_ruxsati(uid):
         await query.answer("⛔ Kirish huquqi yo'q.", show_alert=True)
         return
@@ -1750,6 +1796,19 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(t(lang, "sorovlar_yoq"))
         else:
             await msg.reply_document(document=bio, filename="Sorovlar.xlsx")
+
+    elif action == "userlar_royxat":
+        # 2026-07-24 (Huzayfa: "har filial o'z qoldig'ini ko'rsin" funksiyasi):
+        # admin har bir userning qaysi filialga biriktirilganini ko'rishi
+        # uchun Excel — sorovlar_royxat bilan bir xil naqsh.
+        if _admin_emasmi(uid):
+            await msg.reply_text("❌ Bu funksiya faqat admin uchun.")
+            return
+        bio = userlar_excel_yarat()
+        if bio is None:
+            await msg.reply_text(t(lang, "userlar_yoq"))
+        else:
+            await msg.reply_document(document=bio, filename="Userlar.xlsx")
 
 
 async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):

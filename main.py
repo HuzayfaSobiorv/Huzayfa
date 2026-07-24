@@ -32,6 +32,7 @@ from common import (
     get_himoya_foiz, yaxlitla_50, hisobla_min_zaxira, min_dan_kunlik_chiqar,
     load_qoldiq_file, keraksizmi, fayl_sanasi,
     YOLDA_KUN, FAST_KUN, M12_KUN, KUNLIK_SOTUV_BOLISH,
+    filial_qoldiqlarini_chiqar, atomic_json_write,
 )
 
 
@@ -45,6 +46,7 @@ MIN_ZAXIRA_FILE   = SCRIPT_DIR / 'Minimal_zaxiralar' / 'Min_Zaxira.xlsx'
 KONTEYNER_FOLDER       = SCRIPT_DIR / 'konteynerlar'
 KONTEYNER_XITOY_FOLDER = SCRIPT_DIR / 'konteynerlar' / 'xitoy_parsed'
 OUTPUT_FILE       = SCRIPT_DIR / 'chiqish' / 'NEJAVIYKA_POWER_BI.xlsx'
+FILIAL_QOLDIQ_FILE = SCRIPT_DIR / 'bot_holat' / 'filial_qoldiq.json'
 
 # ============================================================
 # BOSHLASH
@@ -72,6 +74,22 @@ print(f"  📅 Bugungi qoldiq fayli: {QOLDIQ_FILE.name}")
 
 qoldiq = load_qoldiq_file(str(QOLDIQ_FILE))
 print(f"  ✅ {len(qoldiq):,} mahsulot yuklandi")
+
+# 2026-07-24 (Huzayfa: "har filial o'z qoldig'ini ko'rsin" funksiyasi):
+# botning buyurtma hisob-kitobi (yuqoridagi qoldiq, Асосий/Цех/Ош jamlama)
+# BILAN ARALASHTIRMAY, alohida — faqat Qidiruv ekranida ko'rsatish uchun —
+# har bir filialning O'Z qoldig'ini bot_holat/filial_qoldiq.json'ga
+# yozamiz. Eski (9 ustunli) tarix formatida bo'sh {} qaytadi (filial-
+# bo'yicha ajratib bo'lmaydi) — bu holda fayl bo'sh {} bilan yoziladi va
+# ui.py qidiruvda filial qatorini shunchaki ko'rsatmaydi.
+try:
+    filial_map = filial_qoldiqlarini_chiqar(str(QOLDIQ_FILE))
+    FILIAL_QOLDIQ_FILE.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json_write(FILIAL_QOLDIQ_FILE, filial_map, ensure_ascii=False)
+    print(f"  ✅ Filial-bo'yicha qoldiq saqlandi: {len(filial_map):,} mahsulot "
+          f"({FILIAL_QOLDIQ_FILE.name})")
+except Exception as e:
+    print(f"  ⚠️  Filial-bo'yicha qoldiqni saqlashda xato (davom etiladi): {e}")
 
 
 # ============================================================

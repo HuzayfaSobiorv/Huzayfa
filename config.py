@@ -2,7 +2,7 @@
 config.py — NEJAVIYKA Bot sozlamalari
 Barcha global konstant, path va konfiguratsiya shu yerda.
 """
-import logging, os, threading, time
+import json, logging, os, threading, time
 from pathlib import Path
 
 # ── Papkalar ────────────────────────────────────────────────────────────────
@@ -71,10 +71,16 @@ logger = logging.getLogger("nejaviyka")
 # ── Excel RAM cache (har 5 daqiqada yangilanadi) ─────────────────────────────
 import pandas as pd
 
-_XLSX_CACHE: dict = {"inv": None, "kont": None, "ts": 0.0}
+_XLSX_CACHE: dict = {"inv": None, "kont": None, "filial_qoldiq": None, "ts": 0.0}
 _XLSX_LOCK  = threading.Lock()
 _MPL_LOCK   = threading.Lock()   # matplotlib thread-safe emas
 _CACHE_TTL  = 300                # sekund
+
+# 2026-07-24 (Huzayfa: "har filial o'z qoldig'ini ko'rsin" funksiyasi):
+# main.py tomonidan yozilgan, filial-bo'yicha qoldiq — Power BI faylidan
+# ATAYLAB ALOHIDA (buyurtma hisob-kitobiga aralashmasin), faqat Qidiruv
+# ekranida ko'rsatish uchun. Xuddi shu TTL-cache bilan yangilanadi.
+FILIAL_QOLDIQ_FILE = BOT_HOLAT_DIR / "filial_qoldiq.json"
 
 
 def xlsx_refresh(force: bool = False) -> None:
@@ -86,6 +92,15 @@ def xlsx_refresh(force: bool = False) -> None:
         try:
             _XLSX_CACHE["inv"]  = pd.read_excel(DATA_FILE, sheet_name="Инвентар")
             _XLSX_CACHE["kont"] = pd.read_excel(DATA_FILE, sheet_name="Контейнерлар")
+            try:
+                if FILIAL_QOLDIQ_FILE.exists():
+                    _XLSX_CACHE["filial_qoldiq"] = json.loads(
+                        FILIAL_QOLDIQ_FILE.read_text(encoding="utf-8"))
+                else:
+                    _XLSX_CACHE["filial_qoldiq"] = {}
+            except Exception as e:
+                logger.warning(f"filial_qoldiq cache refresh xato: {e}")
+                _XLSX_CACHE["filial_qoldiq"] = {}
             _XLSX_CACHE["ts"]   = time.monotonic()
         except Exception as e:
             logger.warning(f"xlsx cache refresh xato: {e}")
@@ -99,6 +114,13 @@ def get_inv() -> "pd.DataFrame":
 def get_kont() -> "pd.DataFrame":
     xlsx_refresh()
     return _XLSX_CACHE["kont"]
+
+
+def get_filial_qoldiq() -> dict:
+    """{Mahsulot_Normalized: {Filial: qoldiq_dona}} — bo'sh dict eski
+    tarix formatida yoki fayl hali yaratilmaganda."""
+    xlsx_refresh()
+    return _XLSX_CACHE["filial_qoldiq"] or {}
 
 
 # ── Mahsulot varaqlari ───────────────────────────────────────────────────────

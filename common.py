@@ -386,6 +386,128 @@ def _lokatsiya_kanali(nom) -> str | None:
     return 'asosiy'
 
 
+# ============================================================
+# FILIAL RO'YXATI (2026-07-24, "har filial o'z qoldig'ini ko'rsin"
+# funksiyasi uchun) — Huzayfa bilan kelishilgan YAKUNIY ro'yxat:
+# 15 ta Асосий filial + Ош + Промзона (Tsex), oxirida Промзона.
+# Har filial uchun склад+транзит ustunlari BIRGA hisoblanadi
+# (Huzayfa: "Albatta tranzitlar ham qoshib hisoblansin").
+# MUHIM: bu ro'yxat _lokatsiya_kanali() bilan mos kelishi SHART —
+# har bir xom ustun nomi shu yerda ANIQ bitta filialga tegishli
+# bo'lishi kerak (testda tekshiriladi).
+# ============================================================
+
+FILIAL_GURUHLARI: dict[str, list[str]] = {
+    'Нержавейка склад (Основной)': [
+        'Нержавейка склад (Основной)', 'Нержавейка склад (Основной) Транзит',
+    ],
+    'Сой':          ['Сой (Нержавейка)', 'Сой (Нержавейка) Транзит'],
+    'Шахрихон':     ['Шахрихон Нержавейка', 'Шахрихон Нержавейка Транзит'],
+    'Тошкент':      ['Тошкент (Нержавейка)', 'Тошкент (Нержавейка) Транзит'],
+    'Наманган':     ['Наманган (Нержавейка)', 'Наманган (Нержавейка) Транзит'],
+    'Урожайный':    ['Урожайный (Нержавейка)', 'Урожайный (Нержавейка) Транзит'],
+    'Маргилон':     ['Маргилон (Нержавейка)', 'Маргилон (Нержавейка) Транзит'],
+    'Самарканд':    ['Самарканд (Нержавейка)'],
+    'Бухоро':       ['Бухоро (Нержавейка)', 'Бухоро (Нержавейка) Транзит'],
+    'Сергили база': ['Сергили база', 'Сергили база Транзит'],
+    'Карши':        ['Карши (Нержавека)', 'Карши (Нержавейка) Транзит'],
+    'Хоразм':       ['Хоразм (Нержавейка)', 'Хоразм (Нержавейка) Транзит'],
+    '37 Склад':     ['37 Склад (Нержавейка)', '37 Склад (Нержавейка) транзит'],
+    'Оптом Тошкент':['Оптом Тошкент склад', 'Оптом Тошкент (Транзит)'],
+    'Гиздувон':     ['Гиздувон (Нержавейка)', 'Гиздувон (Нержавейка) Транзит'],
+    'Ош':           ['Ош (Нержавейка ) склад', 'Ош (Нержавейка ) транзит'],
+    'Промзона':     ['Промзона (Хомашё)', 'Промзона Транзит (склад)'],
+}
+
+# Ro'yxat tartibda — Huzayfa: "eng oxirida Promzona"
+FILIALLAR: list[str] = [f for f in FILIAL_GURUHLARI.keys()]
+
+
+def _filial_nomi(nom) -> str | None:
+    """Xom ustun nomi (masalan 'Урожайный (Нержавейка) Транзит') qaysi
+    KANONIK filialga tegishli ekanini topadi. MUHIM: avval _lokatsiya_kanali()
+    orqali "bu ustun umuman hisobga olinadimi" tekshiriladi — aks holda
+    masalan "Шахрихон сервис (склад)" (skip-kalit "сервис") yoki "Лазер
+    Промзона..." (skip-kalit "лазер") kabi ATAYLAB chetlangan ustunlar
+    nomida "Шахрихон"/"Промзона" so'zi bor deb NOTO'G'RI filialga
+    qo'shilib ketardi."""
+    if _lokatsiya_kanali(nom) is None:
+        return None
+    s = str(nom).strip().lower()
+    # 1) Avval ANIQ (FILIAL_GURUHLARI'dagi xom nom bilan) moslikni qidiramiz
+    for filial, xom_nomlar in FILIAL_GURUHLARI.items():
+        if any(str(x).strip().lower() == s for x in xom_nomlar):
+            return filial
+    # 2) Topilmasa (masalan ertaga "Бухоро Транзит 2" kabi yangi variant
+    #    qo'shilsa) — filial NOMINING O'ZI ustun nomida bor-yo'qligini
+    #    tekshiramiz. "Ош" bundan mustasno — 2 harfli bo'lgani uchun
+    #    ("Тошкент" kabi so'zlar ichida ham uchraydi) faqat QATOR BOSHIDA
+    #    mos deb hisoblanadi, xuddi _lokatsiya_kanali() dagi kabi.
+    for filial in FILIAL_GURUHLARI:
+        if filial == 'Ош':
+            if s.startswith('ош'):
+                return filial
+            continue
+        if filial.lower() in s:
+            return filial
+    return None
+
+
+def filial_qoldiqlarini_chiqar(filepath: str) -> dict:
+    """Yangi (filial-bo'yicha) tarix faylidan HAR BIR filial uchun ALOHIDA
+    qoldiqni chiqaradi. Qaytadi: {Mahsulot_Normalized: {Filial: qoldiq_dona}}.
+    Eski (9 ustunli) format uchun BO'SH dict qaytaradi — u faylda
+    filial-bo'yicha buzilish umuman yo'q, ajratib bo'lmaydi.
+
+    2026-07-24 (Huzayfa: "har filial faqat o'zinikini ko'rsin" funksiyasi
+    uchun) — buyurtma hisob-kitobi (Асосий/Цех/Ош jamlama, load_qoldiq_file())
+    bilan ATAYLAB ARALASHTIRILMAYDI: bu alohida, faqat QIDIRUV ekranida
+    ko'rsatish uchun ishlatiladigan yengil natija."""
+    if not _yangi_tarix_formati_mi(filepath):
+        return {}
+
+    import openpyxl
+    wb = openpyxl.load_workbook(filepath, data_only=True)
+    try:
+        ws = wb.active
+
+        # Har filial uchun ustun juftliklari
+        filial_ustunlar: dict[str, list] = {f: [] for f in FILIALLAR}
+        c = 11
+        while c < 121:
+            nom = ws.cell(6, c).value
+            if nom is not None:
+                filial = _filial_nomi(nom)
+                if filial:
+                    filial_ustunlar[filial].append((c, c + 1))
+            c += 2
+
+        natija: dict[str, dict[str, float]] = {}
+        for r in range(8, ws.max_row + 1):
+            mahsulot = ws.cell(r, 2).value
+            if mahsulot is None:
+                continue
+            mahsulot_str = str(mahsulot).strip()
+            if not mahsulot_str or mahsulot_str == 'Товар':
+                continue
+
+            qatorlar = {}
+            for filial, ustunlar in filial_ustunlar.items():
+                dona = 0
+                for kor_col, _jami_col in ustunlar:
+                    kor_val = ws.cell(r, kor_col).value
+                    if kor_val not in (None, ''):
+                        dona += parse_qoldiq_str(kor_val)
+                if dona:
+                    qatorlar[filial] = dona
+            if qatorlar:
+                key = normalize_product_name(mahsulot_str)
+                natija[key] = qatorlar
+    finally:
+        wb.close()
+    return natija
+
+
 def _yangi_lokatsiyalarni_tekshir(joriy_nomlar: list) -> None:
     """Yangi tarix faylida ILGARI ko'rilmagan ustun (filial/ombor) nomi
     paydo bo'lsa — konsolga OGOHLANTIRISH chiqaradi (hisoblashni
