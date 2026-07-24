@@ -451,7 +451,8 @@ if not min_zaxira.empty:
     # shu sabab 'outer' tanlandi.
     result = pd.merge(
         min_zaxira.rename(columns={'Mahsulot_Normalized': 'Mahsulot_Key'}),
-        qoldiq_key[['Mahsulot_Key', 'Mahsulot', 'Qoldiq_Dona', 'Qoldiq_Summa']],
+        qoldiq_key[['Mahsulot_Key', 'Mahsulot', 'Qoldiq_Dona', 'Qoldiq_Summa',
+                    'Asosiy_Qoldiq_Dona', 'Cex_Qoldiq_Dona', 'Osh_Qoldiq_Dona']],
         on='Mahsulot_Key', how='outer'
     )
 else:
@@ -512,7 +513,8 @@ else:
         result[col] = None
 
 for col in ['Fast_Miqdor', 'M12_Miqdor', 'Standart_Miqdor', 'Qoldiq_Dona', 'Qoldiq_Summa',
-            'Sotuv_Min', 'Cex_Min']:
+            'Sotuv_Min', 'Cex_Min',
+            'Asosiy_Qoldiq_Dona', 'Cex_Qoldiq_Dona', 'Osh_Qoldiq_Dona']:
     result[col] = result[col].fillna(0)
 
 result['Mahsulot'] = result['Mahsulot'].fillna(result['Mahsulot_Key'])
@@ -651,6 +653,7 @@ final_df = result[[
     'Yolda_Jami', 'Umumiy_Zaxira', 'Min_Zaxira', 'Sotuv_Min', 'Cex_Min', 'Osh_Min',
     'Kunlik_Istemol', 'Kun_Yetadi', 'Yakuniy_Qoldiq',
     'Farq', 'Etishmaydi', 'Qoldiq_Summa',
+    'Asosiy_Qoldiq_Dona', 'Cex_Qoldiq_Dona', 'Osh_Qoldiq_Dona',
 ]].copy()
 
 final_df['Marka']               = result['Mahsulot'].apply(get_marka)
@@ -699,6 +702,9 @@ final_df = final_df.rename(columns={
     'Qoldiq_Summa':         'Қолдиқ_Сумма',
     'Kategoriya_Tartib':    'Категория_Тартиб',
     'Kategoriya_Ierarxiya': 'Категория_Иерархия',
+    'Asosiy_Qoldiq_Dona':   'Асосий_Қолдиқ',
+    'Cex_Qoldiq_Dona':      'Цех_Қолдиқ',
+    'Osh_Qoldiq_Dona':      'Ош_Қолдиқ',
 })
 
 status_order = {'🔴 КРИТИК': 1, '🟡 ПАСТ': 2, '🟢 НОРМА': 3, 'МЕЁР ЙЎҚ': 4}

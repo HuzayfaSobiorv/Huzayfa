@@ -277,9 +277,21 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
         row    = inv[inv_n == tv_n]
         if row.empty:
             return None
-        r0      = row.iloc[0]
-        qoldiq  = float(r0.get("Қолдиқ", 0) or 0)
-        min_z   = float(r0.get("Мин_Захира", 0) or 0)
+        r0 = row.iloc[0]
+        # 2026-07-24 (Huzayfa: "Asosiyda buyurtma yozsak, u O'shning/Tsexning
+        # qoldig'ini hisobga olmasligi kerak"): grafik/qidiruv kartasi ham
+        # endi kanalga mos Қолдиқ/Мин_Захира ustunidan o'qiydi — Buyurtma
+        # Excel bilan bir xil son ko'rsatishi uchun (aks holda C-ustuni
+        # bugidagi kabi ikki joy mos kelmay qolardi). Fallback -- eski
+        # (kanal ustunlarisiz) Power BI fayli uchun -- umumiy ustunlarga.
+        _qcol = {"sex": "Цех_Қолдиқ", "osh": "Ош_Қолдиқ"}.get(kanal, "Асосий_Қолдиқ")
+        if _qcol not in inv.columns:
+            _qcol = "Қолдиқ"
+        _mcol = {"sex": "Цех_Захира", "osh": "Ош_Захира"}.get(kanal, "Асосий_Захира")
+        if _mcol not in inv.columns:
+            _mcol = "Мин_Захира"
+        qoldiq  = float(r0.get(_qcol, 0) or 0)
+        min_z   = float(r0.get(_mcol, 0) or 0)
         yolda_j = float(r0.get("Йўлда_Жами", 0) or 0)
         holat   = str(r0.get("Холат", ""))
         kont_list, kont_rows = [], []

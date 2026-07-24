@@ -319,12 +319,27 @@ def kamomat_excel_v2(data_file: Path, kanal: str,
     # ── Ma'lumot o'qish ──────────────────────────────────────
     try:
         inv = pd.read_excel(data_file, sheet_name="Инвентар")
-        for col in ["Қолдиқ", "Мин_Захира", "Йўлда_Жами", "Фарқ"]:
+        for col in ["Қолдиқ", "Мин_Захира", "Йўлда_Жами", "Фарқ",
+                    "Асосий_Қолдиқ", "Цех_Қолдиқ", "Ош_Қолдиқ",
+                    "Асосий_Захира", "Цех_Захира", "Ош_Захира"]:
             if col in inv.columns:
                 inv[col] = pd.to_numeric(inv[col], errors="coerce").fillna(0)
     except Exception as e:
         logger.error(f"kamomat_excel_v2 inv: {e}")
         return None
+
+    # 2026-07-24 (Huzayfa: "Asosiyda buyurtma yozsak, u O'shning/Tsexning
+    # qoldig'ini hisobga olmasligi kerak" -- Buyurtma Excel'da tuzatilgan
+    # gap shu yerda ham bor edi): endi Қолдиқ VA Мин_Захира ikkalasi ham
+    # kanalga mos ustundan o'qiladi (Generate_Asosiy_order.py::load_data()
+    # bilan bir xil naqsh). Fallback -- eski (kanal ustunlarisiz) Power BI
+    # fayli uchun -- umumiy ustunlarga tushadi.
+    qoldiq_col = {"sex": "Цех_Қолдиқ", "osh": "Ош_Қолдиқ"}.get(kanal, "Асосий_Қолдиқ")
+    if qoldiq_col not in inv.columns:
+        qoldiq_col = "Қолдиқ"
+    minz_col = {"sex": "Цех_Захира", "osh": "Ош_Захира"}.get(kanal, "Асосий_Захира")
+    if minz_col not in inv.columns:
+        minz_col = "Мин_Захира"
 
     # Kanal filtri
     if "Тур" in inv.columns:
@@ -374,8 +389,8 @@ def kamomat_excel_v2(data_file: Path, kanal: str,
     sims = []
     for _, row in df.iterrows():
         tovar  = str(row.get("Товар", ""))
-        qoldiq = float(row.get("Қолдиқ", 0))
-        min_z  = float(row.get("Мин_Захира", 0))
+        qoldiq = float(row.get(qoldiq_col, 0))
+        min_z  = float(row.get(minz_col, 0))
         kont_l = kont_map.get(tovar, [])
         sims.append(zanjir_sim(qoldiq, min_z, kont_l, horizon_override=_horizon_ov))
 
@@ -432,9 +447,13 @@ def kamomat_excel_v2(data_file: Path, kanal: str,
         kat    = str(row.get("Категория", "БОШҚА"))
         tovar  = str(row.get("Товар", ""))
         holat  = str(row.get("Холат", ""))
-        qoldiq = int(row.get("Қолдиқ", 0))
+        # 2026-07-24: ko'rsatiladigan Қолдиқ/Мин_Захира ham sims ro'yxatini
+        # yasashda ishlatilgan XUDDI SHU kanalga mos ustundan olinadi —
+        # aks holda Excel'da ko'rinadigan son bilan Таклиф_Миқдор (sims
+        # asosida) mos kelmay qolardi (xuddi C-ustuni bugidagi kabi).
+        qoldiq = int(row.get(qoldiq_col, 0))
         yolda  = int(row.get("Йўлда_Жами", 0))
-        min_z  = int(row.get("Мин_Захира", 0))
+        min_z  = int(row.get(minz_col, 0))
         sim    = sims[idx]
 
         # Kategoriya separator

@@ -280,6 +280,8 @@ def parse_qoldiq_str(text) -> int:
 
 
 def load_qoldiq_file(filepath: str) -> pd.DataFrame:
+    if _yangi_tarix_formati_mi(filepath):
+        return _load_qoldiq_yangi_format(filepath)
     df = pd.read_excel(filepath, header=4)
     col_count = len(df.columns)
     mid_cols = [f'_Col{i}' for i in range(1, col_count - 2)]
@@ -289,7 +291,185 @@ def load_qoldiq_file(filepath: str) -> pd.DataFrame:
     df['Qoldiq_Dona']         = df['Qoldiq_Str'].apply(parse_qoldiq_str)
     df['Qoldiq_Summa']        = pd.to_numeric(df['Qoldiq_Summa'], errors='coerce').fillna(0)
     df['Mahsulot_Normalized'] = df['Mahsulot'].apply(normalize_product_name)
-    return df[['Mahsulot', 'Mahsulot_Normalized', 'Qoldiq_Dona', 'Qoldiq_Summa']].copy()
+    # 2026-07-24: eski format faqat BITTA (butun kompaniya) jami beradi —
+    # kanal bo'yicha ajratib bo'lmaydi. Shu sabab uchala kanal ham xuddi
+    # shu qiymatni oladi (bu YANGI regressiya EMAS — tizim ilgari ham
+    # doim shu bitta jami sonni ishlatgan; yangi formatda esa endi
+    # HAQIQIY ajratish mumkin bo'ladi, pastdagi _load_qoldiq_yangi_format'ga
+    # qarang).
+    df['Asosiy_Qoldiq_Dona'] = df['Qoldiq_Dona']
+    df['Cex_Qoldiq_Dona']    = df['Qoldiq_Dona']
+    df['Osh_Qoldiq_Dona']    = df['Qoldiq_Dona']
+    return df[['Mahsulot', 'Mahsulot_Normalized', 'Qoldiq_Dona', 'Qoldiq_Summa',
+               'Asosiy_Qoldiq_Dona', 'Cex_Qoldiq_Dona', 'Osh_Qoldiq_Dona']].copy()
+
+
+# ============================================================
+# YANGI TARIX FORMATI (2026-07-24 dan) — har filial/ombor
+# alohida ustun juftligida ("кор /дона" + "жами"), bitta faylda.
+# Huzayfa bilan kelishilgan YAKUNIY qoida (2026-07-24, uchinchi bosqich —
+# har kanal ENDI O'Z ALOHIDA jismoniy zaxirasidan hisoblanishi kerak,
+# UMUMIY jamlama YETARLI EMAS ekani aniqlangach — "Asosiyda buyurtma
+# yozsak, u O'shning/Tsexning qoldig'ini hisobga olmasligi kerak"):
+#   - "Ош..." bilan boshlanadigan ustunlar         -> Ош kanaliga
+#   - "Промзона (Хомашё)" va
+#     "Промзона Транзит (склад)"                   -> Tsex kanaliga
+#   - Мебел/Стул/Тумба/Универсал цехlari, "Цех склад (Основной)",
+#     "Темур Склад", "Инвентар"/"Инвентарлар омбори", "* аппарат"
+#     (masalan Голд аппарат — qurilma hisobi, filial emas),
+#     "Сотув булими" (ichki bo'lim hisobi), "* сервис" (xizmat markazi),
+#     "Лазер Промзона..." va "* Таййор махсулот"    -> HECH QAYSI kanalga
+#     kirmaydi (umuman hisoblanmaydi)
+#   - qolgan barcha oddiy filial/ombor ustunlari
+#     (Транзит bilan birga)                         -> Асосий kanaliga
+#
+# Natijada har mahsulot uchun 3 ta ALOHIDA son chiqadi: Asosiy_Qoldiq_Dona/
+# Cex_Qoldiq_Dona/Osh_Qoldiq_Dona — main.py bularni Power BI fayliga
+# (Асосий_Қолдиқ/Цех_Қолдиқ/Ош_Қолдиқ) chiqaradi, Generate_Asosiy_order.py/
+# kamomat_engine.py/ui.py esa endi HAR BIRI FAQAT O'Z kanaliga mos ustundan
+# o'qiydi (xuddi Асосий_Захира/Цех_Захира/Ош_Захира kabi). Umumiy
+# (kompaniya darajasidagi) Qoldiq_Dona/Qoldiq_Summa ham saqlanadi — faqat
+# main.py'dagi umumiy "Холат" ko'rsatkichi uchun, buyurtma hisobiga
+# ta'sir qilmaydi.
+#
+# MUHIM (Huzayfa: "ertaga yangi ustunlar qo'shilib qolishi mumkin,
+# dastur chalg'imasligi kerak"): tuzatish ATAYLAB aniq fayl nomlari
+# emas, KALIT SO'ZLARGA asoslangan — shu bilan masalan ertaga "Бухоро
+# Транзит" degan YANGI ustun qo'shilsa, u hech qaysi skip-kalitga mos
+# kelmagani uchun avtomatik TO'G'RI (Асосийga hisobga olinadi holatda)
+# ishlaydi, kod o'zgartirish shart emas. Qo'shimcha xavfsizlik pardasi
+# sifatida _yangi_lokatsiyalarni_tekshir() — ILGARI ko'rilmagan ustun
+# nomi chiqsa shunchaki OGOHLANTIRADI (main.py konsolida), hisoblashni
+# to'xtatmaydi — admin format o'zgarishini "sezishi" uchun.
+# ============================================================
+
+_YANGI_FORMAT_SKIP_KALIT = (
+    'стул', 'тумба', 'универсал', 'мебел',   # mebel sexlari
+    'цех склад',                              # Цех склад (Основной)
+    'темур склад',                            # shaxsiy/nomlangan ombor
+    'инвентар',                               # Инвентар + Инвентарлар омбори
+    'аппарат',                                # Голд аппарат — qurilma hisobi
+    'сотув булими',                           # ichki savdo bo'limi hisobi
+    'сервис',                                 # xizmat markazi (masalan Шахрихон сервис)
+    'лазер',                                  # Лазер Промзона* — Tsexga kirmaydi
+    'таййор махсулот',                        # tayyor mahsulot omborlari — kirmaydi
+)
+
+_LOKATSIYA_KUZATUV_FAYL = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'bot_holat', 'tarix_lokatsiyalari.json'
+)
+
+
+def _yangi_tarix_formati_mi(filepath: str) -> bool:
+    import openpyxl
+    wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
+    try:
+        ws = wb.active
+        return ws.max_column is not None and ws.max_column > 20
+    finally:
+        wb.close()
+
+
+def _lokatsiya_kanali(nom) -> str | None:
+    """Yangi tarix faylidagi bitta filial/ombor ustuni qaysi kanalga
+    tegishli: 'asosiy' | 'sex' | 'osh' | None (hech qaysiga kirmaydi,
+    umuman hisoblanmaydi). Tartib muhim: avval skip-kalitlar tekshiriladi
+    (шу bilan "Лазер Промзона..."/"* Таййор махсулот" — nomida "промзона"
+    bo'lsa ham — Tsexga emas, None'ga tushadi)."""
+    s = str(nom).strip().lower()
+    if any(k in s for k in _YANGI_FORMAT_SKIP_KALIT):
+        return None
+    if s.startswith('ош'):
+        return 'osh'
+    if 'промзона' in s:
+        return 'sex'
+    return 'asosiy'
+
+
+def _yangi_lokatsiyalarni_tekshir(joriy_nomlar: list) -> None:
+    """Yangi tarix faylida ILGARI ko'rilmagan ustun (filial/ombor) nomi
+    paydo bo'lsa — konsolga OGOHLANTIRISH chiqaradi (hisoblashni
+    TO'XTATMAYDI, standart qoida bo'yicha davom etadi). Maqsad: format
+    o'zgarganda admin buni JIM emas, KO'RIB bilsin (Huzayfa talabi)."""
+    try:
+        eski = set()
+        if os.path.exists(_LOKATSIYA_KUZATUV_FAYL):
+            with open(_LOKATSIYA_KUZATUV_FAYL, encoding='utf-8') as f:
+                eski = set(json.load(f))
+        joriy = set(joriy_nomlar)
+        yangi = joriy - eski
+        if eski and yangi:
+            print(f"  ⚠️  Tarix faylida YANGI lokatsiya ustun(lar)i topildi "
+                  f"(avval ko'rilmagan): {sorted(yangi)}")
+            print(f"      Standart qoida bo'yicha avtomatik HISOBGA OLINADI "
+                  f"(chiqarib tashlash kerak bo'lsa — common.py::"
+                  f"_YANGI_FORMAT_SKIP_KALIT ro'yxatiga qo'shing).")
+        atomic_json_write(_LOKATSIYA_KUZATUV_FAYL, sorted(joriy | eski))
+    except Exception:
+        pass  # kuzatuv ixtiyoriy — asosiy hisoblashga hech qanday ta'sir qilmasin
+
+
+def _load_qoldiq_yangi_format(filepath: str) -> pd.DataFrame:
+    import openpyxl
+    wb = openpyxl.load_workbook(filepath, data_only=True)
+    try:
+        ws = wb.active
+
+        # Har kanal uchun alohida ustun juftliklari (кор_col, jami_col)
+        kanal_ustunlar = {'asosiy': [], 'sex': [], 'osh': []}
+        barcha_nomlar  = []
+        c = 11
+        while c < 121:   # 121-122 = Итого, alohida, shu yerda hisoblanmaydi
+            nom = ws.cell(6, c).value
+            if nom is not None:
+                barcha_nomlar.append(str(nom).strip())
+                kanal = _lokatsiya_kanali(nom)
+                if kanal:
+                    kanal_ustunlar[kanal].append((c, c + 1))
+            c += 2
+        _yangi_lokatsiyalarni_tekshir(barcha_nomlar)
+
+        rows = []
+        for r in range(8, ws.max_row + 1):
+            mahsulot = ws.cell(r, 2).value
+            if mahsulot is None:
+                continue
+            mahsulot_str = str(mahsulot).strip()
+            if not mahsulot_str or mahsulot_str == 'Товар':
+                continue
+
+            dona  = {'asosiy': 0, 'sex': 0, 'osh': 0}
+            summa = {'asosiy': 0.0, 'sex': 0.0, 'osh': 0.0}
+            for kanal, ustunlar in kanal_ustunlar.items():
+                for kor_col, jami_col in ustunlar:
+                    kor_val = ws.cell(r, kor_col).value
+                    if kor_val not in (None, ''):
+                        dona[kanal] += parse_qoldiq_str(kor_val)
+                    jami_val = ws.cell(r, jami_col).value
+                    if isinstance(jami_val, (int, float)):
+                        summa[kanal] += jami_val
+
+            rows.append({
+                'Mahsulot':           mahsulot_str,
+                'Asosiy_Qoldiq_Dona': dona['asosiy'],
+                'Cex_Qoldiq_Dona':    dona['sex'],
+                'Osh_Qoldiq_Dona':    dona['osh'],
+                'Qoldiq_Summa':       summa['asosiy'] + summa['sex'] + summa['osh'],
+            })
+    finally:
+        wb.close()
+
+    df = pd.DataFrame(rows, columns=[
+        'Mahsulot', 'Asosiy_Qoldiq_Dona', 'Cex_Qoldiq_Dona', 'Osh_Qoldiq_Dona', 'Qoldiq_Summa',
+    ])
+    df['Mahsulot_Normalized'] = df['Mahsulot'].apply(normalize_product_name)
+    # Qoldiq_Dona — UMUMIY (uch kanal jami), faqat main.py'dagi kompaniya
+    # darajasidagi "Холат" ko'rsatkichi uchun; buyurtma hisob-kitobi endi
+    # Asosiy_Qoldiq_Dona/Cex_Qoldiq_Dona/Osh_Qoldiq_Dona'dan foydalanadi.
+    df['Qoldiq_Dona'] = (df['Asosiy_Qoldiq_Dona'] + df['Cex_Qoldiq_Dona']
+                          + df['Osh_Qoldiq_Dona'])
+    return df[['Mahsulot', 'Mahsulot_Normalized', 'Qoldiq_Dona', 'Qoldiq_Summa',
+               'Asosiy_Qoldiq_Dona', 'Cex_Qoldiq_Dona', 'Osh_Qoldiq_Dona']].copy()
 
 
 # ============================================================

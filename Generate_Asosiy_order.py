@@ -30,7 +30,13 @@ STENKA_DELTA     = 0.05
 
 PB_SHEET_INVENTAR = "Инвентар"
 PB_COL_TOVAR      = "Товар"
-PB_COL_QOLDIQ     = "Қолдиқ"
+PB_COL_QOLDIQ     = "Қолдиқ"            # UMUMIY (3 kanal jami) — faqat fallback
+# 2026-07-24 (Huzayfa: "Asosiyda buyurtma yozsak, u O'shning/Tsexning
+# qoldig'ini hisobga olmasligi kerak"): har kanal ENDI FAQAT o'z jismoniy
+# zaxirasidan hisoblanadi — xuddi Асосий_Захира/Цех_Захира/Ош_Захира kabi.
+PB_COL_QOLDIQ_ASOSIY = "Асосий_Қолдиқ"
+PB_COL_QOLDIQ_CEX    = "Цех_Қолдиқ"
+PB_COL_QOLDIQ_OSH    = "Ош_Қолдиқ"
 PB_COL_YOLDA      = "Йўлда_Жами"
 PB_COL_MIN        = "Мин_Захира"        # Асосий+Цех+Ош (jamlangan) — faqat backward-compat fallback
 PB_COL_ASOSIY     = "Асосий_Захира"     # faqat "asosiy" kanali uchun
@@ -325,7 +331,7 @@ def load_data(kanal: str = "asosiy"):
         raise ValueError(f"'{PB_SHEET_INVENTAR}' varaqi topilmadi. Mavjud varaqlar: {', '.join(pb)}")
 
     inv = pb[PB_SHEET_INVENTAR].copy()
-    required = [PB_COL_TOVAR, PB_COL_QOLDIQ]
+    required = [PB_COL_TOVAR]
     missing = [c for c in required if c not in inv.columns]
     if missing:
         raise ValueError(f"Inventar varaqida ustunlar yetishmaydi: {', '.join(missing)}")
@@ -349,7 +355,19 @@ def load_data(kanal: str = "asosiy"):
         # (pastdagi merge) -- jami ustun ISHLATILMAYDI.
         min_col = None
 
-    cols = [PB_COL_TOVAR, PB_COL_QOLDIQ]
+    # 2026-07-24 (Huzayfa: "Asosiyda buyurtma yozsak, u O'shning/Tsexning
+    # qoldig'ini hisobga olmasligi kerak" -- tasdiqlangan, real gap edi):
+    # QOLDIQ ham ENDI kanalga mos ustundan olinadi, xuddi min_zaxira kabi.
+    # Fallback: agar Power BI fayl ESKI (hali qayta yaratilmagan, kanal
+    # ustunlari yo'q) bo'lsa -- umumiy "Қолдиқ"ga tushadi (backward-compat,
+    # "Ma'lumotlarni yangilash" bosilguncha eski xatti-harakat saqlanadi).
+    qoldiq_col = {"sex": PB_COL_QOLDIQ_CEX, "osh": PB_COL_QOLDIQ_OSH}.get(kanal, PB_COL_QOLDIQ_ASOSIY)
+    if qoldiq_col not in inv.columns:
+        qoldiq_col = PB_COL_QOLDIQ
+    if qoldiq_col not in inv.columns:
+        raise ValueError(f"Inventar varaqida qoldiq ustuni topilmadi ({qoldiq_col})")
+
+    cols = [PB_COL_TOVAR, qoldiq_col]
     if PB_COL_YOLDA in inv.columns:
         cols.append(PB_COL_YOLDA)
     if min_col:
@@ -357,7 +375,7 @@ def load_data(kanal: str = "asosiy"):
 
     df = inv[cols].rename(columns={
         PB_COL_TOVAR: "tovar",
-        PB_COL_QOLDIQ: "qoldiq",
+        qoldiq_col: "qoldiq",
         PB_COL_YOLDA: "yoldagi",
         **({min_col: "min_zaxira"} if min_col else {}),
     }).dropna(subset=["tovar"])
