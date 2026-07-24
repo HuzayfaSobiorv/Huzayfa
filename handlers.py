@@ -150,7 +150,7 @@ from keyboards import (
     main_kb, order_kb, order_channel_kb, load_kb, load_channel_kb,
     settings_kb, search_kb, til_ikb, konteyner_kb,
     xitoy_sorash_ikb, xitoy_mavjud_ikb, xitoy_yana_ikb,
-    tozala_kanal_ikb, tozala_tasdiq_ikb, zakaz_tasdiq_ikb,
+    tozala_tasdiq_ikb, zakaz_tasdiq_ikb,
     grafik_kat_ikb, kont_tasdiq_ikb, boglanish_ikb,
     filial_tanlash_ikb,
 )
@@ -601,43 +601,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await query.message.reply_document(document=f, filename="Yuklatish_rejasi.xlsx")
 
     # ── Tozalash flow ─────────────────────────────────────────
-    elif query.data.startswith("tozala_b:") or query.data.startswith("tozala_x:"):
-        # Kanal tanlandi, tasdiqlash so'rash
-        tip, kanal = query.data.split(":", 1)[0].split("_")[1], query.data.split(":")[1]
-        lang = context.user_data.get("lang", "cyr")
-        ch   = t(lang, CH_KEY.get(kanal, kanal))
-
-        if tip == "b":
-            data = buyurtma_yuklash(kanal)
-            n    = len(data.get("buyurtmalar", [])) if data else 0
-            sana = data.get("sana", "?") if data else "?"
-            if not data or n == 0:
-                await query.edit_message_text(
-                    t(lang, "tozala_topilmadi").format(ch=ch),
-                    parse_mode="Markdown"
-                )
-                return
-            await query.edit_message_text(
-                t(lang, "tozala_tasdiq_buy").format(ch=ch, n=n, sana=sana),
-                parse_mode="Markdown",
-                reply_markup=tozala_tasdiq_ikb(lang, "b", kanal),
-            )
-        else:
-            data = xitoy_yuklash(kanal)
-            n    = len(data.get("tovarlar", {})) if data else 0
-            sana = data.get("sana", "?") if data else "?"
-            if not data or n == 0:
-                await query.edit_message_text(
-                    t(lang, "tozala_topilmadi").format(ch=ch),
-                    parse_mode="Markdown"
-                )
-                return
-            await query.edit_message_text(
-                t(lang, "tozala_tasdiq_xitoy").format(ch=ch, n=n, sana=sana),
-                parse_mode="Markdown",
-                reply_markup=tozala_tasdiq_ikb(lang, "x", kanal),
-            )
-
+    # 2026-07-24: "qaysi kanal?" so'rovchi bosqich (tozala_b:/tozala_x:)
+    # olib tashlandi — endi bu amal to'g'ridan to'g'ri order_channel
+    # ekranidan ("tozala_buy_kanal"/"tozala_xitoy_kanal" action, pastda)
+    # kanal allaqachon ma'lum holda chaqiriladi va bevosita
+    # tozala_tasdiq_ikb (shu callback'lar: tozala_*_ok:/tozala_no) bilan
+    # tasdiqlashga o'tadi.
     elif query.data.startswith("tozala_b_ok:") or query.data.startswith("tozala_x_ok:"):
         tip   = "b" if query.data.startswith("tozala_b") else "x"
         kanal = query.data.split(":")[1]
@@ -1738,22 +1707,47 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "lang_pick":
         await msg.reply_text("🇺🇿 Тилни танланг:", reply_markup=til_ikb())
 
-    elif action == "tozala_buy":
+    elif action == "tozala_buy_kanal":
+        # 2026-07-24: endi settings'dan emas, order_channel ekranidan —
+        # kanal allaqachon ma'lum (context.user_data["kanal"]), shuning
+        # uchun "qaysi kanal?" bosqichisiz to'g'ridan to'g'ri tasdiqlashga.
         if _admin_emasmi(uid):
             await msg.reply_text("❌ Bu funksiya faqat admin uchun.")
             return
+        ch   = t(lang, CH_KEY[kanal])
+        data = buyurtma_yuklash(kanal)
+        n    = len(data.get("buyurtmalar", [])) if data else 0
+        sana = data.get("sana", "?") if data else "?"
+        if not data or n == 0:
+            await msg.reply_text(
+                t(lang, "tozala_topilmadi").format(ch=ch),
+                parse_mode="Markdown"
+            )
+            return
         await msg.reply_text(
-            t(lang, "tozala_sor_buy"),
-            reply_markup=tozala_kanal_ikb(lang, "b"),
+            t(lang, "tozala_tasdiq_buy").format(ch=ch, n=n, sana=sana),
+            parse_mode="Markdown",
+            reply_markup=tozala_tasdiq_ikb(lang, "b", kanal),
         )
 
-    elif action == "tozala_xitoy":
+    elif action == "tozala_xitoy_kanal":
         if _admin_emasmi(uid):
             await msg.reply_text("❌ Bu funksiya faqat admin uchun.")
             return
+        ch   = t(lang, CH_KEY[kanal])
+        data = xitoy_yuklash(kanal)
+        n    = len(data.get("tovarlar", {})) if data else 0
+        sana = data.get("sana", "?") if data else "?"
+        if not data or n == 0:
+            await msg.reply_text(
+                t(lang, "tozala_topilmadi").format(ch=ch),
+                parse_mode="Markdown"
+            )
+            return
         await msg.reply_text(
-            t(lang, "tozala_sor_xitoy"),
-            reply_markup=tozala_kanal_ikb(lang, "x"),
+            t(lang, "tozala_tasdiq_xitoy").format(ch=ch, n=n, sana=sana),
+            parse_mode="Markdown",
+            reply_markup=tozala_tasdiq_ikb(lang, "x", kanal),
         )
 
     elif action == "yolga_kont":

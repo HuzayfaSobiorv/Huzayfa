@@ -85,9 +85,16 @@ def order_kb(lang: str) -> ReplyKeyboardMarkup:
 
 
 def order_channel_kb(lang: str) -> ReplyKeyboardMarkup:
+    # 2026-07-24 (Huzayfa): "Buyurtmani tozalash" / "Xitoy ostatkani
+    # tozalash" umumiy Sozlamalar menyusidan shu yerga (har bir kanal
+    # ichiga, b_tasdiq tugmasi OSTIGA) ko'chirildi — endi kanal allaqachon
+    # ma'lum bo'lgani uchun alohida "qaysi kanal?" so'ralmaydi, to'g'ridan
+    # to'g'ri shu kanal uchun tasdiqlash ekraniga o'tadi. Ikkalasi bitta
+    # qatorda — kichikroq ko'rinishi uchun.
     return rkb(
         [t(lang, "b_excel")],
         [t(lang, "b_tasdiq")],
+        [t(lang, "b_tozala_buy"), t(lang, "b_tozala_xitoy")],
         [t(lang, "back")],
     )
 
@@ -116,11 +123,11 @@ def status_kb(lang: str) -> ReplyKeyboardMarkup:
 
 
 def settings_kb(lang: str, admin: bool = False) -> ReplyKeyboardMarkup:
+    # 2026-07-24 (Huzayfa): tozalash tugmalari bu yerdan olib tashlandi —
+    # endi har bir order kanali ichida (order_channel_kb) joylashadi.
     rows = [
         [t(lang, "b_yangilash")],
         [t(lang, "b_lang")],
-        [t(lang, "b_tozala_buy")],
-        [t(lang, "b_tozala_xitoy")],
         [t(lang, "b_sorovlar_royxat")],
         [t(lang, "b_userlar_royxat")],
     ]
@@ -216,15 +223,10 @@ def xitoy_yana_ikb(lang: str, kanal: str, jami: int, tip: str = "xitoy_fayl") ->
     )
 
 
-def tozala_kanal_ikb(lang: str, tip: str) -> InlineKeyboardMarkup:
-    bekor = "❌ Bekor" if lang == "lat" else "❌ Бекор"
-    return ikb(
-        [("🏢 Asosiy", f"tozala_{tip}:asosiy"),
-         ("🏭 Tsex",   f"tozala_{tip}:sex"),
-         ("🇰🇬 O'sh",  f"tozala_{tip}:osh")],
-        [(bekor, "tozala_no")],
-    )
-
+# 2026-07-24: tozala_kanal_ikb ("qaysi kanal?" so'rovchi tugma) olib
+# tashlandi — endi tozalash amali to'g'ridan to'g'ri kanal ichidan
+# (order_channel_kb) chaqiriladi, kanal allaqachon ma'lum, shuning uchun
+# to'g'ridan to'g'ri tozala_tasdiq_ikb bilan tasdiqlash so'raladi.
 
 def tozala_tasdiq_ikb(lang: str, tip: str, kanal: str) -> InlineKeyboardMarkup:
     return ikb(

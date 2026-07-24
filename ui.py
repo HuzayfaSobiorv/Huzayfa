@@ -231,6 +231,11 @@ def get_action(lang: str, screen: str, text: str):
         "order_channel": {
             t(lang, "b_excel"):   "excel",
             t(lang, "b_tasdiq"):  "tasdiq",
+            # 2026-07-24: tozalash tugmalari settings'dan shu yerga
+            # ko'chirildi — kanal allaqachon ma'lum bo'lgani uchun
+            # to'g'ridan to'g'ri shu kanal uchun ishlaydi.
+            t(lang, "b_tozala_buy"):   "tozala_buy_kanal",
+            t(lang, "b_tozala_xitoy"): "tozala_xitoy_kanal",
         },
         "load": {
             t(lang, "ch_asosiy"): ("load_channel", "asosiy"),
@@ -247,8 +252,6 @@ def get_action(lang: str, screen: str, text: str):
         "settings": {
             t(lang, "b_yangilash"):     "yangilash",
             t(lang, "b_lang"):          "lang_pick",
-            t(lang, "b_tozala_buy"):    "tozala_buy",
-            t(lang, "b_tozala_xitoy"):  "tozala_xitoy",
             t(lang, "b_yolga_kont"):    "yolga_kont",
             t(lang, "b_sorovlar_royxat"): "sorovlar_royxat",
             t(lang, "b_userlar_royxat"): "userlar_royxat",
@@ -345,6 +348,12 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
         # bo'yicha alohida qoldig'i — FAQAT o'zinikini ko'radi, boshqa
         # filiallarnikini emas. Buyurtma hisob-kitobiga (yuqoridagi sim)
         # HECH QANDAY ta'sir qilmaydi — sof ko'rsatish uchun.
+        # 2026-07-24 TUZATISH (Huzayfa: "agar mahsulot filialda yo'q
+        # bo'lsa — 0 ta ko'rsatamizmi?"): HA — "Qoldiq" qatori ham
+        # (main.py'da) doim ko'rsatiladi, topilmasa 0. Filial qatori ham
+        # xuddi shunday: user filialga biriktirilgan bo'lsa, qator HAR
+        # DOIM chiqadi (topilmasa 0), "ma'lumot yo'qmi" degan chalkashlik
+        # bo'lmasin.
         filial_nomi, filial_dona = None, None
         uid = context.user_data.get("user_id") if context is not None else None
         if uid is not None:
@@ -352,9 +361,8 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
             if f:
                 fq  = get_filial_qoldiq()
                 key = normalize_product_name(tv)
-                row = fq.get(key)
-                if row and f in row:
-                    filial_nomi, filial_dona = f, row[f]
+                row = fq.get(key) or {}
+                filial_nomi, filial_dona = f, row.get(f, 0)
 
         return holat, qoldiq, min_z, yolda_j, sim, kont_list, kont_rows, filial_nomi, filial_dona
 

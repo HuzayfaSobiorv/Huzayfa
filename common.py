@@ -491,6 +491,13 @@ def filial_qoldiqlarini_chiqar(filepath: str) -> dict:
             if not mahsulot_str or mahsulot_str == 'Товар':
                 continue
 
+            # 2026-07-24 (Huzayfa: "agar mahsulot filialda yo'q bo'lsa —
+            # 0 ta ko'rsatamizmi?"): AVVAL faqat qoldiq>0 bo'lsa filial
+            # yozilardi — 0 bo'lganda qator BUTUNLAY ko'rinmasdi, bu
+            # "ma'lumot yo'q" bilan "haqiqatan 0 ta" ni FARQLAB bo'lmas
+            # edi. Endi HAR BIR filial (0 bo'lsa ham) doim yoziladi —
+            # foydalanuvchi aniq "0 ta" ko'rsin, feature buzilgandek
+            # tuyulmasin.
             qatorlar = {}
             for filial, ustunlar in filial_ustunlar.items():
                 dona = 0
@@ -498,11 +505,9 @@ def filial_qoldiqlarini_chiqar(filepath: str) -> dict:
                     kor_val = ws.cell(r, kor_col).value
                     if kor_val not in (None, ''):
                         dona += parse_qoldiq_str(kor_val)
-                if dona:
-                    qatorlar[filial] = dona
-            if qatorlar:
-                key = normalize_product_name(mahsulot_str)
-                natija[key] = qatorlar
+                qatorlar[filial] = dona
+            key = normalize_product_name(mahsulot_str)
+            natija[key] = qatorlar
     finally:
         wb.close()
     return natija
