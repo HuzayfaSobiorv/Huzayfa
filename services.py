@@ -186,6 +186,67 @@ def user_filiali_olish(uid: int) -> str | None:
     return None
 
 
+def user_ism_username_yangilash(uid: int, ism: str = "", username: str = "") -> None:
+    """2026-07-24 (Huzayfa: "tizim doimiy ishlashi kerak — yangi userlar
+    qo'shilganda ham ismi/username avtomatik yozilishi kerak"): har safar
+    whitelist'dagi user botga biror narsa yozganda yoki tugma bossa
+    (handlers.py::text_keldi / callback_handler dan) chaqiriladi — Ism/
+    Username maydonlarini eng so'nggi Telegram ma'lumoti bilan yangilab
+    turadi (filial/boshqa maydonlarga tegmaydi). Bo'sh qiymat yuborilsa
+    yoki hech narsa o'zgarmagan bo'lsa — diskka yozilmaydi (arzon,
+    idempotent chaqiriq)."""
+    if not ism and not username:
+        return
+    d = _json_dict_yuklash(_USER_FILIAL_FILE)
+    mavjud = d.get(str(uid), {})
+    yangi_ism      = ism or mavjud.get("ism", "")
+    yangi_username = username or mavjud.get("username", "")
+    if yangi_ism == mavjud.get("ism", "") and yangi_username == mavjud.get("username", ""):
+        return
+    d[str(uid)] = {
+        "filial":   mavjud.get("filial", FILIAL_ESKI_DEFAULT),
+        "ism":      yangi_ism,
+        "username": yangi_username,
+    }
+    atomic_json_write(_USER_FILIAL_FILE, d, indent=2)
+
+
+async def eski_userlar_ism_toldir(bot) -> int:
+    """2026-07-24: Ism/Username hali bo'sh bo'lgan whitelist userlar uchun
+    Telegram'ning o'zidan (bot.get_chat) haqiqiy ism/username so'rab,
+    topilsa saqlaydi — FAQAT bot ular bilan avval kontaktda bo'lgan
+    bo'lsa ishlaydi (get_chat shuni talab qiladi). Har bir user uchun
+    xato bo'lsa jimgina o'tkazib yuboriladi (bloklangan/hech qachon
+    yozmagan va h.k.). Qaytaradi: nechta user yangilanganini (son)."""
+    d  = _json_dict_yuklash(_USER_FILIAL_FILE)
+    wl = whitelist_yuklash()
+    yangilandi = 0
+    ozgardi = False
+    for uid in wl:
+        row = d.get(str(uid), {})
+        if row.get("ism") and row.get("username"):
+            continue  # ikkalasi ham allaqachon bor — o'tkazib yuboramiz
+        try:
+            chat = await bot.get_chat(uid)
+            full_name = " ".join(filter(None, [getattr(chat, "first_name", None),
+                                                 getattr(chat, "last_name", None)])).strip()
+            username = f"@{chat.username}" if getattr(chat, "username", None) else ""
+        except Exception:
+            continue
+        if not full_name and not username:
+            continue
+        d[str(uid)] = {
+            "filial":   row.get("filial", FILIAL_ESKI_DEFAULT),
+            "ism":      full_name or row.get("ism", ""),
+            "username": username or row.get("username", ""),
+        }
+        ozgardi = True
+        yangilandi += 1
+    if ozgardi:
+        atomic_json_write(_USER_FILIAL_FILE, d, indent=2)
+    return yangilandi
+
+
 def user_filiallari_yuklash() -> dict:
     """{uid_str: {"filial":.., "ism":.., "username":..}} — barcha
     tasdiqlangan userlar. Whitelist'da bor-u filiali hali yo'q eski

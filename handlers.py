@@ -169,6 +169,7 @@ from services import (
     sorov_qoshish, sorovlar_excel_yarat,
     filial_sorov_saqla, filial_sorov_olish, filial_sorov_ochir,
     filial_biriktir, user_filiali_olish, userlar_excel_yarat,
+    user_ism_username_yangilash, eski_userlar_ism_toldir,
 )
 from common import FILIALLAR
 from parsers import xitoy_ostatka_oqi, ai_ostatka_fayl_mi, ai_ostatka_fayl_oqi
@@ -465,6 +466,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not kirish_ruxsati(uid):
         await query.answer("⛔ Kirish huquqi yo'q.", show_alert=True)
         return
+
+    # 2026-07-24: xuddi text_keldi'dagidek — har inline tugma bosilganda
+    # ham Ism/Username'ni yangilab turamiz (doimiy avtomatik to'ldirish).
+    _u = query.from_user
+    user_ism_username_yangilash(
+        uid,
+        ism=(_u.full_name or "").strip(),
+        username=(f"@{_u.username}" if _u.username else ""),
+    )
 
     # ── 2026-07-17 (Huzayfa: userlar eski ekrandan qolgan tugmani bosib
     # chalkashib ketyapti): agar bu xabar hozirgi "faol" ekran sifatida
@@ -1130,6 +1140,17 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ Kirish huquqi yo'q.")
         return
     context.user_data["user_id"] = uid  # _is_admin uchun
+    # 2026-07-24 (Huzayfa: "tizim doimiy ishlashi kerak, ismi/username
+    # avtomatik yozilishi kerak"): har bir xabarda eng so'nggi Telegram
+    # ism/username bilan yangilab turamiz — /adduser to'g'ridan-to'g'ri
+    # (filial tanlashsiz) qo'shilgan eski userlar ham, birinchi xabar
+    # yozishi bilan, avtomatik to'ladi (diskka faqat o'zgarish bo'lsa yoziladi).
+    _u = update.message.from_user
+    user_ism_username_yangilash(
+        uid,
+        ism=(_u.full_name or "").strip(),
+        username=(f"@{_u.username}" if _u.username else ""),
+    )
     lang   = context.user_data.get("lang", "cyr")
     screen = context.user_data.get("screen", "main")
     text   = update.message.text.strip()
@@ -1798,6 +1819,15 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if _admin_emasmi(uid):
             await msg.reply_text("❌ Bu funksiya faqat admin uchun.")
             return
+        # 2026-07-24 (Huzayfa: "hozir ham ismi/username qo'yilishi kerak,
+        # agar bor bo'lsa"): Excel tuzishdan OLDIN, Ism/Username hali bo'sh
+        # bo'lgan eski userlarni Telegram'ning o'zidan (get_chat) so'rab,
+        # topilganini saqlab qo'yamiz — faqat bot ular bilan avval
+        # kontaktda bo'lgan bo'lsa ishlaydi, boshqacha jimgina o'tkaziladi.
+        try:
+            await eski_userlar_ism_toldir(msg.get_bot())
+        except Exception as e:
+            logger.warning(f"eski_userlar_ism_toldir xato: {e}")
         bio = userlar_excel_yarat()
         if bio is None:
             await msg.reply_text(t(lang, "userlar_yoq"))
