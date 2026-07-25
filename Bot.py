@@ -37,17 +37,57 @@ for _stream in (sys.stdout, sys.stderr):
 
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
-    MessageHandler, filters,
+    MessageHandler, filters, ContextTypes,
 )
+from telegram import Update
 
 from datetime import time as _time
 
-from config import BOT_TOKEN, logger, xlsx_refresh
+from config import BOT_TOKEN, SUPER_ADMIN_ID, logger, xlsx_refresh
 from handlers import (
     start, callback_handler, text_keldi, fayl_keldi, adduser_cmd,
     removeuser_cmd, users_cmd, chatid_cmd, perexod_kunlik_tekshiruv,
     addadmin_cmd, removeadmin_cmd,
 )
+
+
+# 2026-07-25 (Xavfsizlik/barqarorlik auditi, Huzayfa so'rovi bilan):
+# ILGARI HECH QANDAY global xato-ushlagich (error handler) YO'Q edi —
+# har bir handler o'zining try/except'iga tayanardi, lekin biror joyda
+# kutilmagan (bashorat qilinmagan) xatolik chiqsa, python-telegram-bot
+# uni ICHKI ravishda log qilib, botni "o'zi" davom ettiradi (Application
+# butun jarayonni qulatib qo'ymaydi) — LEKIN foydalanuvchiga HECH QANDAY
+# javob ketmaydi (jimgina "osilib qoladi") va ADMIN xato haqida umuman
+# BILMAYDI, faqat serverdagi konsol logini qo'lda ochib ko'rsagina
+# ko'radi. Bu funksiya ikkalasini ham tuzatadi: (1) foydalanuvchiga
+# tushunarli xabar, (2) super adminga darhol xato haqida qisqa xabar
+# (Telegram xabar hajmi chegarasi uchun 1500 belgigacha kesilgan holda).
+async def global_xato_ushlagich(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.error("Kutilmagan xatolik:", exc_info=context.error)
+    try:
+        if isinstance(update, Update) and update.effective_message:
+            await update.effective_message.reply_text(
+                "❌ Kutilmagan xatolik yuz berdi. Admin xabardor qilindi — "
+                "qayta urinib ko'ring yoki biroz kuting."
+            )
+    except Exception:
+        pass
+    if SUPER_ADMIN_ID:
+        try:
+            import traceback
+            tb = "".join(traceback.format_exception(
+                type(context.error), context.error, context.error.__traceback__
+            ))
+            uid_info = ""
+            if isinstance(update, Update) and update.effective_user:
+                uid_info = f"👤 uid={update.effective_user.id}\n"
+            await context.bot.send_message(
+                chat_id=SUPER_ADMIN_ID,
+                text=f"🔴 Botda xatolik:\n{uid_info}```\n{tb[-1500:]}\n```",
+                parse_mode="Markdown",
+            )
+        except Exception:
+            logger.exception("Admin ga xato xabarini yuborib bo'lmadi")
 
 try:
     from zoneinfo import ZoneInfo
@@ -59,6 +99,7 @@ except Exception:
 def main() -> None:
     xlsx_refresh(force=True)
     app = Application.builder().token(BOT_TOKEN).build()
+    app.add_error_handler(global_xato_ushlagich)
 
     # 2026-07-16: "rasm yuborilgan, hali KELDI qilinmagan" konteynerlarni
     # har kuni tekshiradi — eslatma yuboradi, 4 kun o'tsa avtomatik KELDI

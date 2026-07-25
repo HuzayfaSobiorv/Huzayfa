@@ -1183,7 +1183,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if pending:
             pending_tozala(pending[0], user_id)
         else:
-            for _k in ["asosiy", "cex", "osh"]:
+            # BUG TUZATILDI (2026-07-25): bu yerda "cex" deb yozilgan edi,
+            # lekin butun loyihada Tsex kanalining haqiqiy kaliti "sex"
+            # (pending_{kanal}_{user_id}.json fayl nomida ham shu ishlatiladi
+            # — services.py::pending_saqlash/pending_tozala). "cex" hech
+            # qachon mos fayl nomiga to'g'ri kelmagani uchun, bot qayta
+            # ishga tushib pending_zakaz RAMdan yo'qolgan holatda "Bekor
+            # qilish" bosilsa, Tsex kanali uchun eskirgan pending fayl HECH
+            # QACHON o'chirilmasdi (asosiy/osh uchun to'g'ri ishlar edi).
+            for _k in ["asosiy", "sex", "osh"]:
                 pending_tozala(_k, user_id)
         await query.edit_message_text(
             t(lang, "zakaz_bekor_msg"), parse_mode="Markdown"
@@ -1462,6 +1470,28 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         # Tanilmagan tugma — joriy ekranni qayta ko'rsatamiz
         await go_screen(msg, context, screen)
+        return
+
+    # 2026-07-25 (XAVFSIZLIK AUDITI — Huzayfa so'rovi bilan topilgan real
+    # "broken access control" bugi): "order"/"load" menyulari FAQAT admin
+    # klaviaturasida (main_kb) ko'rinadi — main_kb_user() bu tugmalarni
+    # UMUMAN ko'rsatmaydi. LEKIN bu FAQAT ko'rinish (UI) darajasidagi
+    # cheklov edi: get_action() screen+matnga qarab ishlaydi, so'ragan
+    # odam admin yoki oddiy (filial) user ekanini UMUMAN bilmaydi. Demak
+    # oddiy user, tugma klaviaturada ko'rinmasa ham, uning matnini
+    # ("📥 Buyurtma yig'ish" kabi) QO'LDA yozib yuborsa — bot uni "order"
+    # ekraniga, u yerdan "order_channel"ga, va NIHOYAT "excel" (BUTUN
+    # KOMPANIYA buyurtma-Excelini olish) / "tasdiq" (HAQIQIY tasdiqlangan
+    # buyurtmani yozib/buzib qo'yish) / "upload"/"hisoblash" (Xitoy
+    # ostatka/yuklatish rejasi) amallariga HECH QANDAY backend
+    # tekshiruvisiz o'tkazib yuborardi. Bitta markazlashtirilgan
+    # tekshiruv — "order"/"load" subtreega kirishning YAGONA nuqtasi shu
+    # yer — butun zanjirni yopadi (individual amallarga alohida tekshiruv
+    # qo'shishdan ko'ra ishonchliroq: kelajakda shu subtreega yangi amal
+    # qo'shilsa ham avtomatik himoyalangan bo'ladi).
+    _target_screen = action[0] if isinstance(action, tuple) else action
+    if _target_screen in ("order", "load", "order_channel", "load_channel") and _admin_emasmi(uid):
+        await msg.reply_text("❌ Bu funksiya faqat admin uchun.")
         return
 
     # Kanal ekraniga o'tish

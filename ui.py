@@ -520,13 +520,25 @@ async def kamomat_ko_rish(msg, context, kanal: str, lang: str):
         await msg.reply_text(t(lang,"data_yoq"), parse_mode="Markdown")
         return
 
+    # 2026-07-25 (Performance auditi, Huzayfa so'rovi): kamomat_stats_v2/
+    # kamomat_excel_v2 — butun kompaniya inventarini (pandas+openpyxl)
+    # qayta ishlaydigan OG'IR, BLOKLOVCHI (sinxron) funksiyalar. ILGARI
+    # bu yerda TO'G'RIDAN-TO'G'RI (await'siz, executor'siz) chaqirilardi —
+    # bitta foydalanuvchi Kamomat so'rasa, shu bir necha soniya davomida
+    # BOSHQA BARCHA foydalanuvchilar uchun bot butunlay "muzlab" qolardi
+    # (asyncio event loop yagona thread'da ishlaydi). `loop.run_in_executor`
+    # bilan alohida thread'ga chiqarildi — xuddi `draft_buyurtma_yubor`
+    # (Buyurtma Excel) da ilgari qilingani kabi.
+    loop = asyncio.get_event_loop()
     async with yuklash_animatsiya(
         msg, context,
         text_cyr="Камомат хисоблaнмоқда",
         text_lat="Kamomat hisoblanmoqda",
     ):
         # Yangi engine: KRITIK + PAST, zanjir simulyatsiyasi
-        stats = kamomat_stats_v2(DATA_FILE, kanal, buyurtma_yuklash)
+        stats = await loop.run_in_executor(
+            None, kamomat_stats_v2, DATA_FILE, kanal, buyurtma_yuklash
+        )
         if stats["n"] == 0:
             await msg.reply_text(t(lang,"kamomat_yoq"))
             return
@@ -538,7 +550,9 @@ async def kamomat_ko_rish(msg, context, kanal: str, lang: str):
         )
 
         # Rangli, tartibli Excel
-        bio = kamomat_excel_v2(DATA_FILE, kanal, lang, buyurtma_yuklash)
+        bio = await loop.run_in_executor(
+            None, kamomat_excel_v2, DATA_FILE, kanal, lang, buyurtma_yuklash
+        )
         if bio:
             await msg.reply_document(document=bio, filename=f"Kamomat_{kanal}.xlsx")
 
@@ -589,6 +603,11 @@ async def yolda_ko_rish(msg, context, lang: str):
         await msg.reply_text(t(lang,"data_yoq"), parse_mode="Markdown")
         return
 
+    # 2026-07-25 (Performance auditi): yolda_excel() ham BLOKLOVCHI —
+    # BUTUN foydalanuvchi bazasi (admin + barcha filiallar) tez-tez
+    # "Yo'ldagi yuklar"ni bosadi, shuning uchun bu ENG KO'P ishlatiladigan
+    # og'ir amal bo'lishi mumkin — executor'ga chiqarildi.
+    loop = asyncio.get_event_loop()
     async with yuklash_animatsiya(
         msg, context, action="typing",
         text_cyr="Контейнерлар тайёрланмоқда",
@@ -598,7 +617,9 @@ async def yolda_ko_rish(msg, context, lang: str):
         # 2026-07-16: rasm allaqachon guruhga yuborilgan konteynerlar bu
         # ro'yxatda ko'rinmasin (qarang: services.py::rasm_pending_iso_royxati)
         chiqarib = rasm_pending_iso_royxati()
-        bio = yolda_excel(DATA_FILE, stats=stats, chiqarib_tashlash=chiqarib)
+        bio = await loop.run_in_executor(
+            None, lambda: yolda_excel(DATA_FILE, stats=stats, chiqarib_tashlash=chiqarib)
+        )
         if bio is None:
             await msg.reply_text(t(lang, "yolda_yoq"))
             return
