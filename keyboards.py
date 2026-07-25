@@ -212,6 +212,16 @@ def xitoy_sorash_ikb(lang: str, kanal: str) -> InlineKeyboardMarkup:
     )
 
 
+def xitoy_tp_otkazib_ikb(lang: str, kanal: str) -> InlineKeyboardMarkup:
+    """2026-07-25 (Huzayfa so'rovi): "1/2 — Труба/Профиль" faylini
+    so'raganda, agar bu faylning o'zi bo'lmasa (masalan faqat Лист
+    tayyor bo'lsa), admin bu tugma bilan Труба/Профиль bosqichini
+    o'tkazib, to'g'ridan-to'g'ri "2/2 — Лист" so'roviga o'tishi mumkin."""
+    return ikb(
+        [(t(lang, "xitoy_tp_otkazib_btn"), f"xitoy_tp_otkazib:{kanal}")],
+    )
+
+
 def xitoy_mavjud_ikb(lang: str, kanal: str) -> InlineKeyboardMarkup:
     # "Hisobsiz ber" yo'q — yangi ostatka yuklansa eski zakaz+ostatka avtomatik o'chadi,
     # shuning uchun hisobsiz berish logikasi mavjud emas.

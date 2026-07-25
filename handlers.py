@@ -149,7 +149,7 @@ from texts import t
 from keyboards import (
     main_kb, order_kb, order_channel_kb, load_kb, load_channel_kb,
     settings_kb, search_kb, til_ikb, konteyner_kb,
-    xitoy_sorash_ikb, xitoy_mavjud_ikb, xitoy_yana_ikb,
+    xitoy_sorash_ikb, xitoy_mavjud_ikb, xitoy_yana_ikb, xitoy_tp_otkazib_ikb,
     tozala_tasdiq_ikb, zakaz_tasdiq_ikb,
     grafik_kat_ikb, kont_tasdiq_ikb, boglanish_ikb,
     filial_tanlash_ikb, adduser_tasdiq_ikb,
@@ -635,12 +635,17 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                         xitoy_ostatka={})
 
         elif decision == "ha":
-            # 2-fayl flow: avval Труба/Профиль so'rab, keyin Лист so'raymiz
+            # 2-fayl flow: avval Труба/Профиль so'rab, keyin Лист so'raymiz.
+            # 2026-07-25: Труба/Профиль fayli har doim ham qo'lda bo'lmasligi
+            # mumkin — shuning uchun "o'tkazib yuborish" tugmasi qo'shildi,
+            # bosilsa to'g'ridan-to'g'ri "2/2 — Лист" so'roviga o'tadi.
             context.user_data.pop("xitoy_tp_data", None)
             context.user_data["kutilmoqda"] = ("xitoy_tp", kanal)
-            await query.edit_message_text(
-                t(lang, "xitoy_fayl_kut_tp"), parse_mode="Markdown"
+            sent = await query.edit_message_text(
+                t(lang, "xitoy_fayl_kut_tp"), parse_mode="Markdown",
+                reply_markup=xitoy_tp_otkazib_ikb(lang, kanal),
             )
+            aktiv_inline_belgila(context, sent)
 
         elif decision == "ishlatsin":
             mavjud = xitoy_yuklash(kanal)
@@ -659,11 +664,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 p.unlink()
             buyurtma_tozala(kanal)
             context.user_data.pop("xitoy_tp_data", None)
-            # 2-fayl flow: avval TP so'ra
+            # 2-fayl flow: avval TP so'ra (o'tkazib yuborish tugmasi bilan)
             context.user_data["kutilmoqda"] = ("xitoy_tp", kanal)
-            await query.edit_message_text(
-                t(lang, "xitoy_fayl_kut_tp"), parse_mode="Markdown"
+            sent = await query.edit_message_text(
+                t(lang, "xitoy_fayl_kut_tp"), parse_mode="Markdown",
+                reply_markup=xitoy_tp_otkazib_ikb(lang, kanal),
             )
+            aktiv_inline_belgila(context, sent)
 
         elif decision == "yana_f":
             # Ko'p-fayl yig'ishda keyingi faylni kutish (konteyner/yuklatish flow)
@@ -715,6 +722,26 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if xlsx_path:
                 with open(xlsx_path.split("|")[-1] if "|" in xlsx_path else xlsx_path, "rb") as f:
                     await query.message.reply_document(document=f, filename="Yuklatish_rejasi.xlsx")
+
+    # 2026-07-25 (Huzayfa so'rovi): "1/2 — Труба/Профиль" faylini so'raganda
+    # ko'rsatiladigan "o'tkazib yuborish" tugmasi — Труба/Профиль fayli
+    # bo'lmasa (masalan faqat Лист tayyor bo'lsa), admin bu bosqichni
+    # butunlay o'tkazib, to'g'ridan-to'g'ri "2/2 — Лист" so'roviga o'tadi.
+    # xitoy_tp_data bo'sh ({}) qoldiriladi — keyin Лист fayli kelganda
+    # (fayl_keldi, "xitoy_list" bo'limi) final_map faqat Лист'dan hosil
+    # bo'ladi, bu xuddi Труба/Профиль'da hech narsa topilmagandagi kabi
+    # ishlaydi (kod o'zgarishsiz to'g'ri ishlaydi).
+    elif query.data.startswith("xitoy_tp_otkazib:"):
+        kanal = query.data.split(":")[1]
+        lang  = context.user_data.get("lang", "cyr")
+        context.user_data["xitoy_tp_data"] = {"tovarlar": {}, "ombor": {}, "vazn": {}}
+        context.user_data["kutilmoqda"] = ("xitoy_list", kanal)
+        try:
+            await query.edit_message_text(
+                t(lang, "xitoy_fayl_kut_list"), parse_mode="Markdown"
+            )
+        except Exception:
+            pass
 
     # ── Tozalash flow ─────────────────────────────────────────
     # 2026-07-24: "qaysi kanal?" so'rovchi bosqich (tozala_b:/tozala_x:)
@@ -2337,8 +2364,17 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # "DIQQAT/NOANIQ belgisi bor, lekin nomi TO'G'RI" bitta ro'yxatga
         # aralashtirilib yuborilardi — shuning uchun tekshirganda "nomi
         # bor-ku" degan chalkashlik chiqardi. Endi ikkalasi ALOHIDA.
-        if not is_ai_format:
-            return
+        # 2026-07-25 TUZATILDI (Huzayfa: "avval malumot berardi, hozir
+        # bermayapti"): ilgari bu yerda "if not is_ai_format: return" bor
+        # edi — ya'ni tanimagan/tanigan hisobot FAQAT AI (Claude oldindan
+        # tarjima qilgan) formatdagi fayl uchun ko'rsatilardi. Lekin admin
+        # ODATDA xom Xitoycha (native) faylni yuboradi, va native
+        # xitoy_ostatka_oqi ham unknown_list'ni to'liq qaytaradi — shuning
+        # uchun bu cheklov olib tashlandi, hisobot ENDI ikkala formatda
+        # ham ko'rsatiladi. diqqat_list esa faqat AI formatda paydo
+        # bo'ladi (native uchun har doim bo'sh), shuning uchun uni alohida
+        # cheklashning hojati yo'q — bo'sh bo'lsa pastdagi if avtomatik
+        # bloklaydi.
         if unknown_list:
             qator = "\n".join(f"• {n}" for n in unknown_list[:25])
             qoldi = f"\n… va yana {len(unknown_list) - 25} ta" if len(unknown_list) > 25 else ""
@@ -2367,6 +2403,10 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             t(lang, "xitoy_tp_qabul").format(n=n) + "\n\n" + t(lang, "xitoy_fayl_kut_list"),
             parse_mode="Markdown",
         )
+        # 2026-07-25: Труба/Профиль faylidagi tanilmagan tovarlar haqida ham
+        # darhol xabar beramiz (ilgari faqat 2/2-Лист bosqichida, faqat AI
+        # formatda ko'rsatilardi — pastdagi tuzatishga qarang).
+        await _unknown_xabar_yubor()
 
     elif kut[0] in ("xitoy_list", "xitoy_ostatka_fayl"):
         tp_data   = context.user_data.pop("xitoy_tp_data", {})
