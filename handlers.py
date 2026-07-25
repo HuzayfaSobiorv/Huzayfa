@@ -150,6 +150,7 @@ from keyboards import (
     main_kb, order_kb, order_channel_kb, load_kb, load_channel_kb,
     settings_kb, search_kb, til_ikb, konteyner_kb,
     xitoy_sorash_ikb, xitoy_mavjud_ikb, xitoy_yana_ikb, xitoy_tp_otkazib_ikb,
+    xitoy_list_otkazib_ikb,
     tozala_tasdiq_ikb, zakaz_tasdiq_ikb,
     grafik_kat_ikb, kont_tasdiq_ikb, boglanish_ikb,
     filial_tanlash_ikb, adduser_tasdiq_ikb,
@@ -737,11 +738,41 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["xitoy_tp_data"] = {"tovarlar": {}, "ombor": {}, "vazn": {}}
         context.user_data["kutilmoqda"] = ("xitoy_list", kanal)
         try:
-            await query.edit_message_text(
-                t(lang, "xitoy_fayl_kut_list"), parse_mode="Markdown"
+            sent = await query.edit_message_text(
+                t(lang, "xitoy_fayl_kut_list"), parse_mode="Markdown",
+                reply_markup=xitoy_list_otkazib_ikb(lang, kanal),
             )
+            aktiv_inline_belgila(context, sent)
         except Exception:
             pass
+
+    # 2026-07-25 (Huzayfa so'rovi): "2/2 — Лист" so'ralganda ko'rsatiladigan
+    # "o'tkazib yuborish" tugmasi — Лист fayli bo'lmasa, admin faqat
+    # (bo'lsa) Труба/Профиль ma'lumoti bilan yakunlaydi. Bu xuddi
+    # fayl_keldi'dagi kut[0] in ("xitoy_list","xitoy_ostatka_fayl")
+    # bo'limi bilan bir xil yakunlash mantig'i — faqat yangi fayl
+    # o'qilmagani (xitoy_map/ombor_map/vazn_map bo'sh) uchun farq qiladi.
+    elif query.data.startswith("xitoy_list_otkazib:"):
+        kanal = query.data.split(":")[1]
+        lang  = context.user_data.get("lang", "cyr")
+        tp_data     = context.user_data.pop("xitoy_tp_data", {})
+        final_map   = tp_data.get("tovarlar", {})
+        final_ombor = tp_data.get("ombor", {})
+        final_vazn  = tp_data.get("vazn", {})
+        xitoy_saqlash(kanal, final_map, final_ombor)
+        n_new = vazn_lookup_yangilash(final_vazn)
+        if n_new:
+            logger.info(f"vazn_lookup: {n_new} ta yangi tovar qo'shildi")
+        context.user_data.pop("kutilmoqda", None)
+        n = len(final_map)
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        await query.message.reply_text(
+            t(lang, "xitoy_qabul").format(n=n), parse_mode="Markdown",
+        )
+        await draft_buyurtma_yubor(query.message, context, kanal, lang, xitoy_ostatka=final_map)
 
     # ── Tozalash flow ─────────────────────────────────────────
     # 2026-07-24: "qaysi kanal?" so'rovchi bosqich (tozala_b:/tozala_x:)
@@ -2399,10 +2430,19 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["xitoy_tp_data"] = {"tovarlar": xitoy_map or {}, "ombor": ombor_map or {}, "vazn": vazn_map or {}}
         context.user_data["kutilmoqda"] = ("xitoy_list", kanal)
         n = len(xitoy_map or {})
-        await msg.reply_text(
+        # 2026-07-25 (Huzayfa: "listni otkazib yubora olmayapman"): "2/2 —
+        # Лист" so'roviga ham "o'tkazib yuborish" tugmasi qo'shildi — Лист
+        # fayli bo'lmasa, admin faqat Труба/Профиль ma'lumoti bilan
+        # yakunlashi mumkin. aktiv_inline_belgila SHART — bu YANGI xabar
+        # (edit emas, reply_text), aks holda avvalgi ("1/2") xabarga
+        # bog'langan aktiv_inline eskirib, bu yangi tugma "eskirgan" deb
+        # bloklanib qolardi.
+        sent = await msg.reply_text(
             t(lang, "xitoy_tp_qabul").format(n=n) + "\n\n" + t(lang, "xitoy_fayl_kut_list"),
             parse_mode="Markdown",
+            reply_markup=xitoy_list_otkazib_ikb(lang, kanal),
         )
+        aktiv_inline_belgila(context, sent)
         # 2026-07-25: Труба/Профиль faylidagi tanilmagan tovarlar haqida ham
         # darhol xabar beramiz (ilgari faqat 2/2-Лист bosqichida, faqat AI
         # formatda ko'rsatilardi — pastdagi tuzatishga qarang).
