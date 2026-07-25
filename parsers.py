@@ -283,6 +283,24 @@ def _china_spec_to_inventar(spec: str, length: str) -> str | None:
         stenka   = f"{stenka_f:.1f}".replace('.', ',')
         return f'(Ярим овал) Пр. {m.group(1)}х{m.group(2)} ст {stenka} ({L_str}){marka_sfx}{suffix}'
 
+    # 2026-07-25 (Huzayfa: "Tsex buyurtmasini yozish boshqacharoq
+    # bo'lmoqda" — Tsex kanali uchun ishlatiladigan Xitoy faylida topilgan
+    # REAL bug): yuqoridagi D型管 patterni faqat "KB D型管30*15*1.05" (D型管
+    # KB'dan DARHOL keyin) shaklini tanirdi. Lekin Tsex faylida xuddi shu
+    # mahsulot ko'pincha TESKARI tartibda yoziladi — o'lchamlar oldin,
+    # "D型管" belgisi esa OXIRIDA: "KB 30*15*0.95 (J1) D型管". Bu format
+    # oldingi regexga UMUMAN mos kelmasdi — natijada bu qatorlar "notanish"
+    # bo'lib, ularning butun miqdori (bu holatda 100+6000=6100 dona)
+    # buyurtmaga UMUMAN kirmay qolardi, hech qanday xato ko'rinmasdan.
+    # ".*" — oralig'idagi ixtiyoriy "(J1)" kabi suffikslarni o'tkazib
+    # yuborish uchun (J-suffiks alohida, yuqoridagi umumiy `jm` orqali
+    # baribir to'g'ri aniqlanadi).
+    m = re.match(r'^KB\s+(\d+)\*(\d+)\*([\d\.]+).*D型管', spec)
+    if m:
+        stenka_f = math.ceil(round(float(m.group(3)) * 10, 4)) / 10
+        stenka   = f"{stenka_f:.1f}".replace('.', ',')
+        return f'(Ярим овал) Пр. {m.group(1)}х{m.group(2)} ст {stenka} ({L_str}){marka_sfx}{suffix}'
+
     return None
 
 
