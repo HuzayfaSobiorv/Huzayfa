@@ -155,6 +155,16 @@ def til_ikb() -> InlineKeyboardMarkup:
     )
 
 
+def adduser_tasdiq_ikb(uid: int) -> InlineKeyboardMarkup:
+    """2026-07-24 (Huzayfa): super adminga yangi kirish so'rovi xabari
+    bilan birga keladi — /adduser {uid} buyrug'ini qo'lda yozmasdan,
+    to'g'ridan-to'g'ri shu tugmalar bilan qabul/rad etish uchun."""
+    return ikb(
+        [("✅ Qo'shish", f"adduser_ha:{uid}"),
+         ("❌ Bekor qilish", f"adduser_yoq:{uid}")],
+    )
+
+
 def filial_tanlash_ikb() -> InlineKeyboardMarkup:
     """2026-07-24 (Huzayfa: "har filial o'z qoldig'ini ko'rsin" funksiyasi):
     yangi user /start bosganda filialini tanlaydigan inline klaviatura —

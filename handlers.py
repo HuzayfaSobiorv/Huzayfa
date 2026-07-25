@@ -152,7 +152,7 @@ from keyboards import (
     xitoy_sorash_ikb, xitoy_mavjud_ikb, xitoy_yana_ikb,
     tozala_tasdiq_ikb, zakaz_tasdiq_ikb,
     grafik_kat_ikb, kont_tasdiq_ikb, boglanish_ikb,
-    filial_tanlash_ikb,
+    filial_tanlash_ikb, adduser_tasdiq_ikb,
 )
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from services import (
@@ -213,23 +213,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-async def adduser_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/adduser <id> — whitelist ga qo'shish (faqat super admin)."""
-    uid = update.message.from_user.id
-    if uid != SUPER_ADMIN_ID:
-        await update.message.reply_text("⛔ Faqat adminlar uchun.")
-        return
-    args = context.args
-    if not args or not args[0].isdigit():
-        await update.message.reply_text("❓ Format: `/adduser 123456789`", parse_mode="Markdown")
-        return
-    new_id = int(args[0])
-    added  = whitelist_qosh(new_id)
+async def _userni_qabul_qil(context: ContextTypes.DEFAULT_TYPE, new_id: int) -> bool:
+    """2026-07-24 (Huzayfa): userni whitelist ga qo'shish + pending
+    filialni yakuniy joyga ko'chirish + "Ishni boshlash" tugmali xush
+    kelibsiz xabarini yuborish — /adduser BUYRUG'I VA admin so'rov
+    xabaridagi "✅ Qo'shish" INLINE TUGMASI ikkalasi ham shu bitta
+    funksiyadan foydalanadi (bitta joyda, ikki chaqiruv nuqtasi buzilib
+    ketmasligi uchun). Qaytaradi: True — yangi qo'shildi, False —
+    allaqachon whitelist'da bor edi."""
+    added = whitelist_qosh(new_id)
     if added:
-        # 2026-07-24: agar bu user oldin filial tanlagan bo'lsa (yangi
-        # onboarding oqimi) — endi YAKUNIY joyga ko'chiramiz. Eski uslubda
-        # (admin to'g'ridan-to'g'ri /adduser bilan, filial tanlashsiz)
-        # qo'shilgan bo'lsa — pending topilmaydi, filial keyinroq
+        # agar bu user oldin filial tanlagan bo'lsa (yangi onboarding
+        # oqimi) — endi YAKUNIY joyga ko'chiramiz. Eski uslubda (admin
+        # to'g'ridan-to'g'ri ID bilan, filial tanlashsiz) qo'shilgan
+        # bo'lsa — pending topilmaydi, filial keyinroq
         # user_filiallari_yuklash() orqali FILIAL_ESKI_DEFAULT ga tushadi.
         pending = filial_sorov_olish(new_id)
         if pending:
@@ -237,13 +234,10 @@ async def adduser_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                              ism=pending.get("ism", ""),
                              username=pending.get("username", ""))
             filial_sorov_ochir(new_id)
-        await update.message.reply_text(f"✅ `{new_id}` whitelist ga qo'shildi.", parse_mode="Markdown")
         try:
-            # 2026-07-24 (Huzayfa): ogohlantirish teksti ostiga "Ishni
-            # boshlash" tugmasi qo'shildi — bosilganda /start bilan bir
-            # xil natija beradi (tilni tanlang / mavjud bo'lsa to'g'ridan
-            # to'g'ri asosiy menyu), foydalanuvchi qo'lda /start yozishi
-            # shart emas.
+            # "Ishni boshlash" tugmasi — /start bilan bir xil natija
+            # beradi (tilni tanlang / mavjud bo'lsa to'g'ridan to'g'ri
+            # asosiy menyu), foydalanuvchi qo'lda /start yozishi shart emas.
             ishga_bosh_ikb = InlineKeyboardMarkup(
                 [[InlineKeyboardButton("🚀 Ishni boshlash", callback_data="ishga_bosh")]]
             )
@@ -262,6 +256,41 @@ async def adduser_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except Exception:
             pass
+    return added
+
+
+async def _userni_rad_et(context: ContextTypes.DEFAULT_TYPE, uid: int) -> None:
+    """2026-07-24 (Huzayfa): admin so'rovni "❌ Bekor qilish" tugmasi
+    bilan rad etganda — whitelist'ga UMUMAN qo'shilmaydi, faqat pending
+    so'rov tozalanadi va userga aniq xabar boradi (Huzayfa aniq talab
+    qildi: "so'rovingiz bekor qilindi, botdan foydalanish huquqi
+    berilmadi")."""
+    filial_sorov_ochir(uid)
+    try:
+        await context.bot.send_message(
+            chat_id=uid,
+            text="❌ So'rovingiz bekor qilindi. Botdan foydalanish huquqi berilmadi.",
+        )
+    except Exception:
+        pass
+
+
+async def adduser_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/adduser <id> — whitelist ga qo'shish (faqat super admin). Endi bu
+    buyruq ixtiyoriy — odatda admin so'rov xabaridagi "✅ Qo'shish"
+    tugmasidan foydalanadi, lekin buyruq ham eskisidek ishlayveradi."""
+    uid = update.message.from_user.id
+    if uid != SUPER_ADMIN_ID:
+        await update.message.reply_text("⛔ Faqat adminlar uchun.")
+        return
+    args = context.args
+    if not args or not args[0].isdigit():
+        await update.message.reply_text("❓ Format: `/adduser 123456789`", parse_mode="Markdown")
+        return
+    new_id = int(args[0])
+    added  = await _userni_qabul_qil(context, new_id)
+    if added:
+        await update.message.reply_text(f"✅ `{new_id}` whitelist ga qo'shildi.", parse_mode="Markdown")
     else:
         await update.message.reply_text(f"ℹ️ `{new_id}` allaqachon ro'yxatda.", parse_mode="Markdown")
 
@@ -461,13 +490,19 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🔔 Yangi kirish so'rovi\n\n"
             f"👤 {full_name} {username_txt}\n"
             f"🆔 {uid}\n"
-            f"🏢 Filial: {filial}\n\n"
-            f"Qo'shish uchun: /adduser {uid}"
+            f"🏢 Filial: {filial}"
         )
         logger.info(f"Kirish so'rovi (filial bilan): uid={uid}, filial={filial}")
         if SUPER_ADMIN_ID:
             try:
-                await context.bot.send_message(chat_id=SUPER_ADMIN_ID, text=notif)
+                # 2026-07-24 (Huzayfa): "/adduser {id}" qo'lda yozish
+                # o'rniga endi to'g'ridan-to'g'ri "✅ Qo'shish"/"❌ Bekor
+                # qilish" inline tugmalari — qarang: adduser_tasdiq_ikb,
+                # callback_handler'dagi "adduser_ha:"/"adduser_yoq:" bo'limi.
+                await context.bot.send_message(
+                    chat_id=SUPER_ADMIN_ID, text=notif,
+                    reply_markup=adduser_tasdiq_ikb(uid),
+                )
             except Exception as e:
                 logger.error(f"Admin ga xabar yuborish XATO: {e}")
         return
@@ -504,6 +539,34 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=til_ikb(),
             )
             aktiv_inline_belgila(context, sent)
+        return
+
+    # 2026-07-24 (Huzayfa): admin so'rov xabaridagi "✅ Qo'shish"/"❌ Bekor
+    # qilish" inline tugmalari — /adduser {id} qo'lda yozish shart emas.
+    if query.data.startswith("adduser_ha:") or query.data.startswith("adduser_yoq:"):
+        if uid != SUPER_ADMIN_ID:
+            await query.answer("⛔ Faqat super admin uchun.", show_alert=True)
+            return
+        try:
+            target_id = int(query.data.split(":")[1])
+        except (ValueError, IndexError):
+            await query.answer("❌ Xato ID.", show_alert=True)
+            return
+        if query.data.startswith("adduser_ha:"):
+            added = await _userni_qabul_qil(context, target_id)
+            natija = "✅ Qabul qilindi." if added else "ℹ️ Bu ID allaqachon whitelist'da edi."
+        else:
+            await _userni_rad_et(context, target_id)
+            natija = "❌ Bekor qilindi."
+        try:
+            eski_matn = query.message.text or ""
+            await query.edit_message_text(f"{eski_matn}\n\n{natija}")
+        except Exception:
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+            await query.message.reply_text(natija)
         return
 
     # ── 2026-07-17 (Huzayfa: userlar eski ekrandan qolgan tugmani bosib
