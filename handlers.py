@@ -632,6 +632,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_reply_markup(reply_markup=None)
             except Exception:
                 pass
+            # 2026-07-25: tugma o'chirilgandan keyin aktiv_inline kuzatuvini
+            # ham tozalash SHART — aks holda bu eskirgan pointer keyingi
+            # ("Хитой остаткани тозалаш" kabi) tasdiqlash tugmasini
+            # "eskirgan" deb bloklab qo'yishi mumkin edi.
+            context.user_data.pop("aktiv_inline", None)
             await draft_buyurtma_yubor(query.message, context, kanal, lang,
                                         xitoy_ostatka={})
 
@@ -655,6 +660,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_reply_markup(reply_markup=None)
             except Exception:
                 pass
+            context.user_data.pop("aktiv_inline", None)
             await draft_buyurtma_yubor(query.message, context, kanal, lang,
                                         xitoy_ostatka=xitoy_map)
 
@@ -689,6 +695,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_reply_markup(reply_markup=None)
             except Exception:
                 pass
+            context.user_data.pop("aktiv_inline", None)
             await draft_buyurtma_yubor(query.message, context, kanal, lang,
                                         xitoy_ostatka=xitoy_map)
 
@@ -769,6 +776,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_reply_markup(reply_markup=None)
         except Exception:
             pass
+        # 2026-07-25: shu xabar aktiv_inline sifatida kuzatilgan edi —
+        # tugma allaqachon o'chirildi (yuqorida), endi kuzatuvni ham
+        # tozalaymiz (tozala_xitoy_kanal bug'iga sabab bo'lmasligi uchun).
+        context.user_data.pop("aktiv_inline", None)
         await query.message.reply_text(
             t(lang, "xitoy_qabul").format(n=n), parse_mode="Markdown",
         )
@@ -1939,11 +1950,23 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown"
             )
             return
-        await msg.reply_text(
+        # 2026-07-25 (Huzayfa: "тозалайсизми? deb 2 marta so'rayapti, tasdiqlay
+        # olmayapman" — TOPILGAN VA TUZATILGAN JIDDIY XATO): bu yerda
+        # aktiv_inline_belgila HECH QACHON chaqirilmagan edi. Agar
+        # context.user_data["aktiv_inline"] boshqa (eski, allaqachon
+        # bosilgan yoki eskirgan) xabarga ishora qilib turgan bo'lsa,
+        # callback_handler'dagi "eskirgan tugma" tekshiruvi bu YANGI
+        # tasdiqlash tugmasini ("Ҳа, тозала") ham "eskirgan" deb bloklab
+        # qo'yardi — foydalanuvchi bosadi, hech narsa bo'lmaydi (yoki
+        # xabar takror ko'rinadi), va faqat ekran biror sabab bilan qayta
+        # chizilib aktiv_inline None'ga tushgandagina (masalan tasodifiy
+        # matn yozib "tanilmagan tugma" holatiga tushirilsa) ishlay boshlaydi.
+        sent = await msg.reply_text(
             t(lang, "tozala_tasdiq_buy").format(ch=ch, n=n, sana=sana),
             parse_mode="Markdown",
             reply_markup=tozala_tasdiq_ikb(lang, "b", kanal),
         )
+        aktiv_inline_belgila(context, sent)
 
     elif action == "tozala_xitoy_kanal":
         if _admin_emasmi(uid):
@@ -1959,11 +1982,15 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown"
             )
             return
-        await msg.reply_text(
+        # 2026-07-25: xuddi yuqoridagi "tozala_buy_kanal" bilan bir xil
+        # tuzatish — aktiv_inline_belgila yo'q edi (Huzayfa'ning aynan
+        # "Хитой остаткани тозалаш"да duch kelgan xatosi).
+        sent = await msg.reply_text(
             t(lang, "tozala_tasdiq_xitoy").format(ch=ch, n=n, sana=sana),
             parse_mode="Markdown",
             reply_markup=tozala_tasdiq_ikb(lang, "x", kanal),
         )
+        aktiv_inline_belgila(context, sent)
 
     elif action == "yolga_kont":
         if _admin_emasmi(uid):
@@ -2406,6 +2433,24 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # bo'ladi (native uchun har doim bo'sh), shuning uchun uni alohida
         # cheklashning hojati yo'q — bo'sh bo'lsa pastdagi if avtomatik
         # bloklaydi.
+        # 2026-07-25 (Huzayfa: "qaysi tovarni taniganini yoki
+        # tanimaganini aytmayapti, nega aytganimni qilmayapsan?"):
+        # ILGARI ikkala ro'yxat ham bo'sh bo'lsa, HECH QANDAY xabar
+        # yuborilmasdi — ya'ni "hammasi yaxshi" holatida bot JIM turardi.
+        # Bu tashqaridan "hech narsa qilmayapti/buzilgan" deb ko'rinadi,
+        # chunki admin faylni tashlagandan keyin HECH QANDAY tasdiqni
+        # ko'rmaydi (faqat umumiy "40 ta tovar" sonini, aniq qaysi
+        # tovarlar ekanini emas). Endi ikkala ro'yxat ham bo'sh bo'lsa,
+        # buni ANIQ tasdiqlovchi xabar yuboriladi — bot "jim" qolmaydi.
+        if not unknown_list and not diqqat_list:
+            await msg.reply_text(
+                "✅ Барча товар номлари инвентарда тўғри танилди — "
+                "муаммоли/номаълум товар топилмади."
+                if lang == "cyr" else
+                "✅ Barcha tovar nomlari inventarda to'g'ri tanildi — "
+                "muammoli/noma'lum tovar topilmadi."
+            )
+            return
         if unknown_list:
             qator = "\n".join(f"• {n}" for n in unknown_list[:25])
             qoldi = f"\n… va yana {len(unknown_list) - 25} ta" if len(unknown_list) > 25 else ""
@@ -2461,6 +2506,13 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if n_new:
             logger.info(f"vazn_lookup: {n_new} ta yangi tovar qo'shildi")
         context.user_data.pop("kutilmoqda", None)
+        # 2026-07-25: "2/2 — Лист" so'rovidagi skip-tugma endi aktiv_inline
+        # sifatida kuzatilgan edi (yuqoridagi tuzatish) — flow shu yerda
+        # tugagach, tugma allaqachon ma'nosiz, shuning uchun tozalaymiz.
+        # Aks holda bu eskirgan pointer keyingi (masalan "Хитой остаткани
+        # тозалаш") tasdiqlash tugmasini "eskirgan" deb bloklab qo'yishi
+        # mumkin edi (aynan shu bug Huzayfa tomonidan topildi va tuzatildi).
+        await aktiv_inline_tozala(context, msg.get_bot())
         n = len(final_map)
         await msg.reply_text(
             t(lang, "xitoy_qabul").format(n=n),

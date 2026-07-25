@@ -255,14 +255,23 @@ def _china_spec_to_inventar(spec: str, length: str) -> str | None:
     marka_sfx = f' ({marka} марка)'
 
     # Труба: φ51 cT 0.85 / φ16 cT 0,65 / Φ 16 cT 0.65
-    m = re.match(r'^[φΦ]\s*(\d+)\s+[cC][tT]\s+([\d,\.]+)', spec)
+    # 2026-07-25 (Huzayfa: "bu excelni oqishda muammo bolmaydimi?"):
+    # "cT" belgisi ba'zi Xitoy fayllarida Lotin "c"/"T" o'rniga vizual
+    # jihatdan AYNAN bir xil ko'rinadigan Кирилл "с"/"т" harflari bilan
+    # yozilgan bo'lishi mumkin (klaviatura/kopiyalash farqi tufayli) —
+    # bu holda ESKI regex ([cC][tT]) UMUMAN mos kelmasdi va butun qator
+    # "notanish" (unknown) bo'lib qolardi, hech qanday xato ko'rinmasdi.
+    # Xuddi pastdagi "KB ...x..." qatoridagi Кирилл "х" ni ham qabul
+    # qiladigan mavjud pattern kabi, bu yerga ham Кирилл с/С, т/Т
+    # variantlari qo'shildi — xavfsiz, faqat qamrovni kengaytiradi.
+    m = re.match(r'^[φΦ]\s*(\d+)\s+[cCсС][tTтТ]\s+([\d,\.]+)', spec)
     if m:
         stenka = _yaxlitla_stenka(m.group(2))
         besh = ' Бесшовный' if (m.group(1), stenka, marka) in BESHOVNY_KOMBO else ''
         return f'{brend_pfx}Ф-{m.group(1)} ст {stenka}{besh} ({L_str}){marka_sfx}{suffix}'
 
     # Профиль: KB 20x20 CT 0.65  /  KB 30x30CT 0.85
-    m = re.match(r'^KB\s+(\d+)[xXхх×]\s*(\d+)\s*[cC][tT]\s*([\d,\.]+)', spec)
+    m = re.match(r'^KB\s+(\d+)[xXхх×]\s*(\d+)\s*[cCсС][tTтТ]\s*([\d,\.]+)', spec)
     if m:
         stenka = _yaxlitla_stenka(m.group(3))
         return f'{brend_pfx}Пр. {m.group(1)}х{m.group(2)} ст {stenka} ({L_str}){marka_sfx}{suffix}'
