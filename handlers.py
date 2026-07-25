@@ -558,15 +558,28 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await _userni_rad_et(context, target_id)
             natija = "❌ Bekor qilindi."
+        # 2026-07-24 (Huzayfa: "qo'shganlarim o'chishi kerak, bajarildi
+        # deb" — bir nechta so'rov ketma-ket kelganda, qaysi birini
+        # qabul/rad qilgani ekranda chalkashmasin uchun): xabarni matn
+        # bilan belgilash o'rniga endi BUTUNLAY O'CHIRIB TASHLAYMIZ — shu
+        # bilan qolgan (hali qaror qilinmagan) so'rovlar ro'yxati o'z-
+        # o'zidan "qisqarib" boradi. Natija haqida qisqa toast (query.answer,
+        # 2-3 soniya ko'rinadigan xabar) beriladi — chat chiqindisiz qoladi.
+        # DIQQAT: query.answer() funksiya boshida ALLAQACHON bir marta
+        # chaqirilgan (bo'sh) — Telegram bitta callback_query uchun
+        # answerCallbackQuery'ni faqat BIR marta qabul qiladi, shuning
+        # uchun bu yerda qayta chaqirmaymiz (xato tashlashi mumkin edi).
+        # Buning o'rniga natija haqida oddiy xabar yuboramiz.
         try:
-            eski_matn = query.message.text or ""
-            await query.edit_message_text(f"{eski_matn}\n\n{natija}")
+            await query.message.delete()
         except Exception:
+            # Telegram ba'zan (masalan xabar juda eski, 48soatdan katta)
+            # o'chirishga ruxsat bermasligi mumkin — bunday holda zaxira
+            # sifatida hech bo'lmasa tugmalarni olib tashlaymiz.
             try:
                 await query.edit_message_reply_markup(reply_markup=None)
             except Exception:
                 pass
-            await query.message.reply_text(natija)
         return
 
     # ── 2026-07-17 (Huzayfa: userlar eski ekrandan qolgan tugmani bosib

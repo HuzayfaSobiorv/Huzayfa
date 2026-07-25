@@ -356,6 +356,12 @@ _YANGI_FORMAT_SKIP_KALIT = (
     'тошкент',                                # 2026-07-24: Тошкент + Оптом Тошкент —
                                                # kuzatilmaydigan yo'nalishlar (Huzayfa)
     '37 склад',                               # 2026-07-24: 37 Склад — kuzatilmaydi (Huzayfa)
+    'итого',                                  # 2026-07-24 (BUG TUZATISH): "Итого" — bu
+                                               # JAMI ustuni (barcha lokatsiyalar yig'indisi),
+                                               # LOKATSIYA EMAS — hech qachon kanal hisobiga
+                                               # qo'shilmasligi kerak (aks holda dupllikatsiya/
+                                               # ikki karra hisoblash bo'ladi, qarang:
+                                               # _load_qoldiq_yangi_format izohi).
 )
 
 _LOKATSIYA_KUZATUV_FAYL = os.path.join(
@@ -478,9 +484,15 @@ def filial_qoldiqlarini_chiqar(filepath: str) -> dict:
         ws = wb.active
 
         # Har filial uchun ustun juftliklari
+        # 2026-07-24: xuddi _load_qoldiq_yangi_format'dagi bug tuzatishi
+        # bilan bir xil sabab — QOTIRILGAN "< 121" chegarasi o'rniga
+        # ws.max_column'ga qarab dinamik to'xtaymiz (lokatsiyalar soni
+        # kelajakda o'zgarsa ham to'g'ri ishlashi uchun). "Итого"ning o'zi
+        # bu yerda xavfli emas edi (_filial_nomi hech qachon uni biror
+        # filialga moslamaydi), lekin izchillik uchun ham tuzatildi.
         filial_ustunlar: dict[str, list] = {f: [] for f in FILIALLAR}
         c = 11
-        while c < 121:
+        while c < ws.max_column:
             nom = ws.cell(6, c).value
             if nom is not None:
                 filial = _filial_nomi(nom)
@@ -548,11 +560,32 @@ def _load_qoldiq_yangi_format(filepath: str) -> pd.DataFrame:
     try:
         ws = wb.active
 
-        # Har kanal uchun alohida ustun juftliklari (кор_col, jami_col)
+        # 2026-07-24 (JIDDIY BUG TUZATILDI — Huzayfa topdi, Ф-51 ст 0,9
+        # misolida real Қолдиқ 4500 chiqib ketgani orqali): ILGARI bu yer
+        # `while c < 121` bilan QOTIRILGAN edi — ya'ni "Итого" (jami)
+        # ustuni HAR DOIM 121-122-ustunlarda deb faraz qilingandi. 24.07
+        # tarix faylida manba jadvalidan 2 ta lokatsiya (Оптом Тошкент
+        # склад, Мебел маркази склад) yo'qolib qolgach, "Итого" endi
+        # 117-118-ga SURILDI — lekin qattiq chegara hali ham 11..119
+        # oralig'ini o'qirdi, shuning uchun "Итого" (jami — barcha
+        # lokatsiyalar yig'indisi) ODDIY LOKATSIYA sifatida o'qilib,
+        # _lokatsiya_kanali() uni 'asosiy' deb hisobladi (skip-so'zlar
+        # ichida "итого" yo'q edi) — natijada Асосий_Қолдиққа lokatsiyalar
+        # yig'indisi USTIGA яна bir marta BUTUN jami QAYTA QO'SHILDI
+        # (2231 + 2269 = 4500 — foydalanuvchi ko'rgan aynan shu son).
+        #
+        # Tuzatish IKKI QATLAMLI: (1) "итого" endi
+        # _YANGI_FORMAT_SKIP_KALIT ro'yxatida — u qayerda turishidan
+        # qat'iy nazar hech qachon lokatsiya sifatida hisoblanmaydi;
+        # (2) bu tsikl endi QOTIRILGAN 121 chegarasiga emas, balki
+        # faylning HAQIQIY ws.max_column'iga qarab dinamik to'xtaydi —
+        # kelajakda yana lokatsiyalar soni o'zgarsa (ko'paysa/kamaysa)
+        # ham "Итого" pozitsiyasidan qat'iy nazar to'g'ri chiqarib
+        # tashlanadi.
         kanal_ustunlar = {'asosiy': [], 'sex': [], 'osh': []}
         barcha_nomlar  = []
         c = 11
-        while c < 121:   # 121-122 = Итого, alohida, shu yerda hisoblanmaydi
+        while c < ws.max_column:
             nom = ws.cell(6, c).value
             if nom is not None:
                 barcha_nomlar.append(str(nom).strip())
