@@ -453,8 +453,17 @@ def uzilish_xavfi_excel(data_file: Path, lang: str, buyurtma_yuklash_fn) -> Byte
     if not royxat:
         return None
 
-    # Kategoriya bo'yicha (Труба->Профиль->Лист), ICHIDA eng yaqin xavfdan
-    royxat = sorted(royxat, key=lambda r: (CAT_ORDER.get(r["kategoriya"], 99), r["uzilish_kun"]))
+    # 2026-07-27 (Huzayfa, to'rtinchi aniqlashtirish — "olchamlar
+    # diyametrlar kichikdan kattaga, listlar qalinligi bo'yicha"):
+    # kategoriya ICHIDAGI tartib endi shoshilinchlik (uzilish_kun) EMAS —
+    # tovar_sort_key() bilan bir xil, butun tizimda (Kamomat, Buyurtma
+    # Excel) ishlatiladigan STANDART o'lcham tartibi (труба/профиль —
+    # diametr/en×boy -> qalinlik -> uzunlik -> marka; лист — marka ->
+    # format -> qalinlik).
+    royxat = sorted(royxat, key=lambda r: (
+        CAT_ORDER.get(r["kategoriya"], 99),
+        tovar_sort_key(r["tovar"], r["kategoriya"]),
+    ))
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -468,21 +477,23 @@ def uzilish_xavfi_excel(data_file: Path, lang: str, buyurtma_yuklash_fn) -> Byte
         hdrs = ["№", "Tovar", "Kanal", "ABC", "Qoldiq",
                 "Min_Zaxira", "Kun_Xavf", "Buyurtma_Holati"]
         berildi, kutilmq, kun_suffix = "Berildi ✅", "Kutilmoqda ⏳", "kun"
-    col_w = [5, 46, 10, 6, 11, 13, 12, 19]
+    # 2026-07-27 (Huzayfa: "shrift juda kichkina, katak ham kichkina"):
+    # ustun kengliklari, shrift o'lchami va qator balandligi kattalashtirildi.
+    col_w = [6, 54, 12, 7, 12, 14, 13, 21]
     NCOL  = len(hdrs)
 
     def fill(hex_: str): return PatternFill("solid", fgColor=hex_)
-    def font(sz=10, bold=False, color="000000"): return Font(size=sz, bold=bold, color=color)
+    def font(sz=13, bold=False, color="000000"): return Font(size=sz, bold=bold, color=color)
     def aln(h="left", v="center", wrap=False): return Alignment(horizontal=h, vertical=v, wrap_text=wrap)
 
     thin = Side(style="thin", color="B0B0B0")
     border_all = Border(left=thin, right=thin, top=thin, bottom=thin)
 
     ws.append(hdrs)
-    ws.row_dimensions[1].height = 28
+    ws.row_dimensions[1].height = 34
     for i, cell in enumerate(ws[1], 1):
         cell.fill      = fill("C00000")
-        cell.font      = font(11, True, "FFFFFF")
+        cell.font      = font(14, True, "FFFFFF")
         cell.alignment = aln("center", "center", True)
         cell.border    = border_all
         ws.column_dimensions[cell.column_letter].width = col_w[i - 1]
@@ -507,9 +518,9 @@ def uzilish_xavfi_excel(data_file: Path, lang: str, buyurtma_yuklash_fn) -> Byte
                             end_row=excel_row, end_column=NCOL)
             sep = ws.cell(row=excel_row, column=1, value=f"  {kat}")
             sep.fill      = fill(colors["h"])
-            sep.font      = font(11, True, "1F1F1F")
+            sep.font      = font(14, True, "1F1F1F")
             sep.alignment = aln("left", "center")
-            ws.row_dimensions[excel_row].height = 22
+            ws.row_dimensions[excel_row].height = 30
 
         n       += 1
         kat_cnt += 1
@@ -523,10 +534,11 @@ def uzilish_xavfi_excel(data_file: Path, lang: str, buyurtma_yuklash_fn) -> Byte
             n, r["tovar"], r["kanal_nomi"], r["abc"],
             r["qoldiq"], r["min_z"], kun_txt, holat_txt,
         ])
+        ws.row_dimensions[excel_row].height = 26
         for col_i in range(1, NCOL + 1):
             cell = ws.cell(row=excel_row, column=col_i)
             cell.fill      = fill(row_clr)
-            cell.font      = font(10, bold=(col_i == 7))
+            cell.font      = font(13, bold=(col_i == 7))
             cell.alignment = aln("center" if col_i != 2 else "left")
             cell.border    = border_all
 
