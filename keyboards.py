@@ -238,6 +238,27 @@ def xitoy_list_otkazib_ikb(lang: str, kanal: str) -> InlineKeyboardMarkup:
     )
 
 
+def kont_tp_otkazib_ikb(lang: str) -> InlineKeyboardMarkup:
+    """2026-07-27 (Huzayfa so'rovi — Xitoy ostatka'dagi bilan bir xil
+    naqsh): "Yo'lga konteyner qo'shish" 1/2 — Труба/Профиль装箱单 faylini
+    so'raganda, agar bu fayl bo'lmasa, admin shu tugma bilan bosqichni
+    o'tkazib, to'g'ridan-to'g'ri "2/2 — Лист" so'roviga o'tishi mumkin.
+    Xitoy ostatkadan farqli — kanal tushunchasi yo'q (konteyner umumiy)."""
+    return ikb(
+        [(t(lang, "kont_tp_otkazib_btn"), "kont_tp_otkazib")],
+    )
+
+
+def kont_list_otkazib_ikb(lang: str) -> InlineKeyboardMarkup:
+    """2026-07-27 (Huzayfa so'rovi): "Yo'lga konteyner qo'shish" 2/2 —
+    Лист出货清单 faylini so'raganda, agar bu fayl bo'lmasa, admin shu
+    tugma bilan bosqichni o'tkazib, mavjud (yoki bo'sh) Труба/Профиль
+    ma'lumoti bilan yakunlashi mumkin."""
+    return ikb(
+        [(t(lang, "kont_list_otkazib_btn"), "kont_list_otkazib")],
+    )
+
+
 def xitoy_mavjud_ikb(lang: str, kanal: str) -> InlineKeyboardMarkup:
     # "Hisobsiz ber" yo'q — yangi ostatka yuklansa eski zakaz+ostatka avtomatik o'chadi,
     # shuning uchun hisobsiz berish logikasi mavjud emas.

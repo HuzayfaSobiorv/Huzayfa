@@ -1179,8 +1179,15 @@ def xitoy_yuklar_oqi(truba_raw: bytes, list_raw: bytes) -> list[dict]:
       }, ...
     ]
     """
-    truba_map = _parse_truba_zhuangxiang(truba_raw)
-    list_map  = _parse_list_chuhuo(list_raw)
+    # 2026-07-27 (Huzayfa: "Yo'lga konteyner qo'shish"da ham Труба/Профиль
+    # yoki Лист fayllaridan birini otkazib yuborish imkoniyati kerak,
+    # Xitoy ostatkadagi kabi): ikkala parametr ham None bo'lishi mumkin —
+    # pastdagi t_data/l_data ayirish mantig'i (aralash/truba/list) buni
+    # allaqachon to'g'ri qo'llab-quvvatlaydi, faqat None'ni parserga
+    # to'g'ridan-to'g'ri yubormaslik kerak (xlsx sifatida o'qishga
+    # urinib xato berardi).
+    truba_map = _parse_truba_zhuangxiang(truba_raw) if truba_raw else {}
+    list_map  = _parse_list_chuhuo(list_raw) if list_raw else {}
 
     all_isos = set(truba_map) | set(list_map)
     result   = []
