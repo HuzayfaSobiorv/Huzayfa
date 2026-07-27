@@ -305,37 +305,98 @@ def kamomat_stats_v2(data_file: Path, kanal: str,
 UZILISH_XAVFI_KATEGORIYALAR = {"ТРУБА", "ПРОФИЛЬ", "ЛИСТ", "ЛИСТ РУЛОН"}
 
 
+def _nol_kutish_hisobla(qoldiq: float, kunlik: float, konteynerlar: list,
+                          horizon: float) -> tuple:
+    """
+    2026-07-27 (Huzayfa, TO'G'RILANGAN LOGIKA — "kelajakda konteyner bor,
+    ammo u kelguncha 0 ga tushadigan tovarlarni yig'ishi kerak"):
+    zanjir_sim()dagi "min_z chizig'idan pastga tushish" EMAS — bu yerda
+    tovar REAL 0 GA qachon tushishini va o'sha paytdan keyin ENG YAQIN
+    QAYSI YO'LDAGI KONTEYNER uni qutqarishini (qachon yetib kelishini)
+    hisoblaymiz.
+
+    Kun-ma-kun (konteyner voqealari orasida chiziqli): `qoldiq` har kuni
+    `kunlik`ga kamayadi, har konteyner o'z kunida miqdorini qo'shadi.
+
+    Qaytaradi: (nol_kuni, kutish_kun)
+      nol_kuni   — necha kundan keyin qoldiq REAL nolga tushadi (0 —
+                   allaqachon shunday, ya'ni bugun ham kam/tugagan).
+      kutish_kun — nol_kuni'dan keyin ENG YAQIN yo'ldagi konteyner
+                   yetib keladigan kun (gorizont ichida). Agar
+                   nol_kuni topilmasa YOKI topilgan-u lekin gorizont
+                   ichida qutqaradigan konteyner bo'lmasa — None.
+
+    MUHIM: agar (nol_kuni, kutish_kun) ikkalasi ham aniq bo'lmasa —
+    bu funksiya chaqiruvchisi bu tovarni RO'YXATGA QO'SHMASLIGI kerak:
+    "konteyner umuman yo'q" yoki "hech qachon 0ga tushmaydi" — ikkalasi
+    ham BOSHQA muammo, bu hisobotning maqsadi emas.
+    """
+    if kunlik <= 0:
+        return None, None
+
+    kont = sorted([(k, m) for k, m in konteynerlar if k > 0], key=lambda x: x[0])
+    # allaqachon yetib kelgan/kechikkan, hali КЕЛДИ belgilanmagan (k<=0)
+    # bo'lsa — zanjir_sim bilan bir xil naqsh, boshlang'ich qoldiqqa qo'shiladi
+    joriy = float(qoldiq) + sum(m for k, m in konteynerlar if k <= 0)
+
+    joriy_kun = 0.0
+    nol_kuni  = 0 if joriy <= 0 else None
+
+    for kun_q, miqdor in kont:
+        if kun_q > horizon:
+            break
+        if nol_kuni is not None:
+            return nol_kuni, kun_q   # shu konteyner qutqaradi
+        gap         = kun_q - joriy_kun
+        joriy_oldin = joriy
+        joriy      -= kunlik * gap
+        if joriy <= 0:
+            nol_kuni = int(joriy_kun + max(0.0, joriy_oldin / kunlik))
+            return nol_kuni, kun_q   # xuddi shu konteyner "kelguncha" kutadi
+        joriy    += miqdor
+        joriy_kun = kun_q
+
+    if nol_kuni is None:
+        # gorizont oxirigacha hisoblab ko'ramiz — agar shu yerda ham
+        # tushmasa, tovar bu hisobotga umuman kirmaydi
+        gap         = horizon - joriy_kun
+        joriy_oldin = joriy
+        joriy      -= kunlik * gap
+        if joriy <= 0:
+            nol_kuni = int(joriy_kun + max(0.0, joriy_oldin / kunlik))
+    return nol_kuni, None   # konteyner topilmadi (yo'q yoki gorizontdan tashqarida)
+
+
 def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
     """
-    2026-07-27 (Huzayfa: taqdimot oldidan "xodovoy tovarlar uzilib
-    qolmasin" maqsadida qo'shildi): BARCHA 3 kanal (Асосий/Цех/Ош)
-    bo'yicha, HAR BIR tovar uchun zanjir_sim() orqali "necha kunda
-    uziladi" (uzilish_kun) hisoblanadi — yo'ldagi (hali kelmagan)
-    konteynerlar HAM hisobga olinadi (xuddi Kamomat/Buyurtma hisob-
-    kitobidagi bilan bir xil mantiq).
+    2026-07-27 (Huzayfa, oxirgi tuzatilgan mantiq): faqat SHU aniq
+    holatni yig'adi — tovarga YO'LDA (ma'lum, taqvimi bor) konteyner
+    BOR, LEKIN u yetib kelguncha tovar REAL 0 ga tushib qoladi (ya'ni
+    "kelajakda konteyner bor, ammo u kelguncha 0 ga tushadigan
+    tovarlar" — ANIQ shu ta'rif). Konteyner UMUMAN yo'q tovarlar
+    (boshqa muammo — "buyurtma berish kerak", bu ro'yxatga KIRMAYDI) va
+    konteyner o'z vaqtida yetib keladigan (uzilmaydigan) tovarlar ham
+    chiqarib tashlanadi.
 
-    IKKI QO'SHIMCHA FILTR (2026-07-27, Huzayfa aniq talab qildi):
+    IKKI QO'SHIMCHA FILTR (Huzayfa aniq talab qildi):
       1. FAQAT Труба/Профиль/Лист(+Лист рулон) kategoriyalari —
          UZILISH_XAVFI_KATEGORIYALAR.
       2. FAQAT ABC toifasi A yoki B bo'lgan tovarlar — manba
          Yuklama_optimal.py::abc_map_yuklash() (Minimal_zaxiralar/
          Min_Zaxira.xlsx "ABC" ustuni, Huzayfa qo'lda tahrirlaydi —
-         konteyner yuklashda ham AYNAN shu manba ishlatiladi, shuning
-         uchun ikkalasi bir xil "qaysi tovar muhim" tushunchasidan
-         foydalanadi). ABC belgilanmagan tovar "C" deb hisoblanadi va
-         RO'YXATGA KIRMAYDI.
+         konteyner yuklashda ham AYNAN shu manba ishlatiladi). ABC
+         belgilanmagan tovar "C" deb hisoblanadi va RO'YXATGA KIRMAYDI.
 
-    DIQQAT: bu hozir "🔴 КРИТИК"/"🟡 ПАСТ" bo'lganlar bilan CHEKLANMAYDI
-    — filtrdan o'tgan BARCHA tovar tekshiriladi, chunki hozir
-    "🟢 НОРМА" ko'rinsa ham, sarfi tez bo'lsa, gorizont ichida
-    (Асосий/Ош — 70 kun, Цех — 55 kun) hali ham uzilishi mumkin. Faqat
-    uzilish_kun ANIQ (None emas) chiqqan — ya'ni yo'ldagi konteyner
-    yetib kelgunicha tugab qolishi kutilayotgan — tovarlar qaytariladi.
-    Natija uzilish_kun bo'yicha o'sish tartibida (eng yaqin xavf
-    birinchi) saralanadi.
+    "Kunlik" sarf — butun tizimda ishlatiladigan standart formula
+    (min_z / KUNLAR, Tsex uchun eski /30), gorizont — Асосий/Ош 70 kun,
+    Цех 55 kun (Buyurtma/Kamomat bilan bir xil).
+
+    Natija nol_kuni (real 0 ga tushish kuni) bo'yicha o'sish tartibida
+    (eng yaqin xavf birinchi) saralanadi.
 
     Qaytaradi: [{"tovar", "kategoriya", "kanal", "kanal_nomi", "abc",
-                 "uzilish_kun", "qoldiq", "min_z", "buyurtma_berilgan"}, ...]
+                 "nol_kuni", "kutish_kun", "qoldiq", "min_z",
+                 "buyurtma_berilgan"}, ...]
     """
     try:
         inv = pd.read_excel(data_file, sheet_name="Инвентар")
@@ -391,7 +452,7 @@ def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
         buy     = buyurtma_yuklash_fn(kanal)
         ordered = {i["tovar"] for i in buy.get("buyurtmalar", [])} if buy else set()
 
-        _horizon_ov = None if kanal == "sex" else 70
+        _horizon = 70.0 if kanal != "sex" else float(KELISH_KUNI)
         for _, row in df.iterrows():
             tovar = str(row.get("Товар", ""))
             if not tovar:
@@ -401,10 +462,14 @@ def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
                 continue
             qoldiq = float(row.get(qoldiq_col, 0))
             min_z  = float(row.get(minz_col, 0))
+            if min_z <= 0:
+                continue
             kont_l = kont_map.get(tovar, [])
-            sim = zanjir_sim(qoldiq, min_z, kont_l, horizon_override=_horizon_ov)
-            uk = sim.get("uzilish_kun")
-            if uk is None:
+            if not kont_l:
+                continue   # konteyner UMUMAN yo'q -- bu ro'yxatning mavzusi emas
+            kunlik = min_z / float(KUNLAR)
+            nol_kuni, kutish_kun = _nol_kutish_hisobla(qoldiq, kunlik, kont_l, _horizon)
+            if nol_kuni is None or kutish_kun is None:
                 continue
             natija.append({
                 "tovar":            tovar,
@@ -412,39 +477,36 @@ def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
                 "kanal":            kanal,
                 "kanal_nomi":       KANAL_NOMI[kanal],
                 "abc":              abc,
-                "uzilish_kun":      int(uk),
+                "nol_kuni":         int(nol_kuni),
+                "kutish_kun":       int(kutish_kun) - int(nol_kuni),
                 "qoldiq":           int(qoldiq),
                 "min_z":            int(min_z),
                 "buyurtma_berilgan": tovar in ordered,
             })
 
-    natija.sort(key=lambda r: r["uzilish_kun"])
+    natija.sort(key=lambda r: r["nol_kuni"])
     return natija
 
 
 def uzilish_xavfi_excel(data_file: Path, lang: str, buyurtma_yuklash_fn) -> BytesIO | None:
     """
-    2026-07-27 (Huzayfa, ikkinchi aniqlashtirish): uzilish_xavfi_royxat()
-    natijasini rangli, TARTIBLI Excel qilib beradi:
+    2026-07-27 (Huzayfa, TO'G'RILANGAN MANTIQ): uzilish_xavfi_royxat()
+    natijasini rangli, TARTIBLI Excel qilib beradi. Har bir qator —
+    tovarga konteyner YO'LDA (ma'lum), lekin u yetib kelguncha tovar
+    REAL 0 ga tushib qoladi:
       - Tovar nomlari CHALKASHMAYDI — avval Труба, keyin Профиль, keyin
-        Лист(+Лист рулон) (kamomat_engine.CAT_ORDER bilan bir xil tartib),
-        har kategoriya ICHIDA eng yaqin xavfdan boshlab saralanadi.
-      - Kategoriyalar ANIQ AJRALIB TURADI — xuddi "Yo'ldagi yuklar"
-        Excel'idagi (yolda_excel.py) kabi: har kategoriya oldida ажратувчи
-        sarlavha qatori + o'zining rang oilasida ochroq/тоқроқ (juft/toq)
-        qatorlar, HAR BIR katak nozik chegara (border) bilan.
-      - "Кun_Хавф" ustuni endi ANIQ matn ("5 кун", "0 кун" — hozir min_z
-        chizig'idan pastda) — tovar nomi yonida bir qarashda tushunarli
-        bo'lishi uchun, faqat son emas.
-
-    DIQQAT (tushuntirish, kod o'zgarmaydi): "N kun" — zanjir_sim() ning
-    butun tizimda (Buyurtma, Kamomat) ishlatiladigan STANDART ta'rifi —
-    tovar Мин_Захира chizig'idan PASTGA tushadigan kun (0 — allaqachon
-    shu chiziqdan past, ya'ni bugundan boshlab xavfli hisoblanadi). Bu
-    literal "qoldiq=0" bilan bir xil EMAS (masalan qoldiq hali ijobiy
-    bo'lishi mumkin, lekin xavfsiz zaxiradan pastda) — lekin bu butun
-    tizimda buyurtma hajmini belgilaydigan YAGONA, tasdiqlangan mezon,
-    shuning uchun shu yerda ham o'zgartirilmadi.
+        Лист(+Лист рулон) (CAT_ORDER), har kategoriya ICHIDA o'lcham
+        bo'yicha (diametr/en×boy/qalinlik kichikdan kattaga —
+        tovar_sort_key(), butun tizimda ishlatiladigan standart).
+      - Kategoriyalar ANIQ AJRALIB TURADI — "Yo'ldagi yuklar" (yolda_
+        excel.py) uslubida: ajratuvchi sarlavha qatori + o'z rang
+        oilasida ochroq/тоқроқ (juft/toq) qatorlar, har katak border bilan.
+      - Ikki "kun" ustuni bor (Huzayfa ikkala misolini ham alohida
+        so'ragan edi):
+          "0 гача (кун)"  — necha kundan keyin tovar REAL 0 ga tushadi
+                             (0 — allaqachon shunday).
+          "Кутиш (кун)"   — 0 ga tushgandan keyin ma'lum konteyner
+                             yetib kelguncha necha kun kutadi.
     """
     import openpyxl
     from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
@@ -453,13 +515,9 @@ def uzilish_xavfi_excel(data_file: Path, lang: str, buyurtma_yuklash_fn) -> Byte
     if not royxat:
         return None
 
-    # 2026-07-27 (Huzayfa, to'rtinchi aniqlashtirish — "olchamlar
-    # diyametrlar kichikdan kattaga, listlar qalinligi bo'yicha"):
-    # kategoriya ICHIDAGI tartib endi shoshilinchlik (uzilish_kun) EMAS —
-    # tovar_sort_key() bilan bir xil, butun tizimda (Kamomat, Buyurtma
-    # Excel) ishlatiladigan STANDART o'lcham tartibi (труба/профиль —
-    # diametr/en×boy -> qalinlik -> uzunlik -> marka; лист — marka ->
-    # format -> qalinlik).
+    # Kategoriya bo'yicha (Труба->Профиль->Лист), ICHIDA o'lcham bo'yicha
+    # (kichikdan kattaga) — tovar_sort_key(), butun tizimda (Kamomat,
+    # Buyurtma Excel) ishlatiladigan standart o'lcham tartibi.
     royxat = sorted(royxat, key=lambda r: (
         CAT_ORDER.get(r["kategoriya"], 99),
         tovar_sort_key(r["tovar"], r["kategoriya"]),
@@ -471,15 +529,15 @@ def uzilish_xavfi_excel(data_file: Path, lang: str, buyurtma_yuklash_fn) -> Byte
 
     if lang == "cyr":
         hdrs = ["№", "Товар", "Канал", "ABC", "Қолдиқ",
-                "Мин_Захира", "Кун_Хавф", "Буюртма_Ҳолати"]
+                "Мин_Захира", "0 гача (кун)", "Кутиш (кун)", "Буюртма_Ҳолати"]
         berildi, kutilmq, kun_suffix = "Берилди ✅", "Кутилмоқда ⏳", "кун"
     else:
         hdrs = ["№", "Tovar", "Kanal", "ABC", "Qoldiq",
-                "Min_Zaxira", "Kun_Xavf", "Buyurtma_Holati"]
+                "Min_Zaxira", "0 gacha (kun)", "Kutish (kun)", "Buyurtma_Holati"]
         berildi, kutilmq, kun_suffix = "Berildi ✅", "Kutilmoqda ⏳", "kun"
     # 2026-07-27 (Huzayfa: "shrift juda kichkina, katak ham kichkina"):
     # ustun kengliklari, shrift o'lchami va qator balandligi kattalashtirildi.
-    col_w = [6, 54, 12, 7, 12, 14, 13, 21]
+    col_w = [6, 54, 12, 7, 12, 14, 14, 14, 21]
     NCOL  = len(hdrs)
 
     def fill(hex_: str): return PatternFill("solid", fgColor=hex_)
@@ -527,18 +585,19 @@ def uzilish_xavfi_excel(data_file: Path, lang: str, buyurtma_yuklash_fn) -> Byte
         colors   = CAT_COLORS.get(kat, CAT_COLORS_DEF)
         row_clr  = colors["a"] if kat_cnt % 2 == 1 else colors["b"]
         holat_txt = berildi if r["buyurtma_berilgan"] else kutilmq
-        kun_txt   = f"{r['uzilish_kun']} {kun_suffix}"
+        nol_txt    = f"{r['nol_kuni']} {kun_suffix}"
+        kutish_txt = f"{r['kutish_kun']} {kun_suffix}"
 
         excel_row += 1
         ws.append([
             n, r["tovar"], r["kanal_nomi"], r["abc"],
-            r["qoldiq"], r["min_z"], kun_txt, holat_txt,
+            r["qoldiq"], r["min_z"], nol_txt, kutish_txt, holat_txt,
         ])
         ws.row_dimensions[excel_row].height = 26
         for col_i in range(1, NCOL + 1):
             cell = ws.cell(row=excel_row, column=col_i)
             cell.fill      = fill(row_clr)
-            cell.font      = font(13, bold=(col_i == 7))
+            cell.font      = font(13, bold=(col_i in (7, 8)))
             cell.alignment = aln("center" if col_i != 2 else "left")
             cell.border    = border_all
 

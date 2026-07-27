@@ -588,7 +588,7 @@ async def uzilish_xavfi_ko_rish(msg, context, lang: str):
             await msg.reply_text(t(lang, "uzilish_xavfi_yoq"))
             return
 
-        eng_yaqin = royxat[0]["uzilish_kun"]
+        eng_yaqin = royxat[0]["nol_kuni"]
         await msg.reply_text(
             t(lang, "uzilish_xavfi_title") + "\n" +
             t(lang, "uzilish_xavfi_stats").format(n=len(royxat), kun=eng_yaqin),
