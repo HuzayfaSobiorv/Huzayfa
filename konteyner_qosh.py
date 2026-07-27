@@ -691,6 +691,27 @@ def _parse_truba_zhuangxiang(raw: bytes) -> dict:
                     kont_at[cell.row] = iso
                 break
 
+    # 2026-07-27 (Huzayfa: "guache_装箱单_21_07.xlsx" — YANGI yetkazib
+    # beruvchi formati topildi, "克力木装箱单"): ba'zi fayllar butun
+    # jadvalni BIR USTUNGA CHAPGA SILJITILGAN holda yuboradi — standart
+    # formatda blok yorlig'i ('柜N'/'挂车') va "规格" sarlavhasi B
+    # ustunida (A — bo'sh "margin"), bu yangi formatda esa A'ning O'ZIDA
+    # (bo'sh margin ustuni UMUMAN yo'q). Buni hisobga olmasak, blok
+    # boshlanishi (pastda, faqat row[1]ni tekshiradi) UMUMAN topilmaydi —
+    # butun konteyner (haqiqiy Труба/Профиль tovarlar bilan, 170 000+
+    # yuan qiymatida) jimgina yo'qolib ketardi (parslanmagani uchun ISO/
+    # pseudo-ID hech qachon hisoblanmaydi — "allaqachon bor" xatosi ham
+    # aslida shundan: List fayl tomonidan mustaqil topilgan pseudo-ID
+    # boshqa, aloqasiz eski yozuv bilan tasodifan mos kelib qolgan edi).
+    # Fayl boshida BIR MARTA "规格" sarlavhasi qaysi ustunda ekanini
+    # aniqlab, SHU OFFSET butun faylga izchil qo'llaniladi.
+    col_off = 0
+    for row in ws.iter_rows(min_row=1, max_row=min(10, ws.max_row)):
+        a_val = str(row[0].value).strip() if row[0].value else ""
+        if a_val == '规格':
+            col_off = -1
+            break
+
     # 1.5) Mashina (车号/车牌) → qator raqami — konteyner raqami (柜号) YO'Q,
     # faqat yuk mashinasi bilan tashiladigan bo'limlar uchun FALLBACK.
     # Xuddi 柜号 kabi — yorliq va qiymat alohida katakda bo'lishi mumkin,
@@ -733,10 +754,11 @@ def _parse_truba_zhuangxiang(raw: bytes) -> dict:
     # olinadi.
     blocks = []  # (start_row, gui_name, sana)
     for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
-        b = row[1].value
+        b = row[1 + col_off].value if 0 <= 1 + col_off < len(row) else None
         b_s = str(b).strip() if b else ""
         if b_s and (('柜' in b_s and len(b_s) <= 6) or b_s == '挂车'):
-            sana = row[8].value if len(row) > 8 else None
+            sana_idx = 8 + col_off
+            sana = row[sana_idx].value if 0 <= sana_idx < len(row) else None
             if isinstance(sana, datetime):
                 sana = sana.date()
             blocks.append((row[0].row, b_s, sana))
@@ -781,7 +803,10 @@ def _parse_truba_zhuangxiang(raw: bytes) -> dict:
         in_products = False
         for ri in range(start_row, end_row):
             row_vals = [ws.cell(ri, c).value for c in range(1, 10)]
-            b_val = row_vals[1]  # B ustun (0-indexed: index 1 = column B)
+            # col_off: standart formatda B/C/E/F (0 asosida 1/2/4/5), ba'zi
+            # yetkazib beruvchilarda (masalan "克力木装箱单") bir ustun
+            # chapga siljigan A/B/D/E (col_off=-1) — yuqoridagi izohga qarang.
+            b_val = row_vals[1 + col_off]  # standart: B ustun, siljigan: A
             # Sarlavha satrini aniqlash
             if b_val == '规格':
                 in_products = True
@@ -793,10 +818,10 @@ def _parse_truba_zhuangxiang(raw: bytes) -> dict:
                 continue
             if not in_products:
                 continue
-            spec        = row_vals[1]   # B = 规格
-            marka       = row_vals[2]   # C = 材质
-            zhishu      = row_vals[4]   # E = 支数 (jami dona soni)
-            xitoy_kg    = row_vals[5]   # F = 重量(Kg) — SHU QATOR uchun
+            spec        = row_vals[1 + col_off]   # standart B / siljigan A = 规格
+            marka       = row_vals[2 + col_off]   # standart C / siljigan B = 材质
+            zhishu      = row_vals[4 + col_off]   # standart E / siljigan D = 支数 (jami dona soni)
+            xitoy_kg    = row_vals[5 + col_off]   # standart F / siljigan E = 重量(Kg) — SHU QATOR uchun
             if not spec or not marka:
                 continue
             spec_s = str(spec).strip()
