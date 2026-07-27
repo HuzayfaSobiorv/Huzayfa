@@ -2651,6 +2651,54 @@ async def perexod_kunlik_tekshiruv(context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.exception(f"Perexod xabari yuborilmadi: {aid}")
 
 
+async def bot_holat_zaxira_yubor(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Bot.py'da job_queue.run_daily() orqali har kuni ishga tushadi
+    (2026-07-27, Huzayfa: "bot_holat papkasi zaxira nusxasiz — server
+    diski buzilsa, whitelist/filiallar/tasdiqlangan buyurtmalar butunlay
+    qaytarib bo'lmas holda yo'qoladi, faqat bitta admin bor, ikkinchi
+    zaxira yo'q").
+
+    `bot_holat/` papkasini (whitelist, filial biriktirmalari, tasdiqlangan
+    buyurtmalar, Xitoy ostatka, so'rovlar va h.k. — botning BUTUN saqlanadigan
+    holati) bitta .zip faylga yig'ib, SUPER_ADMIN_ID'ga hujjat sifatida
+    yuboradi. Zaxira RAM'da (BytesIO) yig'iladi — diskka vaqtinchalik fayl
+    yozilmaydi, keyin o'chirishni unutib qo'yish xavfi yo'q.
+    """
+    import zipfile
+    from datetime import date as _date
+
+    if not SUPER_ADMIN_ID:
+        return
+    if not BOT_HOLAT_DIR.exists():
+        return
+
+    def _zip_yasa() -> BytesIO | None:
+        fayllar = [p for p in BOT_HOLAT_DIR.rglob("*") if p.is_file()]
+        if not fayllar:
+            return None
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for p in fayllar:
+                zf.write(p, arcname=str(p.relative_to(BOT_HOLAT_DIR)))
+        buf.seek(0)
+        return buf
+
+    try:
+        loop = asyncio.get_event_loop()
+        buf = await loop.run_in_executor(None, _zip_yasa)
+        if buf is None:
+            return
+        sana = _date.today().isoformat()
+        await context.bot.send_document(
+            chat_id=SUPER_ADMIN_ID,
+            document=buf,
+            filename=f"bot_holat_zaxira_{sana}.zip",
+            caption=f"🗄 Kunlik zaxira nusxa — {sana}",
+        )
+    except Exception:
+        logger.exception("Kunlik zaxira nusxa yuborilmadi")
+
+
 def _kod_sintaksisi_togrimi() -> tuple:
     """BASE_DIR ildizidagi barcha *.py fayllarni sintaksis bo'yicha tekshiradi
     (`python -m py_compile`, real import qilmasdan — tashqi paketlar

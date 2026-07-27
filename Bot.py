@@ -40,6 +40,7 @@ from telegram.ext import (
     MessageHandler, filters, ContextTypes,
 )
 from telegram import Update
+from telegram.request import HTTPXRequest
 
 from datetime import time as _time
 
@@ -47,7 +48,7 @@ from config import BOT_TOKEN, SUPER_ADMIN_ID, logger, xlsx_refresh
 from handlers import (
     start, callback_handler, text_keldi, fayl_keldi, adduser_cmd,
     removeuser_cmd, users_cmd, chatid_cmd, perexod_kunlik_tekshiruv,
-    addadmin_cmd, removeadmin_cmd,
+    addadmin_cmd, removeadmin_cmd, bot_holat_zaxira_yubor,
 )
 
 
@@ -98,7 +99,25 @@ except Exception:
 
 def main() -> None:
     xlsx_refresh(force=True)
-    app = Application.builder().token(BOT_TOKEN).build()
+    # 2026-07-27 (Huzayfa: adminga real "telegram.error.TimedOut" xatoligi
+    # kelgan edi, `_send_message` ichida): python-telegram-bot standart
+    # HTTPXRequest sozlamalari JUDA QATTIQ (read/write/connect_timeout —
+    # bor-yo'g'i 5 soniya, pool_timeout — atigi 1 soniya). Bot Excel
+    # fayllar (Buyurtma/Xitoy ostatka/Userlar ro'yxati) yuboradi — bular
+    # ayniqsa sekinroq tarmoqda yoki bir vaqtning o'zida bir nechta
+    # so'rov navbatga tursa (pool_timeout=1s) osongina shu qattiq
+    # chegaradan chiqib ketadi va TimedOut bilan yiqiladi (garchi endi
+    # global_xato_ushlagich buni ushlab, botni qulatmasa ham — foydalanuvchi
+    # baribir "xatolik" xabarini ko'radi, holbuki bu shunchaki vaqtinchalik
+    # tarmoq sekinligi edi). Yumshoqroq (lekin haddan tashqari uzun ham
+    # emas — osilib qolishning oldini olish uchun) qiymatlarga o'zgartirildi.
+    request = HTTPXRequest(
+        connect_timeout=15.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=10.0,
+    )
+    app = Application.builder().token(BOT_TOKEN).request(request).build()
     app.add_error_handler(global_xato_ushlagich)
 
     # 2026-07-16: "rasm yuborilgan, hali KELDI qilinmagan" konteynerlarni
@@ -108,6 +127,15 @@ def main() -> None:
         app.job_queue.run_daily(
             perexod_kunlik_tekshiruv,
             time=_time(hour=9, minute=0, tzinfo=_TZ) if _TZ else _time(hour=4, minute=0),
+        )
+        # 2026-07-27 (Huzayfa: bot_holat/ zaxira nusxasiz edi, faqat
+        # bitta admin bor — server buzilsa hammasi qaytarib bo'lmas
+        # holda yo'qolardi): har kuni soat 00:10 (Toshkent, tinch vaqt)
+        # bot_holat/ni zip qilib SUPER_ADMIN_ID'ga hujjat sifatida
+        # yuboradi (handlers.py::bot_holat_zaxira_yubor).
+        app.job_queue.run_daily(
+            bot_holat_zaxira_yubor,
+            time=_time(hour=0, minute=10, tzinfo=_TZ) if _TZ else _time(hour=19, minute=10),
         )
     else:
         logger.warning(
