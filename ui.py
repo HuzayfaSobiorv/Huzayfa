@@ -23,7 +23,7 @@ from services import (
     user_filiali_olish,
 )
 from common import normalize_product_name
-from kamomat_engine import kamomat_stats_v2, kamomat_excel_v2, uzilish_xavfi_royxat
+from kamomat_engine import kamomat_stats_v2, kamomat_excel_v2, uzilish_xavfi_royxat, uzilish_xavfi_excel
 from yolda_excel import yolda_excel
 
 # Lokal aliaslar — config funksiyalari
@@ -562,11 +562,15 @@ async def kamomat_ko_rish(msg, context, kanal: str, lang: str):
 
 async def uzilish_xavfi_ko_rish(msg, context, lang: str):
     """2026-07-27 (Huzayfa: taqdimot oldidan "xodovoy tovarlar uzilib
-    qolmasin" maqsadida): barcha 3 kanal bo'yicha birlashtirilgan, eng
-    yaqin xavfdan boshlab saralangan "uzilish kutilmoqda" ro'yxati —
-    faqat SUPER ADMIN uchun (handlers.py'da tekshiriladi). Og'ir
-    (pandas) hisob-kitob bo'lgani uchun kamomat_ko_rish bilan bir xil
-    naqsh — run_in_executor orqali alohida thread'da."""
+    qolmasin" maqsadida, keyin aniqlashtirildi: "faqat truba profil
+    listda", "A va B kategoriyadagi mahsulotlardan", "Excel ko'rinishida
+    bersin"): barcha 3 kanal bo'yicha birlashtirilgan, eng yaqin xavfdan
+    boshlab saralangan, FAQAT Труба/Профиль/Лист VA FAQAT ABC=A/B tovar-
+    lar ro'yxati — rangli Excel (kamomat_engine.py::uzilish_xavfi_excel)
+    + qisqa xabar (nechta tovar, eng yaqin xavf necha kun). Faqat SUPER
+    ADMIN uchun (handlers.py'da tekshiriladi). Og'ir (pandas) hisob-
+    kitob bo'lgani uchun kamomat_ko_rish bilan bir xil naqsh —
+    run_in_executor orqali alohida thread'da."""
     if not xlsx_mavjud():
         await msg.reply_text(t(lang, "data_yoq"), parse_mode="Markdown")
         return
@@ -584,26 +588,18 @@ async def uzilish_xavfi_ko_rish(msg, context, lang: str):
             await msg.reply_text(t(lang, "uzilish_xavfi_yoq"))
             return
 
-        # Telegram xabar chegarasi (4096 belgi) — bir nechta xabarga bo'lib
-        # yuboriladi, har bittasi to'liq qatorlar bilan tugaydi.
-        satrlar = []
-        for i, r in enumerate(royxat, 1):
-            ch_nomi = t(lang, CH_KEY[r["kanal"]])
-            belgi = " ✅" if r["buyurtma_berilgan"] else " ⏳"
-            satrlar.append(t(lang, "uzilish_xavfi_qator").format(
-                n=i, tovar=r["tovar"], kanal=ch_nomi, kun=r["uzilish_kun"],
-                qoldiq=r["qoldiq"], minz=r["min_z"], belgi=belgi,
-            ))
+        eng_yaqin = royxat[0]["uzilish_kun"]
+        await msg.reply_text(
+            t(lang, "uzilish_xavfi_title") + "\n" +
+            t(lang, "uzilish_xavfi_stats").format(n=len(royxat), kun=eng_yaqin),
+            parse_mode="Markdown",
+        )
 
-        header = t(lang, "uzilish_xavfi_title")
-        bolim  = header
-        for satr in satrlar:
-            if len(bolim) + len(satr) + 1 > 3800:
-                await msg.reply_text(bolim, parse_mode="Markdown")
-                bolim = ""
-            bolim += satr + "\n"
-        if bolim.strip():
-            await msg.reply_text(bolim, parse_mode="Markdown")
+        bio = await loop.run_in_executor(
+            None, uzilish_xavfi_excel, DATA_FILE, lang, buyurtma_yuklash
+        )
+        if bio:
+            await msg.reply_document(document=bio, filename="Uzilish_xavfi.xlsx")
 
 
 async def draft_buyurtma_yubor(msg, context, kanal: str, lang: str,

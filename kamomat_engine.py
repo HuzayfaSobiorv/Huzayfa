@@ -299,6 +299,12 @@ def kamomat_stats_v2(data_file: Path, kanal: str,
         return {"n": 0, "kritik": 0, "past": 0, "b": 0, "p": 0}
 
 
+# 2026-07-27 (Huzayfa: "faqat truba profil listda qo'llaymiz"): узилиш
+# xavfi ro'yxati faqat shu kategoriyalar bilan cheklanadi — balясина/
+# stoyka/aksessuar va h.k. bu ro'yxatga kirmaydi.
+UZILISH_XAVFI_KATEGORIYALAR = {"ТРУБА", "ПРОФИЛЬ", "ЛИСТ", "ЛИСТ РУЛОН"}
+
+
 def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
     """
     2026-07-27 (Huzayfa: taqdimot oldidan "xodovoy tovarlar uzilib
@@ -308,17 +314,28 @@ def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
     konteynerlar HAM hisobga olinadi (xuddi Kamomat/Buyurtma hisob-
     kitobidagi bilan bir xil mantiq).
 
-    DIQQAT: bu hozir "🔴 КРИТИК"/"🟡 ПАСТ" bo'lganlar bilan CHEKLANMAYDI
-    — BARCHA tovar tekshiriladi, chunki hozir "🟢 НОРМА" ko'rinsa ham,
-    sarfi tez bo'lsa, gorizont ichida (Асосий/Ош — 70 kun, Цех — 55 kun)
-    hali ham uzilishi mumkin. Faqat uzilish_kun ANIQ (None emas)
-    chiqqan — ya'ni haqiqatan ham sotilib turgan ("xodovoy") va yo'ldagi
-    konteyner yetib kelgunicha tugab qolishi kutilayotgan — tovarlar
-    qaytariladi. Natija uzilish_kun bo'yicha o'sish tartibida (eng
-    yaqin xavf birinchi) saralanadi.
+    IKKI QO'SHIMCHA FILTR (2026-07-27, Huzayfa aniq talab qildi):
+      1. FAQAT Труба/Профиль/Лист(+Лист рулон) kategoriyalari —
+         UZILISH_XAVFI_KATEGORIYALAR.
+      2. FAQAT ABC toifasi A yoki B bo'lgan tovarlar — manba
+         Yuklama_optimal.py::abc_map_yuklash() (Minimal_zaxiralar/
+         Min_Zaxira.xlsx "ABC" ustuni, Huzayfa qo'lda tahrirlaydi —
+         konteyner yuklashda ham AYNAN shu manba ishlatiladi, shuning
+         uchun ikkalasi bir xil "qaysi tovar muhim" tushunchasidan
+         foydalanadi). ABC belgilanmagan tovar "C" deb hisoblanadi va
+         RO'YXATGA KIRMAYDI.
 
-    Qaytaradi: [{"tovar", "kanal", "kanal_nomi", "uzilish_kun",
-                 "qoldiq", "min_z", "buyurtma_berilgan"}, ...]
+    DIQQAT: bu hozir "🔴 КРИТИК"/"🟡 ПАСТ" bo'lganlar bilan CHEKLANMAYDI
+    — filtrdan o'tgan BARCHA tovar tekshiriladi, chunki hozir
+    "🟢 НОРМА" ko'rinsa ham, sarfi tez bo'lsa, gorizont ichida
+    (Асосий/Ош — 70 kun, Цех — 55 kun) hali ham uzilishi mumkin. Faqat
+    uzilish_kun ANIQ (None emas) chiqqan — ya'ni yo'ldagi konteyner
+    yetib kelgunicha tugab qolishi kutilayotgan — tovarlar qaytariladi.
+    Natija uzilish_kun bo'yicha o'sish tartibida (eng yaqin xavf
+    birinchi) saralanadi.
+
+    Qaytaradi: [{"tovar", "kategoriya", "kanal", "kanal_nomi", "abc",
+                 "uzilish_kun", "qoldiq", "min_z", "buyurtma_berilgan"}, ...]
     """
     try:
         inv = pd.read_excel(data_file, sheet_name="Инвентар")
@@ -329,6 +346,14 @@ def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
     except Exception as e:
         logger.error(f"uzilish_xavfi_royxat inv: {e}")
         return []
+
+    if "Категория" in inv.columns:
+        inv = inv[inv["Категория"].astype(str).str.upper().isin(UZILISH_XAVFI_KATEGORIYALAR)].copy()
+    if inv.empty:
+        return []
+
+    from Yuklama_optimal import abc_map_yuklash, _abc_olish
+    abc_map = abc_map_yuklash()
 
     # Konteyner ma'lumotlari — kamomat_excel_v2 bilan bir xil naqsh,
     # kanaldan MUSTAQIL (bitta marta, tsikldan tashqarida quriladi).
@@ -371,6 +396,9 @@ def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
             tovar = str(row.get("Товар", ""))
             if not tovar:
                 continue
+            abc = _abc_olish(abc_map, tovar)
+            if abc not in ("A", "B"):
+                continue
             qoldiq = float(row.get(qoldiq_col, 0))
             min_z  = float(row.get(minz_col, 0))
             kont_l = kont_map.get(tovar, [])
@@ -380,8 +408,10 @@ def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
                 continue
             natija.append({
                 "tovar":            tovar,
+                "kategoriya":       str(row.get("Категория", "")),
                 "kanal":            kanal,
                 "kanal_nomi":       KANAL_NOMI[kanal],
+                "abc":              abc,
                 "uzilish_kun":      int(uk),
                 "qoldiq":           int(qoldiq),
                 "min_z":            int(min_z),
@@ -390,6 +420,76 @@ def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
 
     natija.sort(key=lambda r: r["uzilish_kun"])
     return natija
+
+
+def uzilish_xavfi_excel(data_file: Path, lang: str, buyurtma_yuklash_fn) -> BytesIO | None:
+    """
+    2026-07-27 (Huzayfa: "Excel ko'rinishida bersin"): uzilish_xavfi_royxat()
+    natijasini rangli Excel qilib beradi — eng yaqin xavfdan (kam kun)
+    uzoqqa saralangan (maqsad: qaysi tovarlarga eng tez keladigan
+    konteynerni ustuvor yuklash kerakligini bir qarashda ko'rsatish).
+    Qator rangi shoshilinchlikka qarab: <=7 kun qizil, <=20 kun sariq,
+    qolgani yashil.
+    """
+    import openpyxl
+    from openpyxl.styles import PatternFill, Font, Alignment
+
+    royxat = uzilish_xavfi_royxat(data_file, buyurtma_yuklash_fn)
+    if not royxat:
+        return None
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Узилиш хавфи" if lang == "cyr" else "Uzilish xavfi"
+
+    if lang == "cyr":
+        hdrs = ["№", "Товар", "Категория", "Канал", "ABC", "Қолдиқ",
+                "Мин_Захира", "Кун_Хавф", "Буюртма_Ҳолати"]
+        berildi, kutilmq = "Берилди ✅", "Кутилмоқда ⏳"
+    else:
+        hdrs = ["№", "Tovar", "Kategoriya", "Kanal", "ABC", "Qoldiq",
+                "Min_Zaxira", "Kun_Xavf", "Buyurtma_Holati"]
+        berildi, kutilmq = "Berildi ✅", "Kutilmoqda ⏳"
+    col_w = [5, 46, 14, 10, 6, 11, 13, 11, 19]
+    NCOL  = len(hdrs)
+
+    def fill(hex_: str): return PatternFill("solid", fgColor=hex_)
+    def font(sz=10, bold=False, color="000000"): return Font(size=sz, bold=bold, color=color)
+    def aln(h="left", v="center", wrap=False): return Alignment(horizontal=h, vertical=v, wrap_text=wrap)
+
+    ws.append(hdrs)
+    ws.row_dimensions[1].height = 28
+    for i, cell in enumerate(ws[1], 1):
+        cell.fill      = fill("C00000")
+        cell.font      = font(11, True, "FFFFFF")
+        cell.alignment = aln("center", "center", True)
+        ws.column_dimensions[cell.column_letter].width = col_w[i - 1]
+    ws.freeze_panes = "A2"
+
+    for i, r in enumerate(royxat, 1):
+        kun = r["uzilish_kun"]
+        if kun <= 7:
+            row_clr = "F8696B"      # qizil — juda shoshilinch
+        elif kun <= 20:
+            row_clr = "FFEB84"      # sariq — yaqin orada
+        else:
+            row_clr = "C6E0B4"      # yashil — hali vaqt bor
+        holat_txt = berildi if r["buyurtma_berilgan"] else kutilmq
+        ws.append([
+            i, r["tovar"], r["kategoriya"], r["kanal_nomi"], r["abc"],
+            r["qoldiq"], r["min_z"], kun, holat_txt,
+        ])
+        row_i = i + 1
+        for col_i in range(1, NCOL + 1):
+            cell = ws.cell(row=row_i, column=col_i)
+            cell.fill      = fill(row_clr)
+            cell.font      = font(10)
+            cell.alignment = aln("center" if col_i != 2 else "left")
+
+    bio = BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    return bio
 
 
 # ============================================================
