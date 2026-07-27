@@ -21,4 +21,9 @@ konteynerlar/
 # (2026-07-08 topildi va tuzatildi).
 NEJAVIYKA_POWER_BI.xlsx
 
+# 2026-07-27: konteynerlar/ bilan bir xil sabab — bot Xitoy ostatka
+# fayllarini qayta ishlaganda vazn_lookup_yangilash() orqali SERVERDA
+# o'zi yozib turadi (services.py). Tirik ma'lumot, kod emas.
+vazn_lookup.xlsx
+
 .~lock*
