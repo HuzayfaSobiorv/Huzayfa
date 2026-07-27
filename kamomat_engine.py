@@ -424,38 +424,59 @@ def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
 
 def uzilish_xavfi_excel(data_file: Path, lang: str, buyurtma_yuklash_fn) -> BytesIO | None:
     """
-    2026-07-27 (Huzayfa: "Excel ko'rinishida bersin"): uzilish_xavfi_royxat()
-    natijasini rangli Excel qilib beradi — eng yaqin xavfdan (kam kun)
-    uzoqqa saralangan (maqsad: qaysi tovarlarga eng tez keladigan
-    konteynerni ustuvor yuklash kerakligini bir qarashda ko'rsatish).
-    Qator rangi shoshilinchlikka qarab: <=7 kun qizil, <=20 kun sariq,
-    qolgani yashil.
+    2026-07-27 (Huzayfa, ikkinchi aniqlashtirish): uzilish_xavfi_royxat()
+    natijasini rangli, TARTIBLI Excel qilib beradi:
+      - Tovar nomlari CHALKASHMAYDI — avval Труба, keyin Профиль, keyin
+        Лист(+Лист рулон) (kamomat_engine.CAT_ORDER bilan bir xil tartib),
+        har kategoriya ICHIDA eng yaqin xavfdan boshlab saralanadi.
+      - Kategoriyalar ANIQ AJRALIB TURADI — xuddi "Yo'ldagi yuklar"
+        Excel'idagi (yolda_excel.py) kabi: har kategoriya oldida ажратувчи
+        sarlavha qatori + o'zining rang oilasida ochroq/тоқроқ (juft/toq)
+        qatorlar, HAR BIR katak nozik chegara (border) bilan.
+      - "Кun_Хавф" ustuni endi ANIQ matn ("5 кун", "0 кун" — hozir min_z
+        chizig'idan pastda) — tovar nomi yonida bir qarashda tushunarli
+        bo'lishi uchun, faqat son emas.
+
+    DIQQAT (tushuntirish, kod o'zgarmaydi): "N kun" — zanjir_sim() ning
+    butun tizimda (Buyurtma, Kamomat) ishlatiladigan STANDART ta'rifi —
+    tovar Мин_Захира chizig'idan PASTGA tushadigan kun (0 — allaqachon
+    shu chiziqdan past, ya'ni bugundan boshlab xavfli hisoblanadi). Bu
+    literal "qoldiq=0" bilan bir xil EMAS (masalan qoldiq hali ijobiy
+    bo'lishi mumkin, lekin xavfsiz zaxiradan pastda) — lekin bu butun
+    tizimda buyurtma hajmini belgilaydigan YAGONA, tasdiqlangan mezon,
+    shuning uchun shu yerda ham o'zgartirilmadi.
     """
     import openpyxl
-    from openpyxl.styles import PatternFill, Font, Alignment
+    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 
     royxat = uzilish_xavfi_royxat(data_file, buyurtma_yuklash_fn)
     if not royxat:
         return None
+
+    # Kategoriya bo'yicha (Труба->Профиль->Лист), ICHIDA eng yaqin xavfdan
+    royxat = sorted(royxat, key=lambda r: (CAT_ORDER.get(r["kategoriya"], 99), r["uzilish_kun"]))
 
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Узилиш хавфи" if lang == "cyr" else "Uzilish xavfi"
 
     if lang == "cyr":
-        hdrs = ["№", "Товар", "Категория", "Канал", "ABC", "Қолдиқ",
+        hdrs = ["№", "Товар", "Канал", "ABC", "Қолдиқ",
                 "Мин_Захира", "Кун_Хавф", "Буюртма_Ҳолати"]
-        berildi, kutilmq = "Берилди ✅", "Кутилмоқда ⏳"
+        berildi, kutilmq, kun_suffix = "Берилди ✅", "Кутилмоқда ⏳", "кун"
     else:
-        hdrs = ["№", "Tovar", "Kategoriya", "Kanal", "ABC", "Qoldiq",
+        hdrs = ["№", "Tovar", "Kanal", "ABC", "Qoldiq",
                 "Min_Zaxira", "Kun_Xavf", "Buyurtma_Holati"]
-        berildi, kutilmq = "Berildi ✅", "Kutilmoqda ⏳"
-    col_w = [5, 46, 14, 10, 6, 11, 13, 11, 19]
+        berildi, kutilmq, kun_suffix = "Berildi ✅", "Kutilmoqda ⏳", "kun"
+    col_w = [5, 46, 10, 6, 11, 13, 12, 19]
     NCOL  = len(hdrs)
 
     def fill(hex_: str): return PatternFill("solid", fgColor=hex_)
     def font(sz=10, bold=False, color="000000"): return Font(size=sz, bold=bold, color=color)
     def aln(h="left", v="center", wrap=False): return Alignment(horizontal=h, vertical=v, wrap_text=wrap)
+
+    thin = Side(style="thin", color="B0B0B0")
+    border_all = Border(left=thin, right=thin, top=thin, bottom=thin)
 
     ws.append(hdrs)
     ws.row_dimensions[1].height = 28
@@ -463,28 +484,51 @@ def uzilish_xavfi_excel(data_file: Path, lang: str, buyurtma_yuklash_fn) -> Byte
         cell.fill      = fill("C00000")
         cell.font      = font(11, True, "FFFFFF")
         cell.alignment = aln("center", "center", True)
+        cell.border    = border_all
         ws.column_dimensions[cell.column_letter].width = col_w[i - 1]
     ws.freeze_panes = "A2"
 
-    for i, r in enumerate(royxat, 1):
-        kun = r["uzilish_kun"]
-        if kun <= 7:
-            row_clr = "F8696B"      # qizil — juda shoshilinch
-        elif kun <= 20:
-            row_clr = "FFEB84"      # sariq — yaqin orada
-        else:
-            row_clr = "C6E0B4"      # yashil — hali vaqt bor
+    cur_kat   = None
+    kat_cnt   = 0
+    excel_row = 1
+    n         = 0
+
+    for r in royxat:
+        kat = r["kategoriya"]
+
+        # Kategoriya ajratuvchi qator — xuddi yolda_excel/kamomat_excel
+        # uslubida, "Yo'ldagi yuklar" bilan bir xil "blok" tuyg'usi uchun
+        if kat != cur_kat:
+            cur_kat = kat
+            kat_cnt = 0
+            colors  = CAT_COLORS.get(kat, CAT_COLORS_DEF)
+            excel_row += 1
+            ws.merge_cells(start_row=excel_row, start_column=1,
+                            end_row=excel_row, end_column=NCOL)
+            sep = ws.cell(row=excel_row, column=1, value=f"  {kat}")
+            sep.fill      = fill(colors["h"])
+            sep.font      = font(11, True, "1F1F1F")
+            sep.alignment = aln("left", "center")
+            ws.row_dimensions[excel_row].height = 22
+
+        n       += 1
+        kat_cnt += 1
+        colors   = CAT_COLORS.get(kat, CAT_COLORS_DEF)
+        row_clr  = colors["a"] if kat_cnt % 2 == 1 else colors["b"]
         holat_txt = berildi if r["buyurtma_berilgan"] else kutilmq
+        kun_txt   = f"{r['uzilish_kun']} {kun_suffix}"
+
+        excel_row += 1
         ws.append([
-            i, r["tovar"], r["kategoriya"], r["kanal_nomi"], r["abc"],
-            r["qoldiq"], r["min_z"], kun, holat_txt,
+            n, r["tovar"], r["kanal_nomi"], r["abc"],
+            r["qoldiq"], r["min_z"], kun_txt, holat_txt,
         ])
-        row_i = i + 1
         for col_i in range(1, NCOL + 1):
-            cell = ws.cell(row=row_i, column=col_i)
+            cell = ws.cell(row=excel_row, column=col_i)
             cell.fill      = fill(row_clr)
-            cell.font      = font(10)
+            cell.font      = font(10, bold=(col_i == 7))
             cell.alignment = aln("center" if col_i != 2 else "left")
+            cell.border    = border_all
 
     bio = BytesIO()
     wb.save(bio)
