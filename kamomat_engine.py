@@ -299,6 +299,99 @@ def kamomat_stats_v2(data_file: Path, kanal: str,
         return {"n": 0, "kritik": 0, "past": 0, "b": 0, "p": 0}
 
 
+def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
+    """
+    2026-07-27 (Huzayfa: taqdimot oldidan "xodovoy tovarlar uzilib
+    qolmasin" maqsadida qo'shildi): BARCHA 3 kanal (Асосий/Цех/Ош)
+    bo'yicha, HAR BIR tovar uchun zanjir_sim() orqali "necha kunda
+    uziladi" (uzilish_kun) hisoblanadi — yo'ldagi (hali kelmagan)
+    konteynerlar HAM hisobga olinadi (xuddi Kamomat/Buyurtma hisob-
+    kitobidagi bilan bir xil mantiq).
+
+    DIQQAT: bu hozir "🔴 КРИТИК"/"🟡 ПАСТ" bo'lganlar bilan CHEKLANMAYDI
+    — BARCHA tovar tekshiriladi, chunki hozir "🟢 НОРМА" ko'rinsa ham,
+    sarfi tez bo'lsa, gorizont ichida (Асосий/Ош — 70 kun, Цех — 55 kun)
+    hali ham uzilishi mumkin. Faqat uzilish_kun ANIQ (None emas)
+    chiqqan — ya'ni haqiqatan ham sotilib turgan ("xodovoy") va yo'ldagi
+    konteyner yetib kelgunicha tugab qolishi kutilayotgan — tovarlar
+    qaytariladi. Natija uzilish_kun bo'yicha o'sish tartibida (eng
+    yaqin xavf birinchi) saralanadi.
+
+    Qaytaradi: [{"tovar", "kanal", "kanal_nomi", "uzilish_kun",
+                 "qoldiq", "min_z", "buyurtma_berilgan"}, ...]
+    """
+    try:
+        inv = pd.read_excel(data_file, sheet_name="Инвентар")
+        for col in ["Қолдиқ", "Мин_Захира", "Асосий_Қолдиқ", "Цех_Қолдиқ",
+                    "Ош_Қолдиқ", "Асосий_Захира", "Цех_Захира", "Ош_Захира"]:
+            if col in inv.columns:
+                inv[col] = pd.to_numeric(inv[col], errors="coerce").fillna(0)
+    except Exception as e:
+        logger.error(f"uzilish_xavfi_royxat inv: {e}")
+        return []
+
+    # Konteyner ma'lumotlari — kamomat_excel_v2 bilan bir xil naqsh,
+    # kanaldan MUSTAQIL (bitta marta, tsikldan tashqarida quriladi).
+    kont_map: dict[str, list] = {}
+    try:
+        kont = pd.read_excel(data_file, sheet_name="Контейнерлар")
+        kont = kont[kont["Холат"] != "КЕЛДИ ✅"].copy()
+        for col in ["Кун_Қолди", "Миқдор"]:
+            if col in kont.columns:
+                kont[col] = pd.to_numeric(kont[col], errors="coerce").fillna(0)
+        for _, r in kont.iterrows():
+            tovar = str(r.get("Товар", ""))
+            kq    = float(r.get("Кун_Қолди", 0))
+            mq    = float(r.get("Миқдор", 0))
+            if tovar and mq > 0:
+                kont_map.setdefault(tovar, []).append((kq, mq))
+    except Exception as e:
+        logger.warning(f"uzilish_xavfi_royxat konteyner: {e}")
+
+    KANAL_NOMI = {"asosiy": "Асосий", "sex": "Цех", "osh": "Ош"}
+    natija: list[dict] = []
+    for kanal in ("asosiy", "sex", "osh"):
+        df = inv
+        if "Тур" in df.columns:
+            df = (df[df["Тур"] == "ЦЕХ🏭"] if kanal == "sex"
+                  else df[df["Тур"] != "ЦЕХ🏭"])
+
+        qoldiq_col = {"sex": "Цех_Қолдиқ", "osh": "Ош_Қолдиқ"}.get(kanal, "Асосий_Қолдиқ")
+        if qoldiq_col not in df.columns:
+            qoldiq_col = "Қолдиқ"
+        minz_col = {"sex": "Цех_Захира", "osh": "Ош_Захира"}.get(kanal, "Асосий_Захира")
+        if minz_col not in df.columns:
+            minz_col = "Мин_Захира"
+
+        buy     = buyurtma_yuklash_fn(kanal)
+        ordered = {i["tovar"] for i in buy.get("buyurtmalar", [])} if buy else set()
+
+        _horizon_ov = None if kanal == "sex" else 70
+        for _, row in df.iterrows():
+            tovar = str(row.get("Товар", ""))
+            if not tovar:
+                continue
+            qoldiq = float(row.get(qoldiq_col, 0))
+            min_z  = float(row.get(minz_col, 0))
+            kont_l = kont_map.get(tovar, [])
+            sim = zanjir_sim(qoldiq, min_z, kont_l, horizon_override=_horizon_ov)
+            uk = sim.get("uzilish_kun")
+            if uk is None:
+                continue
+            natija.append({
+                "tovar":            tovar,
+                "kanal":            kanal,
+                "kanal_nomi":       KANAL_NOMI[kanal],
+                "uzilish_kun":      int(uk),
+                "qoldiq":           int(qoldiq),
+                "min_z":            int(min_z),
+                "buyurtma_berilgan": tovar in ordered,
+            })
+
+    natija.sort(key=lambda r: r["uzilish_kun"])
+    return natija
+
+
 # ============================================================
 # EXCEL GENERATSIYASI
 # ============================================================

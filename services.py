@@ -217,11 +217,25 @@ async def eski_userlar_ism_toldir(bot) -> int:
     topilsa saqlaydi — FAQAT bot ular bilan avval kontaktda bo'lgan
     bo'lsa ishlaydi (get_chat shuni talab qiladi). Har bir user uchun
     xato bo'lsa jimgina o'tkazib yuboriladi (bloklangan/hech qachon
-    yozmagan va h.k.). Qaytaradi: nechta user yangilanganini (son)."""
+    yozmagan va h.k.). Qaytaradi: nechta user yangilanganini (son).
+
+    2026-07-27 TUZATISH (Huzayfa: taqdimot oldidan kamida 30 ta user
+    qo'shilishi kutilmoqda — bu funksiya "Userlar ro'yxati" tugmasi
+    bosilganda ishga tushadi, HAR BIR whitelist user uchun `await
+    bot.get_chat(...)` qiladi, ya'ni ko'p soniyaga cho'zilishi mumkin.
+    ESKI kod faylni FAQAT bitta marta, tsikl BOSHIDA o'qib, tsikl
+    OXIRIDA o'sha eskirgan nusxa ustiga yozardi — shu paytda (masalan
+    30 ta userdan biri tugma bossa/yozsa) `user_ism_username_yangilash`
+    yoki yangi user tasdiqlanganda `filial_biriktir` yozgan har qanday
+    o'zgarish shu yerda JIMGINA YO'QOLIB KETARDI (lost update race).
+    Endi: get_chat natijalari alohida to'planadi, DISKKA FAQAT BITTA
+    marta — tsikl TUGAGACH, faylni QAYTA (yangi holatda) o'qib, faqat
+    o'zimiz hisoblagan ism/username maydonlarini shu YANGI nusxaga
+    qo'shib yozamiz. Bu race oynasini soniyalardan bitta sinxron
+    yozish amaliga qisqartiradi."""
     d  = _json_dict_yuklash(_USER_FILIAL_FILE)
     wl = whitelist_yuklash()
-    yangilandi = 0
-    ozgardi = False
+    natijalar: dict[str, tuple[str, str]] = {}
     for uid in wl:
         row = d.get(str(uid), {})
         if row.get("ism") and row.get("username"):
@@ -235,16 +249,18 @@ async def eski_userlar_ism_toldir(bot) -> int:
             continue
         if not full_name and not username:
             continue
-        d[str(uid)] = {
-            "filial":   row.get("filial", FILIAL_ESKI_DEFAULT),
-            "ism":      full_name or row.get("ism", ""),
-            "username": username or row.get("username", ""),
-        }
-        ozgardi = True
-        yangilandi += 1
-    if ozgardi:
-        atomic_json_write(_USER_FILIAL_FILE, d, indent=2)
-    return yangilandi
+        natijalar[str(uid)] = (full_name, username)
+    if natijalar:
+        d2 = _json_dict_yuklash(_USER_FILIAL_FILE)  # tsikl paytidagi o'zgarishlarni yo'qotmaslik uchun QAYTA o'qiladi
+        for k, (full_name, username) in natijalar.items():
+            mavjud = d2.get(k, {})
+            d2[k] = {
+                "filial":   mavjud.get("filial", FILIAL_ESKI_DEFAULT),
+                "ism":      full_name or mavjud.get("ism", ""),
+                "username": username or mavjud.get("username", ""),
+            }
+        atomic_json_write(_USER_FILIAL_FILE, d2, indent=2)
+    return len(natijalar)
 
 
 def user_filiallari_yuklash() -> dict:

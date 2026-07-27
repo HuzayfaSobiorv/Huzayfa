@@ -7,7 +7,7 @@ from datetime import datetime
 from io import BytesIO
 
 import pandas as pd
-from config import BASE_DIR, DATA_FILE, BACK_MAP, CH_KEY, _MPL_LOCK, get_inv, get_kont, get_filial_qoldiq
+from config import BASE_DIR, DATA_FILE, BACK_MAP, CH_KEY, _MPL_LOCK, get_inv, get_kont, get_filial_qoldiq, SUPER_ADMIN_ID
 from texts import t
 from keyboards import (
     main_kb, main_kb_user, order_kb, order_channel_kb, load_kb, load_channel_kb,
@@ -23,7 +23,7 @@ from services import (
     user_filiali_olish,
 )
 from common import normalize_product_name
-from kamomat_engine import kamomat_stats_v2, kamomat_excel_v2
+from kamomat_engine import kamomat_stats_v2, kamomat_excel_v2, uzilish_xavfi_royxat
 from yolda_excel import yolda_excel
 
 # Lokal aliaslar — config funksiyalari
@@ -144,7 +144,9 @@ def build_screen(screen: str, lang: str, context) -> tuple:
         return t(lang, "status_title"), status_kb(lang)
     if screen == "settings":
         if admin:
-            return t(lang, "settings_title"), settings_kb(lang, admin=True)
+            uid = context.user_data.get("user_id") if context else None
+            is_super = bool(SUPER_ADMIN_ID) and uid == SUPER_ADMIN_ID
+            return t(lang, "settings_title"), settings_kb(lang, admin=True, super_admin=is_super)
         return t(lang, "settings_title_user"), settings_kb_user(lang)
     if screen in ("search", "search_kat"):
         return t(lang, "search_title"), search_kb(lang)
@@ -255,6 +257,7 @@ def get_action(lang: str, screen: str, text: str):
             t(lang, "b_yolga_kont"):    "yolga_kont",
             t(lang, "b_sorovlar_royxat"): "sorovlar_royxat",
             t(lang, "b_userlar_royxat"): "userlar_royxat",
+            t(lang, "b_uzilish_xavfi"): "uzilish_xavfi",
             # User settings
             t(lang, "b_boglanish"):     "boglanish",
             t(lang, "b_sorov_yuborish"): "sorov_yuborish",
@@ -555,6 +558,52 @@ async def kamomat_ko_rish(msg, context, kanal: str, lang: str):
         )
         if bio:
             await msg.reply_document(document=bio, filename=f"Kamomat_{kanal}.xlsx")
+
+
+async def uzilish_xavfi_ko_rish(msg, context, lang: str):
+    """2026-07-27 (Huzayfa: taqdimot oldidan "xodovoy tovarlar uzilib
+    qolmasin" maqsadida): barcha 3 kanal bo'yicha birlashtirilgan, eng
+    yaqin xavfdan boshlab saralangan "uzilish kutilmoqda" ro'yxati —
+    faqat SUPER ADMIN uchun (handlers.py'da tekshiriladi). Og'ir
+    (pandas) hisob-kitob bo'lgani uchun kamomat_ko_rish bilan bir xil
+    naqsh — run_in_executor orqali alohida thread'da."""
+    if not xlsx_mavjud():
+        await msg.reply_text(t(lang, "data_yoq"), parse_mode="Markdown")
+        return
+
+    loop = asyncio.get_event_loop()
+    async with yuklash_animatsiya(
+        msg, context,
+        text_cyr="Узилиш хавфи ҳисобланмоқда",
+        text_lat="Uzilish xavfi hisoblanmoqda",
+    ):
+        royxat = await loop.run_in_executor(
+            None, uzilish_xavfi_royxat, DATA_FILE, buyurtma_yuklash
+        )
+        if not royxat:
+            await msg.reply_text(t(lang, "uzilish_xavfi_yoq"))
+            return
+
+        # Telegram xabar chegarasi (4096 belgi) — bir nechta xabarga bo'lib
+        # yuboriladi, har bittasi to'liq qatorlar bilan tugaydi.
+        satrlar = []
+        for i, r in enumerate(royxat, 1):
+            ch_nomi = t(lang, CH_KEY[r["kanal"]])
+            belgi = " ✅" if r["buyurtma_berilgan"] else " ⏳"
+            satrlar.append(t(lang, "uzilish_xavfi_qator").format(
+                n=i, tovar=r["tovar"], kanal=ch_nomi, kun=r["uzilish_kun"],
+                qoldiq=r["qoldiq"], minz=r["min_z"], belgi=belgi,
+            ))
+
+        header = t(lang, "uzilish_xavfi_title")
+        bolim  = header
+        for satr in satrlar:
+            if len(bolim) + len(satr) + 1 > 3800:
+                await msg.reply_text(bolim, parse_mode="Markdown")
+                bolim = ""
+            bolim += satr + "\n"
+        if bolim.strip():
+            await msg.reply_text(bolim, parse_mode="Markdown")
 
 
 async def draft_buyurtma_yubor(msg, context, kanal: str, lang: str,

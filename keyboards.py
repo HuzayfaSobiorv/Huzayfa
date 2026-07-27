@@ -122,7 +122,7 @@ def status_kb(lang: str) -> ReplyKeyboardMarkup:
     )
 
 
-def settings_kb(lang: str, admin: bool = False) -> ReplyKeyboardMarkup:
+def settings_kb(lang: str, admin: bool = False, super_admin: bool = False) -> ReplyKeyboardMarkup:
     # 2026-07-24 (Huzayfa): tozalash tugmalari bu yerdan olib tashlandi —
     # endi har bir order kanali ichida (order_channel_kb) joylashadi.
     rows = [
@@ -131,6 +131,12 @@ def settings_kb(lang: str, admin: bool = False) -> ReplyKeyboardMarkup:
         [t(lang, "b_sorovlar_royxat")],
         [t(lang, "b_userlar_royxat")],
     ]
+    # 2026-07-27 (Huzayfa: "albatta super admin uchun" — oddiy adminlarga
+    # ham ko'rinsa, taqdimot oldidan chalkashlik chiqarmasin uchun ataylab
+    # super_admin bilan cheklandi, boshqa ikki tugma kabi har qanday admin
+    # emas).
+    if super_admin:
+        rows.append([t(lang, "b_uzilish_xavfi")])
     rows.append([t(lang, "back")])
     return rkb(*rows)
 

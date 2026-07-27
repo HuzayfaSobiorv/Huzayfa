@@ -94,6 +94,12 @@ STR: dict[str, dict[str, str]] = {
     "sorovlar_yoq":  "ℹ️ Ҳозирча сўровлар йўқ.",
     "b_userlar_royxat": "👥 Фойдаланувчилар рўйхати",
     "userlar_yoq":   "ℹ️ Ҳозирча whitelist бўш.",
+    # 2026-07-27 (Huzayfa: taqdimot oldidan "xodovoy tovarlar uzilib
+    # qolmasin" maqsadida): faqat super admin ko'radi.
+    "b_uzilish_xavfi":  "⚠️ Узилиш хавфи",
+    "uzilish_xavfi_yoq": "✅ Ҳозирча узилиш хавфи бор товар йўқ.",
+    "uzilish_xavfi_title": "⚠️ *Узилиш хавфи остидаги товарлар* (яқиндан узоққа):\n",
+    "uzilish_xavfi_qator": "{n}. {tovar} _[{kanal}]_ — *{kun} кун* (қолдиқ: {qoldiq}, мин: {minz}){belgi}",
     "tozala_sor_buy":"🗑 Қайси канал буюртмасини тозалайман?",
     "tozala_sor_xitoy":"🇨🇳 Қайси канал хитой остаткасини тозалайман?",
     "tozala_tasdiq_buy":"🗑 *{ch}* буюртмаси: *{n}* та товар ({sana}).\nҲақиқатан тозалайсизми?",
@@ -222,6 +228,10 @@ STR: dict[str, dict[str, str]] = {
     "sorovlar_yoq":  "ℹ️ Hozircha so'rovlar yo'q.",
     "b_userlar_royxat": "👥 Foydalanuvchilar ro'yxati",
     "userlar_yoq":   "ℹ️ Hozircha whitelist bo'sh.",
+    "b_uzilish_xavfi":  "⚠️ Uzilish xavfi",
+    "uzilish_xavfi_yoq": "✅ Hozircha uzilish xavfi bor tovar yo'q.",
+    "uzilish_xavfi_title": "⚠️ *Uzilish xavfi ostidagi tovarlar* (yaqindan uzoqqa):\n",
+    "uzilish_xavfi_qator": "{n}. {tovar} _[{kanal}]_ — *{kun} kun* (qoldiq: {qoldiq}, min: {minz}){belgi}",
     "tozala_sor_buy":"🗑 Qaysi kanal buyurtmasini tozalay?",
     "tozala_sor_xitoy":"🇨🇳 Qaysi kanal xitoy ostatkasini tozalay?",
     "tozala_tasdiq_buy":"🗑 *{ch}* buyurtmasi: *{n}* ta tovar ({sana}).\nHaqiqatan tozalaysizmi?",

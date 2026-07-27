@@ -180,6 +180,7 @@ from ui import (
     yuklash_animatsiya, grafik_ko_rsatish,
     draft_buyurtma_yubor, yolda_ko_rish,
     aktiv_inline_tozala, aktiv_inline_belgila,
+    uzilish_xavfi_ko_rish,
 )
 from yuklatish_rejasi import main_with_data
 
@@ -2054,6 +2055,17 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await msg.reply_text(t(lang, "userlar_yoq"))
         else:
             await msg.reply_document(document=bio, filename="Userlar.xlsx")
+
+    elif action == "uzilish_xavfi":
+        # 2026-07-27 (Huzayfa: taqdimot oldidan "xodovoy tovarlar uzilib
+        # qolmasin" maqsadida): ATAYLAB super-admin-only — sorovlar_royxat/
+        # userlar_royxat kabi umumiy _admin_emasmi() EMAS, chunki Huzayfa
+        # aniq "albatta super admin uchun" dedi (keyboards.py'da tugma ham
+        # faqat super adminga ko'rinadi — bu backend'dagi ikkinchi qatlam).
+        if uid != SUPER_ADMIN_ID:
+            await msg.reply_text("❌ Bu funksiya faqat super admin uchun.")
+            return
+        await uzilish_xavfi_ko_rish(msg, context, lang)
 
 
 async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
