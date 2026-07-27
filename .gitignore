@@ -10,6 +10,12 @@ bot_holat/
 # Generated output fayllar
 chiqish/
 
+# 2026-07-27: real konteyner fayllari — bot orqali SERVERDA doim
+# o'sib turadigan tirik ma'lumot, kod emas. NEJAVIYKA_POWER_BI.xlsx
+# bilan bir xil sabab: git orqali kuzatilsa, lokal/server orasida
+# mojaro (conflict) chiqarardi.
+konteynerlar/
+
 # Har bir kompyuter (asosiy va server) o'zi qayta yaratadi — git orqali
 # kuzatilsa, git pull har safar "local changes overwritten" xatosi beradi
 # (2026-07-08 topildi va tuzatildi).

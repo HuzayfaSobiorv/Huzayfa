@@ -1,8 +1,8 @@
-pandas
-numpy
-openpyxl
-xlrd
-matplotlib
-pillow
-requests
-python-telegram-bot[job-queue]
+pandas==3.0.3
+numpy==2.4.6
+openpyxl==3.1.5
+xlrd==2.0.2
+matplotlib==3.11.0
+pillow==12.3.0
+requests==2.34.2
+python-telegram-bot[job-queue]==22.8
