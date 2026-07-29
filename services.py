@@ -1471,7 +1471,10 @@ def buyurtma_tekshir(fayl_bytes: bytes, kanal: str = "asosiy"):
          yoziladi va chaqiruvchi (handlers.py) buni ko'rsatadi.
     """
     import openpyxl
-    from Generate_Asosiy_order import strip_length, get_length, COL_B0BACK
+    from Generate_Asosiy_order import (
+        strip_length, get_length, COL_B0BACK, get_category, get_marka,
+        get_surface, get_size_dims, _dia_f, _d1_f, _d2_f, _stenka_f,
+    )
 
     try:
         # C (Buyurtma) ustuni jonli formula — Min Zaxira o'zgarsa qayta
@@ -1483,39 +1486,86 @@ def buyurtma_tekshir(fayl_bytes: bytes, kanal: str = "asosiy"):
     except Exception as e:
         return False, f"Faylni ochishda xato: {type(e).__name__}", None, []
 
-    # Lookup manbayi: AVVALO draft faylidan (Excel yaratilganda saqlangan).
-    # Draft yo'q/bo'sh bo'lsa inventardan, u ham bo'lmasa — bo'sh lookup
-    # (pastdagi comment-asosidagi topish YETARLI bo'lishi kerak, chunki
-    # write_product() har doim asl nomni comment sifatida yozadi).
-    #
-    # MUHIM: Excel col1 da rich_tovar_name() → strip_length(xitoy_nomi(original)) yoziladi.
-    # xitoy_nomi() stenka qiymatini STENKA_DELTA ga kamaytiradi (0.26 → 0.21).
-    # Shuning uchun lookup kaliti strip_length(xitoy_nomi(full_name)) bo'lishi kerak,
-    # aks holda mos kelinmaydi va tasdiqlangan buyurtma saqlanmaydi.
     try:
         from vazn_hisobla import xitoy_nomi as _xitoy_nomi
     except ImportError:
         def _xitoy_nomi(n): return n   # fallback
 
-    lookup = {}
+    # 2026-07-29 (Huzayfa: "o'lchamlarning ketma-ketligi emas, o'lchamlarning
+    # o'zini olish kerak — qidiruv tizimi BIR XIL bo'lsin"): botning o'zi
+    # yaratgan faylda tovar nomi comment'da (har doim mos keladi), lekin
+    # BOSHQA (bot yaratmagan) fayllarda -- (a) marka/uzunlik matn ichida
+    # BOSHQA TARTIBDA kelishi mumkin ("(201 марка) (6 м)" o'rniga "(6 м)
+    # (201 марка)"), (b) "Uzunlik" ustuni (B) botning o'zinikidan farqli
+    # ishlatilishi mumkin. ESKI (nomi, uzun) satr-solishtirish TARTIBGA
+    # SEZGIR edi. ENDI — kategoriya + har bir o'lcham (diametr/profil
+    # o'lchami/qalinlik/uzunlik/marka/sirt) ALOHIDA-ALOHIDA regex bilan
+    # olinadi (tartibdan mustaqil) va shulardan KALIT quriladi. Stenka
+    # (qalinlik) ikki xil yozilishi mumkin (haqiqiy YOKI Xitoy -0,05
+    # uslubida) — shu sabab HAR BIR katalog tovari uchun IKKALA variant
+    # ham kalitlanadi.
+    def _olcham_kaliti(name: str, stenka_override: float | None = None):
+        cat = get_category(name)
+        if cat not in ("Труба", "Профиль", "Лист"):
+            return None
+        marka = get_marka(name)
+        surf  = get_surface(name)
+        stenka = round(stenka_override, 3) if stenka_override is not None \
+                 else round(_stenka_f(name), 3)
+        if stenka >= 9999:
+            return None
+        if cat == "Труба":
+            dia = round(_dia_f(name), 2)
+            if dia >= 9999:
+                return None
+            return (cat, dia, stenka, get_length(name), marka, surf)
+        if cat == "Профиль":
+            d1, d2 = round(_d1_f(name), 1), round(_d2_f(name), 1)
+            if d1 >= 9999:
+                return None
+            return (cat, min(d1, d2), max(d1, d2), stenka, get_length(name), marka, surf)
+        # Лист — uzunlik tushunchasi yo'q, o'lcham (dims) bor
+        dims = get_size_dims(name)
+        if not dims:
+            return None
+        return (cat, dims, stenka, marka, surf)
+
+    # Lookup manbalari: AVVALO draft faylidan (Excel yaratilganda saqlangan),
+    # yo'q/bo'sh bo'lsa inventardan. Ikkalasi ham bo'lmasa — bo'sh lookup,
+    # LEKIN funksiya endi davom etadi (comment yoki o'lcham-kaliti orqali
+    # topish YETARLI bo'lishi kerak — pastga qarang).
+    lookup      = {}   # eski (nomi, uzun) — moslik uchun saqlanadi
+    dim_lookup  = {}   # yangi, tartibdan mustaqil o'lcham-kaliti
+    norm_lookup = {}   # umumiy normalize_product_name fallback (aksessuar va h.k.)
+
     draft = draft_yuklash(kanal)
+    manba_nomlari = []
     if draft:
-        for full_name in draft:
-            full_name = str(full_name).strip()
-            excel_nomi = strip_length(_xitoy_nomi(full_name)).strip()
-            uzun       = get_length(full_name).strip()
-            lookup[(excel_nomi, uzun)] = full_name
-            if (excel_nomi, "") not in lookup:
-                lookup[(excel_nomi, "")] = full_name
+        manba_nomlari = [str(x).strip() for x in draft]
     else:
         inv = inventar_olish(kanal)
         if not inv.empty and "Товар" in inv.columns:
-            for tovar in inv["Товар"].dropna().astype(str):
-                nomi = strip_length(tovar).strip()
-                uzun = get_length(tovar).strip()
-                lookup[(nomi, uzun)] = tovar
-        # Draft ham, inventar ham bo'lmasa/bo'sh bo'lsa — lookup bo'sh
-        # qoladi, LEKIN funksiya davom etadi (comment orqali topish uchun).
+            manba_nomlari = [str(x).strip() for x in inv["Товар"].dropna()]
+
+    for full_name in manba_nomlari:
+        excel_nomi = strip_length(_xitoy_nomi(full_name)).strip()
+        uzun       = get_length(full_name).strip()
+        lookup[(excel_nomi, uzun)] = full_name
+        if (excel_nomi, "") not in lookup:
+            lookup[(excel_nomi, "")] = full_name
+
+        real_stenka = _stenka_f(full_name)
+        if real_stenka < 9999:
+            k1 = _olcham_kaliti(full_name, stenka_override=real_stenka)
+            if k1:
+                dim_lookup[k1] = full_name
+            xitoy_stenka = _stenka_f(_xitoy_nomi(full_name))
+            if xitoy_stenka < 9999:
+                k2 = _olcham_kaliti(full_name, stenka_override=xitoy_stenka)
+                if k2:
+                    dim_lookup[k2] = full_name
+
+        norm_lookup[normalize_product_name(full_name)] = full_name
 
     items = []
     tanilmagan = []
@@ -1547,15 +1597,27 @@ def buyurtma_tekshir(fayl_bytes: bytes, kanal: str = "asosiy"):
                 buy_val = ws.cell(row=r, column=COL_B0BACK).value
             if buy_val in (None, ""):
                 continue
-            # Avvalo cell comment dan asl inventar nomini o'qiymiz.
-            # Sabab: ст 1,35 (inventar) va ст 1,4 (inventar) ikkalasi Xitoy
-            # Excelda "ст 1,35" ko'rinadi — lookup collision'dan qochish uchun
-            # write_product() asl nomni comment sifatida yozadi.
+            # 1) Avvalo cell comment dan asl inventar nomini o'qiymiz —
+            # bot o'zi yaratgan faylda BU DOIM ishlaydi (write_product()
+            # har doim yozadi), qolgan usullar faqat comment YO'Q bo'lsa
+            # (bot yaratmagan/eski fayl) kerak bo'ladi.
+            tovar = None
             if cell1.comment and cell1.comment.text and cell1.comment.text.strip():
                 tovar = cell1.comment.text.strip()
-            else:
-                # Eski Excel (commentsiz) yoki lookup manbasi bo'lmagan holat
+            if tovar is None:
+                # 2) Eski (nomi, uzun) aniq mos kelish (B ustunidagi qiymat bilan)
                 tovar = lookup.get((nomi, uzun)) or lookup.get((nomi, ""))
+            if tovar is None:
+                # 3) YANGI: o'lcham-asosli, TARTIBDAN MUSTAQIL kalit —
+                # faqat nomi matnining o'zidan (B ustuniga qaramasdan)
+                # kategoriya/diametr/qalinlik/uzunlik/marka/sirt ajratiladi.
+                dk = _olcham_kaliti(nomi)
+                if dk:
+                    tovar = dim_lookup.get(dk)
+            if tovar is None:
+                # 4) Umumiy normalize (aksessuar/Баласина va h.k. — stenka
+                # tushunchasi bo'lmagan tovarlar uchun oxirgi zaxira).
+                tovar = norm_lookup.get(normalize_product_name(nomi))
             try:
                 m = float(buy_val)
             except (ValueError, TypeError):
