@@ -3027,22 +3027,33 @@ async def _kont_list_yuborish(msg, query_key: str, is_keldi: bool,
     if is_keldi and len(fayllar) > 1:
         if context is not None:
             context.user_data["kg_multi_sel"] = {"query_key": query_key, "selected": set()}
-        await msg.reply_text(
+        sent = await msg.reply_text(
             sarlavha + "\n\n_Kerakli konteynerlarni belgilang, so'ng pastdagi tugmani bosing:_",
             parse_mode="Markdown",
             reply_markup=_kg_multi_kb(fayllar, query_key, set()),
         )
+        # 2026-07-29 (bug tuzatildi, Huzayfa: "konteynerni qaytara olmyapman"):
+        # bu yerda aktiv_inline HECH QACHON belgilanmagan edi (faqat
+        # _rasm_list_yuborish'da bor edi) \u2014 natijada agar aktiv_inline
+        # boshqa (eski) ekranga ishora qilib qolgan bo'lsa, shu YANGI
+        # xabardagi tugma ham "eskirgan" deb bloklanib, hech qanday
+        # ko'rinadigan xatolik bermasdan (faqat qisqa popup, oson
+        # o'tkazib yuboriladi) ishlamay qolardi.
+        if context is not None:
+            aktiv_inline_belgila(context, sent)
         return
 
     # \u2500\u2500 Bir nechta konteyner bir vaqtda QAYTARISH kerak bo'lsa \u2014 checkbox rejimi \u2500\u2500
     if not is_keldi and len(fayllar) > 1:
         if context is not None:
             context.user_data["qt_multi_sel"] = {"query_key": query_key, "selected": set()}
-        await msg.reply_text(
+        sent = await msg.reply_text(
             sarlavha + "\n\n_Qaytariladigan konteynerlarni belgilang, so'ng pastdagi tugmani bosing:_",
             parse_mode="Markdown",
             reply_markup=_qt_multi_kb(fayllar, query_key, set()),
         )
+        if context is not None:   # 2026-07-29: qarang yuqoridagi izoh
+            aktiv_inline_belgila(context, sent)
         return
 
     buttons = []
@@ -3080,8 +3091,12 @@ async def _kont_list_yuborish(msg, query_key: str, is_keldi: bool,
             ])
             continue
 
-    await msg.reply_text(sarlavha, parse_mode="Markdown",
-                         reply_markup=InlineKeyboardMarkup(buttons))
+    sent = await msg.reply_text(sarlavha, parse_mode="Markdown",
+                                 reply_markup=InlineKeyboardMarkup(buttons))
+    # 2026-07-29 (bug tuzatildi): qarang yuqoridagi (checkbox) bo'limlardagi izoh —
+    # bitta-natija holatida ham aktiv_inline HECH QACHON belgilanmagan edi.
+    if context is not None:
+        aktiv_inline_belgila(context, sent)
 
 
 def _kg_multi_kb(fayllar, query_key: str, selected: set) -> InlineKeyboardMarkup:
