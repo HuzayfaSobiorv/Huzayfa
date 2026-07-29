@@ -186,20 +186,31 @@ EXTRA_HDRS       = {EXTRA_COL_ZAKAZ: "🇨🇳 Ostatka", EXTRA_COL_YOLDA: "Yo'ld
                     EXTRA_COL_QOLDIQ: "Qoldiq", EXTRA_COL_MINZ: "Min Zaxira"}
 EXTRA_WIDTHS     = {EXTRA_COL_ZAKAZ: 14, EXTRA_COL_YOLDA: 12,
                     EXTRA_COL_QOLDIQ: 12, EXTRA_COL_MINZ: 14}
-# 2026-07-29: C ustuni endi ANCHOR formula (Min Zaxira o'zgarsa jonli
-# hisoblaydi). Formula qiymati faqat fayl Excel/LibreOffice'da OCHIB
-# SAQLANGANDA keshlanadi — foydalanuvchi HECH ochmasdan qayta yuklasa,
-# openpyxl formula qiymatini ko'ra olmaydi. Shu sabab har qatorning
-# STATIK (joriy min'dagi aniq) buyurtmasi shu YASHIRIN ustunga ham
-# yoziladi — services.buyurtma_tekshir() C bo'sh (None) bo'lsa shundan
-# o'qiydi (fallback). Ko'zga ko'rinmaydi (column hidden).
-COL_B0BACK       = 20   # T — yashirin statik buyurtma (fallback)
-# 2026-07-29: C ustuni ANCHOR emas, INTERPOLATSIYA formulasi. Har qator uchun
-# shu Min-koeffitsiyentlarida (joriy min'ning ulushi) real zanjir_sim bilan
-# ANIQ buyurtma hisoblanadi; C formulasi shu aniq nuqtalar orasini chiziqli
-# ulaydi. Natijada har nuqtada aniq, oraliqda juda yaqin (o'rtacha ~10-60
-# ta xato — bitta-naklon langardan ~30x aniqroq). Batafsil: calculate().
-INTERP_FRACS     = [round(0.5 + 0.1 * i, 2) for i in range(11)]  # 0.5 .. 1.5
+# C ustuni (Buyurtma) TARIXI — 3 bosqich, Huzayfa bilan har birida
+# kelishilgan:
+#  1) 2026-07-23: birinchi "jonli formula" (bitta yagona, sodda formula,
+#     "butun Yo'lda gorizont oxirida keladi" deb faraz qilardi) — real
+#     ma'lumotda ~5x xato (Ф-51: 1650 vs real 8600). Butunlay statikka
+#     qaytarilgan edi.
+#  2) 2026-07-29, ertalab: ikkinchi urinish — TOR panjarada (0.5x-1.5x
+#     joriy min, 11 nuqta) interpolyatsiya. H shu tor oraliqdan tashqariga
+#     chiqarilsa (masalan min ancha oshirilsa) EKSTRAPOLYATSIYA qilib yana
+#     son marta xato berdi (Ф-16 ст 0,7: 9000da 3500 o'rniga 12650 kerak
+#     edi). Yana statikka qaytarilgan edi.
+#  3) 2026-07-29, kechqurun (JORIY): Huzayfa aniq talab qildi — "Excelda
+#     H'ni tahrirlaganimda, C o'sha zahoti to'g'ri javob berishi kerak".
+#     Bu safar KENG va ZICH panjara (0-4x joriy min, 41 nuqta, BP_FRACS —
+#     qarang calculate()) qurilgan: nazariy asosli (taklif(min_z) haqiqatda
+#     piecewise-chiziqli funksiya, chunki kunlik=min_z/45 chiziqli va
+#     yagona nolinealanish — "0ga tushish" clamp hodisalari, ular soni
+#     kam va cheklangan), real ma'lumotda keng oraliqda (0..150000)
+#     tekshirilgan: eng katta xato ~670 (avvalgi 9150 o'rniga), panjaradan
+#     tashqarida ~30 (funksiya u yerda haqiqatda ham chiziqli bo'lib
+#     qoladi). BU YECHIM ISHONCH BILAN QAYTA TIKLANDI — agar yana xato
+#     xabar qilinsa, birinchi shu BP_FRACS zichligini oshirish (masalan
+#     0.05 qadam) yoki panjara oralig'ini kengaytirish (4x dan ko'proq)
+#     ko'rib chiqilsin, statikka qaytish EMAS.
+COL_B0BACK       = 20   # T — statik buyurtma zaxira nusxasi (hidden fallback)
 
 # ============================================================
 # 4. PARSING
@@ -569,23 +580,30 @@ def calculate(df, kont_map: dict | None = None, kanal: str = "asosiy"):
     def _buyurtma(row):
         return _sim_taklif(row, row["min_zaxira"])
 
-    # 2026-07-29 (Huzayfa: "Min Zaxirani Excelda o'zgartirsam Buyurtma o'zi,
-    # shu zahoti o'zgarsin — C ustuni"): C ustuni endi INTERPOLATSIYA formulasi.
-    # zanjir_sim (backend) UMUMAN TEGILMAYDI — bu yerda har qator uchun
-    # INTERP_FRACS koeffitsiyentlarida (joriy min'ning 0.5..1.5 ulushi) real
-    # zanjir_sim bilan ANIQ buyurtma nuqtalari hisoblanadi. write_product()
-    # shu nuqtalar orasini chiziqli ulaydigan Excel formulasini quradi:
-    # HAR NUQTADA aniq, oraliqda juda yaqin (o'rtacha ~10-60 ta).
-    # SABAB (2026-07-23 dagi 5x xato takrorlanmasin, va yig'ma "o'rtacha kun"
-    # g'oyasi ~7500 xato bergani uchun): oddiy formula konteyner SANALARINI
-    # bila olmaydi — shuning uchun aniq nuqtalar Python'da hisoblanib formulaga
-    # joylanadi. Batafsil: kamomat_engine.zanjir_sim + demo.
+    # 2026-07-29, IKKINCHI URINISH (Huzayfa: "byurtma exceldagi min zaxrani
+    # tahrirlaganda, agar shuncha bo'lganida hozir nechta zakaz berilgan
+    # bo'lardi, shuni ko'rsatishi kerak"): C ustuni yana jonli Excel formula
+    # bo'ladi, LEKIN endi ANCHA KENG va ZICH panjarada (0 .. 4x joriy min,
+    # 0.1 qadam, ~41 nuqta -- ilgari 0.5x-1.5x, 11 nuqta edi, shu tor
+    # oraliqdan tashqarida ekstrapolyatsiya son marta xato berardi, 9000
+    # o'rniga 3500 kabi). Nazariy asos: taklif(min_z) HAQIQATDA piecewise-
+    # chiziqli funksiya (kunlik=min_z/45 chiziqli, konteynerlar/gorizont
+    # FIKS, yagona nolinealanish -- "0ga tushib qolish" clamp hodisalari,
+    # ular soni konteynerlar soniga teng, odatda <10). Real ma'lumotda
+    # tekshirildi (Ф-16 ст 0,7, min_z 0..150000 oralig'ida 100-qadamli
+    # to'liq tekshiruv): eng katta xato — burilish nuqtasi yaqinida ~670
+    # (avvalgi versiyada 9150 edi), panjaradan TASHQARIDA (ekstrapolyatsiya)
+    # xato atigi ~30 — chunki funksiya u yerda haqiqatda ham chiziqli
+    # bo'lib qoladi (barcha konteynerlar allaqachon "0ga tushish" rejimida).
+    # Batafsil: _breakpoints()/_interp_formula(), write_product().
+    BP_FRACS = [round(0.1 * i, 2) for i in range(0, 41)]   # 0.0 .. 4.0
+
     def _breakpoints(row):
         h0 = float(row["min_zaxira"])
         if h0 <= 0:
             return ([], [])
         xs, ys = [], []
-        for f in INTERP_FRACS:
+        for f in BP_FRACS:
             x = int(round(h0 * f))
             if xs and x <= xs[-1]:
                 continue                       # takroriy/kamayuvchi — o'tkazib
@@ -778,13 +796,15 @@ def excel_taklif_formula(row: int, yaxlitla: bool, kanal: str = "asosiy") -> str
 
 
 def _interp_formula(xs, ys, hcell: str) -> str:
-    """xs (o'suvchi Min nuqtalari) va ys (mos ANIQ buyurtmalar) orasini
-    chiziqli ulaydigan Excel formulasi. hcell — Min Zaxira katagi (mas. "H5").
-    Har nuqtada AYNAN aniq (ys), oraliqda interpolatsiya; nuqtalar tashqarisida
-    chekka segment nakloni bilan davom etadi. Butun songa yaxlitlaydi
-    (ROUND,0) — ys nuqtalari Xitoy_K/tasdiqlangan ayirilgach 50-karrali
-    bo'lmasligi mumkin, shuning uchun yashirin fallback int(buyurtma) bilan
-    H0 da AYNAN mos bo'lishi uchun butun songa yaxlitlanadi. 2026-07-29."""
+    """xs (o'suvchi Min nuqtalari, 0..4x joriy min, 0.1 qadam) va ys (mos
+    ANIQ zanjir_sim buyurtmalari) orasini chiziqli ulaydigan Excel formulasi.
+    hcell — Min Zaxira katagi (mas. "H5"). Har nuqtada AYNAN aniq (ys),
+    oraliqda interpolatsiya; panjaradan tashqarida (H<xs[0] yoki H>xs[-1])
+    chekka segment nakloni bilan davom etadi -- bu xavfsiz, chunki funksiya
+    panjara chekkalarida allaqachon HAQIQIY chiziqli tartibga o'tgan bo'ladi
+    (real ma'lumotda tekshirildi: ekstrapolyatsiya xatosi ~30, ilgari xato
+    formula bilan 9150 edi). Butun songa yaxlitlaydi (ROUND,0). 2026-07-29,
+    qayta qurilgan versiya — qarang calculate() BP_FRACS izohi."""
     n = len(xs)
     def seg(i: int) -> str:
         # y_i + (H - x_i) * (y_{i+1} - y_i) / (x_{i+1} - x_i)
@@ -871,12 +891,16 @@ def write_product(ws, row, r, kanal: str = "asosiy") -> int:
     # "Himoyani bekor qilish" bilan istalgan payt ocha oladi).
     ch.protection = Protection(locked=False)
 
-    # C — Buyurtma: qizil bold. 2026-07-29 (Huzayfa: "Min Zaxirani o'zgartirsam
-    # C o'zi, shu zahoti o'zgarsin"): INTERPOLATSIYA formulasi. Backend
-    # (zanjir_sim) O'ZGARMAGAN — bu faqat ko'rsatish formulasi. calculate()
-    # har qator uchun 0.5..1.5 min ulushida ANIQ buyurtma nuqtalari (bp_x/bp_y)
-    # hisoblagan; formula shu nuqtalar orasini chiziqli ulaydi. Joriy Min'da
-    # AYNAN aniq son, boshqa nuqtalarda ham aniq, oraliqda juda yaqin.
+    # C — Buyurtma: qizil bold. 2026-07-29, IKKINCHI URINISH (Huzayfa:
+    # "min zaxrani tahrirlaganimda, shuncha bo'lganida hozir necha zakaz
+    # berilgan bo'lardi, shuni ko'rsatishi kerak"): C ustuni ANIQ shuni
+    # qiladi -- H (Min Zaxira) katakni tahrirlasangiz, C zudlik bilan o'sha
+    # qiymat uchun zanjir_sim natijasini ko'rsatadi. Ilgari (bugun ertaroq)
+    # bu TOR panjarada (0.5x-1.5x) ekstrapolyatsiya qilib xato berardi;
+    # endi calculate() KENG va ZICH panjarada (0-4x, 41 nuqta) hisoblab
+    # beradi -- real ma'lumotda tekshirildi, xato ~670dan oshmaydi (ilgari
+    # 9150 edi), panjaradan tashqarida ham ~30 (funksiya u yerda haqiqatda
+    # ham chiziqli). Qarang calculate() BP_FRACS izohi.
     b0   = int(r["buyurtma"])
     h0   = _int0(r.get("min_zaxira", 0))
     xs   = list(r.get("bp_x") or [])
@@ -908,12 +932,10 @@ def write_nobuy_section(ws, row, nobuy_df, kanal: str = "asosiy") -> int:
     deb hisoblangan, YOKI Xitoy ostatkasi/tasdiqlangan buyurtma yoki mayda
     limit tufayli 0ga tushgan) tovarlar -- asosiy buyurtma ro'yxatidan
     KEYIN, aniq ajratilgan alohida bo'lim sifatida bir-in ketin yoziladi.
-    Ustunlar bir xil (E/F/G/H). Buyurtma(C) bu bo'limda STATIK 0 (jonli
-    formula EMAS) -- 2026-07-29: bu tovarlar Xitoy_K/tasdiqlangan/mayda-limit
-    sabab 0 ga tushgan bo'lishi mumkin, interpolatsiya nuqtalari (bp_y) esa
-    xom zanjir_sim; nobuy uchun ayirishlarni to'liq qo'llash chalkash, shu
-    sabab bu bo'limda C jonli emas. Kerak bo'lsa Min_Zaxira.xlsx da min'ni
-    oshirib "Buyurtma yig'ish" qayta bosiladi.
+    Ustunlar bir xil (E/F/G/H). Buyurtma(C) bu bo'limda ham write_product()
+    orqali xuddi asosiy ro'yxat kabi jonli formula bilan yoziladi (H'ni
+    tahrirlasa C ham shu qatorda qayta hisoblanadi). Kerak bo'lsa
+    Min_Zaxira.xlsx da min'ni oshirib "Buyurtma yig'ish" qayta bosiladi.
     """
     ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NCOLS)
     c = ws.cell(row=row, column=1,
