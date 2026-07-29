@@ -1436,23 +1436,51 @@ def buyurtma_tekshir(fayl_bytes: bytes, kanal: str = "asosiy"):
     """
     Tasdiqlangan buyurtma Excel'ini tekshiradi.
     Generate_Asosiy_order.build() formati: "Tovar nomi" | "Uzunlik" | "Buyurtma"
+
+    Qaytaradi: (ok, xato, items, tanilmagan)
+      - ok=False bo'lsa: items=None, tanilmagan=[] — FAYL DARAJASIDA jiddiy
+        xato (ochilmadi, "Tovar" ustuni topilmadi, raqam bo'lmagan qiymat).
+      - ok=True bo'lsa: items — tanilgan qatorlar, tanilmagan — nomi/soni bor
+        bo'lsa-da HECH QANDAY manbada topilmagan qatorlar nomlari ro'yxati
+        (chaqiruvchi buni ogohlantirish sifatida ko'rsatishi kerak).
+
+    2026-07-29 (Huzayfa: "Tsex va Oshda tasdiqlashni qabul qilmayapti,
+    Asosiy qabul qildi lekin tanimaganlari bor-yo'qligini aytmayapti"):
+    ANIQLANGAN ikki mustaqil bug:
+      1) Lookup manbasi (draft yoki inventar_olish) topilmasa/bo'sh bo'lsa,
+         FUNKSIYA BUTUNLAY "Инвентар ma'lumoti topilmadi" bilan rad etardi —
+         BUTUN faylni HATTO O'QIB KO'RMASDAN. Aslida har qatordagi haqiqiy
+         tovar nomi deyarli DOIM cell comment'da bor (write_product() buni
+         SHART qilib yozadi) — lookup faqat ESKI, commentsiz fayllar uchun
+         zaxira. Tsex/Osh kanallari uchun `draft_{kanal}.json` hali umuman
+         yaratilmagan (faqat Asosiy'niki mavjud edi) va shu ikki kanalning
+         `inventar_olish()` natijasi bo'sh/aniq bo'lmasligi mumkin — shu
+         sabab BUTUNLAY ISHLAMAY qolgan, garchi fayl o'zi to'g'ri bo'lsa ham.
+         ENDI: lookup manbasi topilmasa ham funksiya DAVOM ETADI (bo'sh
+         lookup bilan) — comment orqali topiladigan qatorlar baribir ishlaydi.
+      2) Nomi/comment ORQALI ham topilmagan qatorlar JIMGINA o'tkazib
+         yuborilardi (`continue`) — foydalanuvchiga hech qanday xabar
+         berilmasdi, Xitoy ostatka oqimidagi "tanilgan/tanilmagan" hisoboti
+         bu yerda YO'Q edi. ENDI: bunday qatorlar `tanilmagan` ro'yxatiga
+         yoziladi va chaqiruvchi (handlers.py) buni ko'rsatadi.
     """
     import openpyxl
     from Generate_Asosiy_order import strip_length, get_length, COL_B0BACK
 
     try:
-        # 2026-07-29: C (Buyurtma) ustuni endi ANCHOR formula — Min Zaxira
-        # o'zgarsa jonli hisoblaydi. data_only=True: foydalanuvchi Excelda
-        # ochib/saqlaganda formula KESHLANGAN qiymatini o'qiymiz (ya'ni uning
-        # tahririga mos son). Fayl umuman ochilmagan bo'lsa C=None keladi ->
-        # pastda yashirin statik B0 (COL_B0BACK) ustunidan olinadi.
+        # C (Buyurtma) ustuni jonli formula — Min Zaxira o'zgarsa qayta
+        # hisoblaydi. data_only=True: foydalanuvchi Excelda ochib/saqlaganda
+        # formula KESHLANGAN qiymatini o'qiymiz. Fayl umuman ochilmagan
+        # bo'lsa C=None keladi -> pastda yashirin statik B0 (COL_B0BACK)
+        # ustunidan olinadi.
         wb = openpyxl.load_workbook(BytesIO(fayl_bytes), data_only=True)
     except Exception as e:
-        return False, f"Faylni ochishda xato: {type(e).__name__}", None
+        return False, f"Faylni ochishda xato: {type(e).__name__}", None, []
 
     # Lookup manbayi: AVVALO draft faylidan (Excel yaratilganda saqlangan).
-    # Sabab: inventar o'zgarishi mumkin, lekin Excel dagi tovar nomlari o'sha paytgi
-    # drafdtga mos. Draft yo'q bo'lsa inventardan fallback qilinadi.
+    # Draft yo'q/bo'sh bo'lsa inventardan, u ham bo'lmasa — bo'sh lookup
+    # (pastdagi comment-asosidagi topish YETARLI bo'lishi kerak, chunki
+    # write_product() har doim asl nomni comment sifatida yozadi).
     #
     # MUHIM: Excel col1 da rich_tovar_name() → strip_length(xitoy_nomi(original)) yoziladi.
     # xitoy_nomi() stenka qiymatini STENKA_DELTA ga kamaytiradi (0.26 → 0.21).
@@ -1468,23 +1496,23 @@ def buyurtma_tekshir(fayl_bytes: bytes, kanal: str = "asosiy"):
     if draft:
         for full_name in draft:
             full_name = str(full_name).strip()
-            # Excel col1 da ko'rsatiladigan nom (stenka kamaytirgan)
             excel_nomi = strip_length(_xitoy_nomi(full_name)).strip()
             uzun       = get_length(full_name).strip()
             lookup[(excel_nomi, uzun)] = full_name
-            # fallback: uzunsiz ham topilsin
             if (excel_nomi, "") not in lookup:
                 lookup[(excel_nomi, "")] = full_name
     else:
         inv = inventar_olish(kanal)
-        if inv.empty or "Товар" not in inv.columns:
-            return False, "Инвентар ma'lumoti topilmadi", None
-        for tovar in inv["Товар"].dropna().astype(str):
-            nomi = strip_length(tovar).strip()
-            uzun = get_length(tovar).strip()
-            lookup[(nomi, uzun)] = tovar
+        if not inv.empty and "Товар" in inv.columns:
+            for tovar in inv["Товар"].dropna().astype(str):
+                nomi = strip_length(tovar).strip()
+                uzun = get_length(tovar).strip()
+                lookup[(nomi, uzun)] = tovar
+        # Draft ham, inventar ham bo'lmasa/bo'sh bo'lsa — lookup bo'sh
+        # qoladi, LEKIN funksiya davom etadi (comment orqali topish uchun).
 
     items = []
+    tanilmagan = []
     found_any = False
 
     for ws in wb.worksheets:
@@ -1508,7 +1536,7 @@ def buyurtma_tekshir(fayl_bytes: bytes, kanal: str = "asosiy"):
             uzun = "" if uzun_val is None else str(uzun_val).strip()
             buy_val = ws.cell(row=r, column=3).value
             if buy_val in (None, ""):
-                # C anchor formulasining keshi yo'q (fayl Excelda ochilmagan)
+                # C formulasining keshi yo'q (fayl Excelda ochilmagan)
                 # -> yashirin statik B0 fallback ustunidan o'qiymiz.
                 buy_val = ws.cell(row=r, column=COL_B0BACK).value
             if buy_val in (None, ""):
@@ -1520,14 +1548,18 @@ def buyurtma_tekshir(fayl_bytes: bytes, kanal: str = "asosiy"):
             if cell1.comment and cell1.comment.text and cell1.comment.text.strip():
                 tovar = cell1.comment.text.strip()
             else:
-                # Eski Excel (commentsiz) uchun fallback
+                # Eski Excel (commentsiz) yoki lookup manbasi bo'lmagan holat
                 tovar = lookup.get((nomi, uzun)) or lookup.get((nomi, ""))
-            if tovar is None:
-                continue
             try:
                 m = float(buy_val)
             except (ValueError, TypeError):
-                return False, f"'{ws.title}' varaqida raqam bo'lmagan buyurtma qiymati", None
+                return False, f"'{ws.title}' varaqida raqam bo'lmagan buyurtma qiymati", None, []
+            if tovar is None:
+                if m > 0:
+                    # Miqdori bor, lekin tovar HECH QAYERDA topilmadi —
+                    # jim o'tkazib yuborish o'rniga ogohlantirishga yoziladi.
+                    tanilmagan.append(f"{nomi} ({uzun})" if uzun else nomi)
+                continue
             if m > 0:
                 items.append({"tovar": tovar, "miqdor": m, "varaq": ws.title})
 
@@ -1536,5 +1568,5 @@ def buyurtma_tekshir(fayl_bytes: bytes, kanal: str = "asosiy"):
             "Hech qaysi varaqda 'Tovar' ustuni topilmadi.\n"
             "Faylda quyidagi varaqlar bor: "
             + ", ".join(str(s) for s in wb.sheetnames)
-        ), None
-    return True, None, items
+        ), None, []
+    return True, None, items, tanilmagan

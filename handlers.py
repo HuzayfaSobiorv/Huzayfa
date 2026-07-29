@@ -2419,7 +2419,7 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Tasdiqlangan buyurtma fayli ──────────────────────────────────────────
     if kut[0] == "buyurtma_tasdiq":
         try:
-            ok, xato, items = buyurtma_tekshir(raw, kanal)
+            ok, xato, items, tanilmagan = buyurtma_tekshir(raw, kanal)
         except Exception as e:
             await msg.reply_text(f"❌ Buyurtma tekshirishda xato: {str(e)[:300]}")
             return
@@ -2430,10 +2430,14 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         if not items:
-            await msg.reply_text(
+            matn = (
                 "⚠️ Buyurtma ustunida hech qanday miqdor topilmadi.\n"
                 "Excel faylida 'Buyurtma' ustunini to'ldiring va qayta yuboring."
             )
+            if tanilmagan:
+                matn += ("\n\n❌ Tanilmagan tovar nomlari (" + str(len(tanilmagan)) + " ta):\n"
+                         + "\n".join(f"• {x}" for x in tanilmagan[:30]))
+            await msg.reply_text(matn)
             return
         user_id = update.message.from_user.id
         context.user_data["pending_zakaz"] = (kanal, items)
@@ -2446,6 +2450,18 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             preview = zakaz_preview_text(kanal, items, lang)
         except Exception as e:
             preview = f"Oldingi tasdiq: {e}"
+        # 2026-07-29 (Huzayfa: "tanimaganlari bor-yoqligini aytmayapti"):
+        # Xitoy ostatka oqimidagi kabi, endi bu yerda ham ANIQ tanildi/
+        # tanilmadi hisoboti ko'rsatiladi — jim qolish YO'Q.
+        if tanilmagan:
+            preview += (
+                f"\n\n⚠️ *{len(tanilmagan)} ta qator tanilmadi* (miqdor bor, "
+                "lekin tovar nomi hech qayerda topilmadi — bu qatorlar "
+                "buyurtmaga QO'SHILMADI):\n"
+                + "\n".join(f"• {x}" for x in tanilmagan[:30])
+            )
+        else:
+            preview += "\n\n✅ Barcha tovar nomlari to'g'ri tanildi."
         await msg.reply_text(
             preview,
             parse_mode="Markdown",
