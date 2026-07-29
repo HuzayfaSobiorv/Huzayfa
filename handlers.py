@@ -936,9 +936,24 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # o'zgartiradi — rasm chizish/guruhga yuborish so'rovi BU YERDA
             # UMUMAN YO'Q. Guruhga rasm yuborishning yagona yo'li — 🖼 tugmasi
             # (kont_rasm_qayta). Ikkalasi endi to'liq mustaqil harakatlar.
-            _keldi_sana_yoz(f"{old_path.stem}_D.xlsx")
-            _rasm_pending_ochirish(fname)   # qo'lda KELDI qilindi — kuzatuvdan chiqar
-            old_path.rename(XITOY_PARSED_DIR / f"{old_path.stem}_D.xlsx")
+            #
+            # 2026-07-29 (Huzayfa: "qaytara olmayapman, hech narsa chiqmaydi"
+            # holatini qidirishda topildi): `.rename()` Windows'da agar
+            # MAQSAD fayl ALLAQACHON mavjud bo'lsa `FileExistsError` beradi
+            # (POSIX'da esa jimgina almashtiradi) — server Windows bo'lgani
+            # uchun bu haqiqiy xavf. Bunday xato ushbu try/except'GACHA
+            # umuman qo'lga olinmasdi — global xato-ushlagich xabar bersa
+            # ham, foydalanuvchiga aynan SHU tugma ustida hech qanday darhol
+            # ko'rinadigan reaksiya bo'lmasdi. Endi `.replace()` (ikkala
+            # platformada ham xavfsiz almashtiradi) + aniq xato xabari bilan.
+            try:
+                _keldi_sana_yoz(f"{old_path.stem}_D.xlsx")
+                _rasm_pending_ochirish(fname)   # qo'lda KELDI qilindi — kuzatuvdan chiqar
+                old_path.replace(XITOY_PARSED_DIR / f"{old_path.stem}_D.xlsx")
+            except Exception as e:
+                logger.exception("kont_bir_keldi: fayl almashtirishda xato")
+                await query.answer(f"❌ Xato: {e}", show_alert=True)
+                return
             _main_py_ishga_tushir()
             await query.answer(f"✅ {iso} — KELDI!", show_alert=False)
             try:
@@ -967,7 +982,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             stem_no_d = old_path.stem[:-2]
             iso    = _iso_from_stem(stem_no_d)
             sana_f = stem_no_d.rsplit("_", 1)[-1]
-            old_path.rename(XITOY_PARSED_DIR / f"{stem_no_d}.xlsx")
+            # 2026-07-29: `.replace()` (Windows-xavfsiz) + xato ko'rinadigan
+            # bo'lishi uchun try/except — qarang kont_bir_keldi'dagi izoh.
+            try:
+                old_path.replace(XITOY_PARSED_DIR / f"{stem_no_d}.xlsx")
+            except Exception as e:
+                logger.exception("kont_bir_qayt: fayl almashtirishda xato")
+                await query.answer(f"❌ Xato: {e}", show_alert=True)
+                return
             _main_py_ishga_tushir()
             await query.answer(f"🚢 {iso} — Yo'lda!", show_alert=False)
             try:
@@ -1099,26 +1121,39 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # o'zgartiradi — rasm chizish/guruhga yuborish BU YERDA YO'Q,
             # bittalik yo'l bilan bir xil mantiq (yagona yo'l — 🖼 tugmasi).
             isos = []
+            xatoliklar = []
             for fname in list(selected):
                 old_path = XITOY_PARSED_DIR / fname
                 if old_path.exists():
                     iso = _iso_from_stem(old_path.stem)   # 2026-07-15: F_ tashlanadi
-                    _keldi_sana_yoz(f"{old_path.stem}_D.xlsx")
-                    _rasm_pending_ochirish(fname)   # qo'lda KELDI qilindi — kuzatuvdan chiqar
-                    old_path.rename(XITOY_PARSED_DIR / f"{old_path.stem}_D.xlsx")
-                    isos.append(iso)
+                    try:
+                        _keldi_sana_yoz(f"{old_path.stem}_D.xlsx")
+                        _rasm_pending_ochirish(fname)   # qo'lda KELDI qilindi — kuzatuvdan chiqar
+                        # 2026-07-29: `.replace()` — Windows'da maqsad fayl
+                        # mavjud bo'lsa `.rename()` xato berardi (qarang
+                        # kont_bir_keldi'dagi izoh), bitta konteynerdagi xato
+                        # butun to'plamni to'xtatmasin uchun try/except.
+                        old_path.replace(XITOY_PARSED_DIR / f"{old_path.stem}_D.xlsx")
+                        isos.append(iso)
+                    except Exception:
+                        logger.exception(f"kg_confirm_multi: {fname} almashtirishda xato")
+                        xatoliklar.append(iso)
             context.user_data.pop("kg_multi_sel", None)
             context.user_data["screen"] = "keldi_menu"
 
             if not isos:
-                await query.message.reply_text("❌ Tanlangan fayllar topilmadi.")
+                matn = "❌ Tanlangan fayllar topilmadi."
+                if xatoliklar:
+                    matn += "\n\n❌ Xato yuz berdi:\n" + "\n".join(f"• {x}" for x in xatoliklar)
+                await query.message.reply_text(matn)
             else:
                 _main_py_ishga_tushir()
+                matn = (f"✅ {len(isos)} ta konteyner KELDI ga o'zgartirildi:\n" +
+                        "\n".join(f"• {x}" for x in isos))
+                if xatoliklar:
+                    matn += "\n\n❌ Xato tufayli o'zgartirilmadi:\n" + "\n".join(f"• {x}" for x in xatoliklar)
                 try:
-                    await query.edit_message_text(
-                        f"✅ {len(isos)} ta konteyner KELDI ga o'zgartirildi:\n" +
-                        "\n".join(f"• {x}" for x in isos)
-                    )
+                    await query.edit_message_text(matn)
                 except Exception:
                     pass
             await kont_holat_royhat(query.message, context)
@@ -1279,31 +1314,47 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Ishlanmoqda...")
             isos = []
             otkazildi = []   # bugun keldi qilinmaganlar — himoya (2026-07-15)
+            xatoliklar = []  # 2026-07-29: fayl almashtirishda kutilmagan xato
             for fname in list(selected):
                 old_path = XITOY_PARSED_DIR / fname
                 if old_path.exists() and _keldi_bugunmi(fname):
                     stem_no_d = old_path.stem[:-2]
                     iso = _iso_from_stem(stem_no_d)
-                    old_path.rename(XITOY_PARSED_DIR / f"{stem_no_d}.xlsx")
-                    isos.append(iso)
+                    try:
+                        # 2026-07-29: `.replace()` — Windows'da maqsad fayl
+                        # mavjud bo'lsa `.rename()` xato berardi (qarang
+                        # kont_bir_qayt'dagi izoh).
+                        old_path.replace(XITOY_PARSED_DIR / f"{stem_no_d}.xlsx")
+                        isos.append(iso)
+                    except Exception:
+                        logger.exception(f"qt_confirm_multi: {fname} almashtirishda xato")
+                        xatoliklar.append(iso)
                 elif old_path.exists():
                     otkazildi.append(_iso_from_stem(old_path.stem[:-2]))
             context.user_data.pop("qt_multi_sel", None)
             context.user_data["screen"] = "keldi_menu"
 
             if not isos:
-                if otkazildi:
-                    await query.message.reply_text(
-                        "⛔ Hech biri qaytarilmadi — bugun KELDI qilinmagan:\n"
-                        + "\n".join(f"• {x}" for x in otkazildi)
-                        + "\n\nHimoya: qaytarish faqat keldi qilingan kunning o'zida mumkin."
-                    )
+                if otkazildi or xatoliklar:
+                    matn = ""
+                    if otkazildi:
+                        matn += (
+                            "⛔ Bugun KELDI qilinmagani uchun qaytarilmadi:\n"
+                            + "\n".join(f"• {x}" for x in otkazildi)
+                            + "\n\nHimoya: qaytarish faqat keldi qilingan kunning o'zida mumkin.\n\n"
+                        )
+                    if xatoliklar:
+                        matn += "❌ Xato tufayli qaytarilmadi:\n" + "\n".join(f"• {x}" for x in xatoliklar)
+                    await query.message.reply_text(matn.strip())
                 else:
                     await query.message.reply_text("❌ Tanlangan fayllar topilmadi.")
             else:
                 _main_py_ishga_tushir()
                 matn = (f"↩️ {len(isos)} ta konteyner ЙЎЛДА ga qaytarildi:\n" +
                         "\n".join(f"• {x}" for x in isos))
+                if xatoliklar:
+                    matn += ("\n\n❌ Xato tufayli qaytarilmadi:\n" +
+                             "\n".join(f"• {x}" for x in xatoliklar))
                 if otkazildi:
                     matn += ("\n\n⛔ Bugun keldi qilinmagani uchun qaytarilmadi:\n" +
                              "\n".join(f"• {x}" for x in otkazildi))
@@ -2816,11 +2867,19 @@ async def perexod_kunlik_tekshiruv(context: ContextTypes.DEFAULT_TYPE) -> None:
         iso = _iso_from_stem(old_path.stem)
 
         if kun_otdi >= PEREXOD_KUN_CHEGARA:
-            _keldi_sana_yoz(f"{old_path.stem}_D.xlsx")
-            old_path.rename(XITOY_PARSED_DIR / f"{old_path.stem}_D.xlsx")
-            _rasm_pending_ochirish(fname)
-            avto_keldi_lines.append(f"✅ {iso} — {kun_otdi} kun o'tdi, avtomatik KELDI qilindi")
-            avto_boldimi = True
+            # 2026-07-29: `.replace()` — Windows'da maqsad fayl mavjud bo'lsa
+            # `.rename()` xato berardi (qarang kont_bir_keldi'dagi izoh);
+            # kunlik job'da bitta konteynerning xatosi butun ishlovni
+            # to'xtatmasin uchun try/except.
+            try:
+                _keldi_sana_yoz(f"{old_path.stem}_D.xlsx")
+                old_path.replace(XITOY_PARSED_DIR / f"{old_path.stem}_D.xlsx")
+                _rasm_pending_ochirish(fname)
+                avto_keldi_lines.append(f"✅ {iso} — {kun_otdi} kun o'tdi, avtomatik KELDI qilindi")
+                avto_boldimi = True
+            except Exception:
+                logger.exception(f"perexod_kunlik_tekshiruv: {fname} almashtirishda xato")
+                avto_keldi_lines.append(f"❌ {iso} — avtomatik KELDI qilishda xato (loglarga qarang)")
         else:
             kutilmoqda_lines.append(f"⏳ {iso} — rasm yuborilganiga {kun_otdi} kun bo'ldi")
 
