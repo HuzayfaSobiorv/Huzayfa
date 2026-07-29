@@ -194,6 +194,12 @@ EXTRA_WIDTHS     = {EXTRA_COL_ZAKAZ: 14, EXTRA_COL_YOLDA: 12,
 # yoziladi — services.buyurtma_tekshir() C bo'sh (None) bo'lsa shundan
 # o'qiydi (fallback). Ko'zga ko'rinmaydi (column hidden).
 COL_B0BACK       = 20   # T — yashirin statik buyurtma (fallback)
+# 2026-07-29: C ustuni ANCHOR emas, INTERPOLATSIYA formulasi. Har qator uchun
+# shu Min-koeffitsiyentlarida (joriy min'ning ulushi) real zanjir_sim bilan
+# ANIQ buyurtma hisoblanadi; C formulasi shu aniq nuqtalar orasini chiziqli
+# ulaydi. Natijada har nuqtada aniq, oraliqda juda yaqin (o'rtacha ~10-60
+# ta xato — bitta-naklon langardan ~30x aniqroq). Batafsil: calculate().
+INTERP_FRACS     = [round(0.5 + 0.1 * i, 2) for i in range(11)]  # 0.5 .. 1.5
 
 # ============================================================
 # 4. PARSING
@@ -564,30 +570,35 @@ def calculate(df, kont_map: dict | None = None, kanal: str = "asosiy"):
         return _sim_taklif(row, row["min_zaxira"])
 
     # 2026-07-29 (Huzayfa: "Min Zaxirani Excelda o'zgartirsam Buyurtma o'zi,
-    # shu zahoti o'zgarsin — C ustuni"): C ustuni endi ANCHOR (langar) formula
-    # bo'ladi. zanjir_sim (backend) UMUMAN TEGILMAYDI — bu yerda faqat har
-    # qatorning LOKAL nakloni (yuqoriga va pastga alohida — egri chiziq
-    # bukilishini yaxshiroq ushlaydi) hisoblanadi. write_product() shu B0
-    # (joriy min'dagi aniq buyurtma) + naklon bilan Excel formulasini quradi:
-    # joriy min'da AYNAN B0, min o'zgarsa naklon bilan jonli siljiydi.
-    # SABAB (2026-07-23 dagi 5x xato takrorlanmasin): oddiy formula qator
-    # ichidagi konteyner SANALARINI bilmaydi — langar joriy nuqtada aniqlikni
-    # kafolatlaydi. Batafsil: kamomat_engine.zanjir_sim + demo.
-    def _naklonlar(row):
+    # shu zahoti o'zgarsin — C ustuni"): C ustuni endi INTERPOLATSIYA formulasi.
+    # zanjir_sim (backend) UMUMAN TEGILMAYDI — bu yerda har qator uchun
+    # INTERP_FRACS koeffitsiyentlarida (joriy min'ning 0.5..1.5 ulushi) real
+    # zanjir_sim bilan ANIQ buyurtma nuqtalari hisoblanadi. write_product()
+    # shu nuqtalar orasini chiziqli ulaydigan Excel formulasini quradi:
+    # HAR NUQTADA aniq, oraliqda juda yaqin (o'rtacha ~10-60 ta).
+    # SABAB (2026-07-23 dagi 5x xato takrorlanmasin, va yig'ma "o'rtacha kun"
+    # g'oyasi ~7500 xato bergani uchun): oddiy formula konteyner SANALARINI
+    # bila olmaydi — shuning uchun aniq nuqtalar Python'da hisoblanib formulaga
+    # joylanadi. Batafsil: kamomat_engine.zanjir_sim + demo.
+    def _breakpoints(row):
         h0 = float(row["min_zaxira"])
-        b0 = float(_sim_taklif(row, h0))
         if h0 <= 0:
-            return (0.0, 0.0)
-        d  = max(h0 * 0.10, 100.0)
-        up = (_sim_taklif(row, h0 + d) - b0) / d
-        lo = h0 - d
-        dn = (b0 - _sim_taklif(row, lo)) / d if lo > 0 else up
-        return (round(up, 4), round(dn, 4))
+            return ([], [])
+        xs, ys = [], []
+        for f in INTERP_FRACS:
+            x = int(round(h0 * f))
+            if xs and x <= xs[-1]:
+                continue                       # takroriy/kamayuvchi — o'tkazib
+            xs.append(x)
+            ys.append(int(_sim_taklif(row, x)))
+        if len(xs) < 2:
+            return ([], [])
+        return (xs, ys)
 
     df["buyurtma"] = df.apply(_buyurtma, axis=1).astype(int)
-    _nk = df.apply(_naklonlar, axis=1)
-    df["naklon_up"] = [x[0] for x in _nk]
-    df["naklon_dn"] = [x[1] for x in _nk]
+    _bp = df.apply(_breakpoints, axis=1)
+    df["bp_x"] = [p[0] for p in _bp]
+    df["bp_y"] = [p[1] for p in _bp]
     # 2026-07-22 (Huzayfa: "buyurtma berilmagan tovarlarni ham alohida
     # ko'rsatish kerak, ro'yxat oxirida ajratib"): ILGARI bu yerda
     # buyurtma==0 qatorlar BUTUNLAY o'chirilardi -- shu tovarlar qayerda
@@ -766,6 +777,24 @@ def excel_taklif_formula(row: int, yaxlitla: bool, kanal: str = "asosiy") -> str
             f"0))")
 
 
+def _interp_formula(xs, ys, hcell: str, unit: int) -> str:
+    """xs (o'suvchi Min nuqtalari) va ys (mos ANIQ buyurtmalar) orasini
+    chiziqli ulaydigan Excel formulasi. hcell — Min Zaxira katagi (mas. "H5").
+    Har nuqtada AYNAN aniq (ys), oraliqda interpolatsiya; nuqtalar tashqarisida
+    chekka segment nakloni bilan davom etadi. MROUND — unit (50 yoki 1) ga
+    yaxlitlaydi. 2026-07-29."""
+    n = len(xs)
+    def seg(i: int) -> str:
+        # y_i + (H - x_i) * (y_{i+1} - y_i) / (x_{i+1} - x_i)
+        dx    = xs[i + 1] - xs[i]
+        slope = round((ys[i + 1] - ys[i]) / dx, 4) if dx else 0
+        return f"({ys[i]}+({hcell}-{xs[i]})*{slope})"
+    expr = seg(n - 2)                       # oxirgi segment (H > x[oxirgi] uchun ham)
+    for i in range(n - 3, -1, -1):
+        expr = f"IF({hcell}<={xs[i + 1]},{seg(i)},{expr})"
+    return f"=MAX(0,MROUND(MAX(0,{expr}),{unit}))"
+
+
 def write_product(ws, row, r, kanal: str = "asosiy") -> int:
     bg   = get_row_bg(row)
     fill = _fill(bg)
@@ -841,24 +870,19 @@ def write_product(ws, row, r, kanal: str = "asosiy") -> int:
     ch.protection = Protection(locked=False)
 
     # C — Buyurtma: qizil bold. 2026-07-29 (Huzayfa: "Min Zaxirani o'zgartirsam
-    # C o'zi o'zgarsin"): ANCHOR (langar) formula. Joriy Min (H{row}) da AYNAN
-    # B0 (backend zanjir_sim natijasi) chiqadi; H o'zgartirilsa shu qatorning
-    # nakloni (yuqori/past alohida) bilan jonli qayta hisoblanadi. Backend
-    # (zanjir_sim) O'ZGARMAGAN — bu faqat ko'rsatish formulasi.
-    # DIQQAT (2026-07-23 dagi 5x xatoni takrorlamaslik uchun): langar joriy
-    # nuqtada aniqlikni KAFOLATLAYDI (H0 da B0), chunki oddiy formula qator
-    # ichidagi konteyner SANALARINI bila olmaydi. Katta o'zgarishlarda
-    # (± ~30% dan tashqarida) taxminiy — chiziqli langar.
+    # C o'zi, shu zahoti o'zgarsin"): INTERPOLATSIYA formulasi. Backend
+    # (zanjir_sim) O'ZGARMAGAN — bu faqat ko'rsatish formulasi. calculate()
+    # har qator uchun 0.5..1.5 min ulushida ANIQ buyurtma nuqtalari (bp_x/bp_y)
+    # hisoblagan; formula shu nuqtalar orasini chiziqli ulaydi. Joriy Min'da
+    # AYNAN aniq son, boshqa nuqtalarda ham aniq, oraliqda juda yaqin.
     b0   = int(r["buyurtma"])
     h0   = _int0(r.get("min_zaxira", 0))
-    up   = float(r.get("naklon_up", 0) or 0)
-    dn   = float(r.get("naklon_dn", 0) or 0)
+    xs   = list(r.get("bp_x") or [])
+    ys   = list(r.get("bp_y") or [])
     unit = 1 if _list_yaxlitlanmasmi(r["tovar"]) else 50
     hcel = f"H{row}"
-    if h0 > 0 and (up or dn):
-        delta   = f"IF({hcel}>={h0},({hcel}-{h0})*{up},({hcel}-{h0})*{dn})"
-        formula = f"=MAX(0,CEILING(MAX(0,{b0}+{delta}),{unit}))"
-        cc = ws.cell(row=row, column=3, value=formula)
+    if h0 > 0 and len(xs) >= 2 and len(ys) == len(xs):
+        cc = ws.cell(row=row, column=3, value=_interp_formula(xs, ys, hcel, unit))
     else:
         cc = ws.cell(row=row, column=3, value=b0)
     cc.font      = Font(name=FONT_NAME, bold=True, size=FONT_SZ, color=RED)
