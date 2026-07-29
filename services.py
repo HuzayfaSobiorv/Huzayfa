@@ -16,9 +16,15 @@ logger = logging.getLogger(__name__)
 from config import (
     BASE_DIR, DATA_FILE, BOT_HOLAT_DIR, VARAQLAR,
     CAT_SHEET, AKSESSUAR_KATS, get_inv, get_kont,
-    KONTEYNER_TARIX_FILE, XITOY_PARSED_DIR,
+    KONTEYNER_TARIX_FILE, XITOY_PARSED_DIR, CH_KEY,
 )
 from common import normalize_product_name, atomic_json_write
+# 2026-07-29 (Huzayfa: "Oldingi tasdiq: name 't' is not defined" xato bilan
+# duch keldi): `zakaz_preview_text()` `t(lang, ...)` chaqirardi, lekin bu
+# fayl uni HECH QACHON import qilmagan edi — funksiya chaqirilgan ZAHOTI
+# (kanal/fayldan qat'i nazar) NameError berardi, handlers.py'dagi try/except
+# buni yutib, o'rniga xato matnining o'zini "preview" sifatida ko'rsatardi.
+from texts import t
 
 # Lokal aliaslar — config cache funksiyalari
 _get_inv  = get_inv
