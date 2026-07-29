@@ -900,6 +900,29 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.answer()
 
+    elif query.data == "kont_rasm_ask":
+        # 2026-07-29 (Huzayfa: bir sanada 4-5 konteyner bo'lganda, KELDI kabi
+        # bir nechtasini belgilab, rasmlarni BITTA albom (media group) qilib
+        # guruhga yuborish). KELDI/qaytarishga UMUMAN tegmaydi — mustaqil oqim.
+        lang = context.user_data.get("lang", "cyr")
+        context.user_data["kutilmoqda"] = ("kont_rasm_sana",)
+        context.user_data["screen"] = "keldi_ekran"
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        context.user_data.pop("aktiv_inline", None)
+        from telegram import ReplyKeyboardMarkup as _RKM
+        orqaga_kb = _RKM([[t(lang, "back")]], resize_keyboard=True)
+        await query.message.reply_text(
+            "🖼 Rasm yuboriladigan konteyner(lar)ni topish:\n"
+            "📅 Sana *yoki* konteyner nomini kiriting:\n"
+            "_(Sana: 07.06.2026 — yoki ISO: CRXU1561318)_",
+            parse_mode="Markdown",
+            reply_markup=orqaga_kb,
+        )
+        await query.answer()
+
     elif query.data.startswith("kont_bir_keldi:"):
         fname = query.data[len("kont_bir_keldi:"):].split("|", 1)[0]
         old_path = XITOY_PARSED_DIR / fname
@@ -1128,6 +1151,100 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_reply_markup(reply_markup=None)
         except Exception:
             pass
+        context.user_data["screen"] = "keldi_menu"
+        await kont_holat_royhat(query.message, context)
+
+    # ── Guruhga rasm yuborish (albom) — checkbox belgilash/tasdiqlash ─────────
+    elif query.data.startswith("rasm_tgl:"):
+        payload = query.data[len("rasm_tgl:"):]
+        fname, _, mk_query_key = payload.partition("|")
+        sel_data = context.user_data.get("rasm_multi_sel")
+        if not sel_data or sel_data.get("query_key") != mk_query_key:
+            sel_data = {"query_key": mk_query_key, "selected": set()}
+        selected = sel_data["selected"]
+        if fname in selected:
+            selected.discard(fname)
+        else:
+            selected.add(fname)
+        context.user_data["rasm_multi_sel"] = {"query_key": mk_query_key, "selected": selected}
+        fayllar = _yolda_fayllar_topish(mk_query_key)
+        try:
+            await query.edit_message_reply_markup(
+                reply_markup=_rasm_multi_kb(fayllar, mk_query_key, selected)
+            )
+        except Exception:
+            pass
+        await query.answer()
+
+    elif query.data.startswith("kg_rasm_confirm:"):
+        mk_query_key = query.data.split(":", 1)[1]
+        sel_data = context.user_data.get("rasm_multi_sel") or {}
+        selected = sel_data.get("selected") or set()
+        if sel_data.get("query_key") != mk_query_key or not selected:
+            await query.answer("Hech narsa tanlanmagan.", show_alert=True)
+        else:
+            await query.answer("Rasmlar tayyorlanmoqda...")
+            # 2026-07-29: tanlangan har bir konteynerga rasm chizib, avval
+            # SHAXSIY chatda ko'rsatamiz (preview) va file_id larni yig'amiz.
+            # KELDI/statusga UMUMAN tegmaydi — faqat rasm-pending qayd etiladi
+            # (bittalik kont_rasm_qayta bilan bir xil mantiq).
+            isos, file_ids, topilmadi = [], [], []
+            for fname in sorted(selected):
+                old_path = XITOY_PARSED_DIR / fname
+                if not old_path.exists():
+                    continue
+                iso = _iso_from_stem(old_path.stem)   # F_ prefiksi tashlanadi
+                if not old_path.stem.endswith("_D"):
+                    _rasm_pending_belgila(fname)       # hali yo'lda — kuzatuvga
+                rasm = generate_kelgan_rasm(iso)
+                if not rasm:
+                    topilmadi.append(iso)
+                    continue
+                sent = await query.message.reply_photo(
+                    photo=rasm,
+                    caption=f"🖼 *{iso}*",
+                    parse_mode="Markdown",
+                )
+                isos.append(iso)
+                file_ids.append(sent.photo[-1].file_id)
+            context.user_data.pop("rasm_multi_sel", None)
+            context.user_data["screen"] = "keldi_menu"
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+            context.user_data.pop("aktiv_inline", None)
+
+            if not file_ids:
+                await query.message.reply_text(
+                    "⚠️ Tanlangan konteyner(lar) uchun ma'lumot topilmadi.\n"
+                    "Avval \"⚙️ Ma'lumotlarni yangilash\"ni bosing, so'ng qayta urinib ko'ring."
+                )
+                await kont_holat_royhat(query.message, context)
+            else:
+                context.user_data["kg_pending_multi"] = {"isos": isos, "file_ids": file_ids}
+                ogoh = ""
+                if topilmadi:
+                    ogoh = ("\n\n⚠️ Ma'lumot topilmagani uchun chiqmadi: "
+                            + ", ".join(topilmadi))
+                sent = await query.message.reply_text(
+                    f"🖼 {len(file_ids)} ta rasm tayyor (" + ", ".join(isos) + ").\n"
+                    "Guruhga albom qilib yuborilsinmi?" + ogoh,
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📤 Guruhga jo'natish", callback_data="kg_send_multi")],
+                        [InlineKeyboardButton("❌ Bekor qilish", callback_data="kg_cancel_multi")],
+                    ]),
+                )
+                aktiv_inline_belgila(context, sent)
+
+    elif query.data == "rasm_cancel_multi":
+        context.user_data.pop("rasm_multi_sel", None)
+        await query.answer("Bekor qilindi.")
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        context.user_data.pop("aktiv_inline", None)
         context.user_data["screen"] = "keldi_menu"
         await kont_holat_royhat(query.message, context)
 
@@ -1407,6 +1524,22 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data.pop("kutilmoqda", None)
             await _kont_list_yuborish(msg, query_key, is_keldi_rejim,
                                        reply=True, context=context)
+            return
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # ── Guruhga rasm yuborish (albom) — sana/nom bo'yicha konteyner qidirish ──
+    if isinstance(kut, tuple) and kut[0] == "kont_rasm_sana":
+        _back_texts = {t("cyr", "back"), t("lat", "back"), "⬅️ Орқага", "⬅️ Orqaga", "← Orqaga"}
+        if text in _back_texts or bool(get_action(lang, screen, text)):
+            context.user_data.pop("kutilmoqda", None)
+        else:
+            import re as _re
+            if _re.match(r"^\d{2}\.\d{2}\.\d{4}$", text):
+                query_key = f"sana:{text}"
+            else:
+                query_key = f"nom:{text.strip().upper()}"
+            context.user_data.pop("kutilmoqda", None)
+            await _rasm_list_yuborish(msg, query_key, context=context)
             return
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -2958,6 +3091,56 @@ def _kg_multi_kb(fayllar, query_key: str, selected: set) -> InlineKeyboardMarkup
     return InlineKeyboardMarkup(buttons)
 
 
+def _rasm_multi_kb(fayllar, query_key: str, selected: set) -> InlineKeyboardMarkup:
+    """YOLDA konteynerlar ro'yxati \u2014 GURUHGA RASM yuborish uchun checkbox
+    klaviaturasi. KELDI/statusga tegmaydi; tanlanganlar albom qilib yuboriladi.
+    2026-07-29."""
+    buttons = []
+    for f in fayllar:
+        iso    = f.stem.rsplit("_", 1)[0]
+        sana_f = f.stem.rsplit("_", 1)[-1]
+        mark   = "\u2705" if f.name in selected else "\u2b1c"
+        lbl    = f"{mark} {iso} ({sana_f})"
+        cb     = f"rasm_tgl:{f.name}|{query_key}"
+        buttons.append([InlineKeyboardButton(lbl, callback_data=cb)])
+    n = len(selected)
+    buttons.append([InlineKeyboardButton(
+        f"\U0001f5bc Tanlanganlarni guruhga yuborish ({n} ta)" if n
+        else "\U0001f5bc Tanlanganlarni guruhga yuborish",
+        callback_data=f"kg_rasm_confirm:{query_key}"
+    )])
+    buttons.append([InlineKeyboardButton("\u274c Bekor qilish", callback_data="rasm_cancel_multi")])
+    return InlineKeyboardMarkup(buttons)
+
+
+async def _rasm_list_yuborish(msg, query_key: str, context=None):
+    """query_key ("sana:..." yoki "nom:...") bo'yicha YOLDA konteynerlarni
+    checkbox ro'yxati sifatida ko'rsatadi \u2014 tanlanganlarga rasm chizib albom
+    qilib guruhga yuborish uchun. 2026-07-29."""
+    tag = query_key.split(":", 1)[1] if ":" in query_key else query_key
+    fayllar = _yolda_fayllar_topish(query_key)
+    if not fayllar:
+        await msg.reply_text(
+            f"\u274c *{tag}* bo'yicha yo'ldagi konteyner topilmadi.",
+            parse_mode="Markdown",
+        )
+        if context is not None:
+            context.user_data["screen"] = "keldi_menu"
+            await kont_holat_royhat(msg, context)
+        return
+    if context is not None:
+        context.user_data["rasm_multi_sel"] = {"query_key": query_key, "selected": set()}
+    sent = await msg.reply_text(
+        f"\U0001f5bc *{tag}* \u2014 yo'ldagi konteynerlar:\n\n"
+        "_Guruhga rasm yuboriladigan konteynerlarni belgilang, "
+        "so'ng pastdagi tugmani bosing:_",
+        parse_mode="Markdown",
+        reply_markup=_rasm_multi_kb(fayllar, query_key, set()),
+    )
+    if context is not None:
+        aktiv_inline_belgila(context, sent)
+
+
 def _qt_multi_kb(fayllar, query_key: str, selected: set) -> InlineKeyboardMarkup:
     """KELDI konteynerlar ro'yxati \u2014 QAYTARISH uchun checkbox klaviaturasi."""
     buttons = []
@@ -3056,6 +3239,9 @@ async def kont_holat_royhat(msg, context, change_kb: bool = False):
     yolda, _ = _kont_parse(XITOY_PARSED_DIR)
     n_y = len(yolda)
     buttons = [
+        [InlineKeyboardButton(
+            "\U0001f5bc Guruhga rasm yuborish",
+            callback_data="kont_rasm_ask")],
         [InlineKeyboardButton(
             "\U0001f69a Yo'lda \u2192 \u2705 Keldiga o'zgartirish",
             callback_data="kont_keldi_ask")],
