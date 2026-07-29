@@ -186,6 +186,14 @@ EXTRA_HDRS       = {EXTRA_COL_ZAKAZ: "🇨🇳 Ostatka", EXTRA_COL_YOLDA: "Yo'ld
                     EXTRA_COL_QOLDIQ: "Qoldiq", EXTRA_COL_MINZ: "Min Zaxira"}
 EXTRA_WIDTHS     = {EXTRA_COL_ZAKAZ: 14, EXTRA_COL_YOLDA: 12,
                     EXTRA_COL_QOLDIQ: 12, EXTRA_COL_MINZ: 14}
+# 2026-07-29: C ustuni endi ANCHOR formula (Min Zaxira o'zgarsa jonli
+# hisoblaydi). Formula qiymati faqat fayl Excel/LibreOffice'da OCHIB
+# SAQLANGANDA keshlanadi — foydalanuvchi HECH ochmasdan qayta yuklasa,
+# openpyxl formula qiymatini ko'ra olmaydi. Shu sabab har qatorning
+# STATIK (joriy min'dagi aniq) buyurtmasi shu YASHIRIN ustunga ham
+# yoziladi — services.buyurtma_tekshir() C bo'sh (None) bo'lsa shundan
+# o'qiydi (fallback). Ko'zga ko'rinmaydi (column hidden).
+COL_B0BACK       = 20   # T — yashirin statik buyurtma (fallback)
 
 # ============================================================
 # 4. PARSING
@@ -527,7 +535,10 @@ def calculate(df, kont_map: dict | None = None, kanal: str = "asosiy"):
     # Tsex — alohida mavzu (Huzayfa: hozircha tegilmasin), eski 55da qoladi.
     YANGI_BUYURTMA_HORIZON = 70
 
-    def _buyurtma(row):
+    def _sim_taklif(row, min_val: float) -> float:
+        """Berilgan min_val uchun zanjir_sim buyurtma taklifi. Backend
+        logika O'ZGARMAGAN — bu faqat calculate ichida turli min qiymatida
+        chaqirish uchun parametrlangan (B0 va naklon hisoblash uchun)."""
         konts = kont_map.get(str(row["tovar"]).strip())
         if konts is None:
             # kont_map berilmagan/tovar topilmagan holat uchun (masalan
@@ -538,18 +549,45 @@ def calculate(df, kont_map: dict | None = None, kanal: str = "asosiy"):
 
         kunlik_override  = None
         horizon_override = None
-        if kanal == "sex" and row["min_zaxira"] > 0:
-            kunlik_override = row["min_zaxira"] / TSEX_ESKI_DIVISOR
+        if kanal == "sex" and min_val > 0:
+            kunlik_override = min_val / TSEX_ESKI_DIVISOR
         else:
             horizon_override = YANGI_BUYURTMA_HORIZON
 
-        sim = zanjir_sim(row["qoldiq"], row["min_zaxira"], konts,
+        sim = zanjir_sim(row["qoldiq"], min_val, konts,
                          yaxlitla=not _list_yaxlitlanmasmi(row["tovar"]),
                          kunlik_override=kunlik_override,
                          horizon_override=horizon_override)
         return sim["taklif"]
 
+    def _buyurtma(row):
+        return _sim_taklif(row, row["min_zaxira"])
+
+    # 2026-07-29 (Huzayfa: "Min Zaxirani Excelda o'zgartirsam Buyurtma o'zi,
+    # shu zahoti o'zgarsin — C ustuni"): C ustuni endi ANCHOR (langar) formula
+    # bo'ladi. zanjir_sim (backend) UMUMAN TEGILMAYDI — bu yerda faqat har
+    # qatorning LOKAL nakloni (yuqoriga va pastga alohida — egri chiziq
+    # bukilishini yaxshiroq ushlaydi) hisoblanadi. write_product() shu B0
+    # (joriy min'dagi aniq buyurtma) + naklon bilan Excel formulasini quradi:
+    # joriy min'da AYNAN B0, min o'zgarsa naklon bilan jonli siljiydi.
+    # SABAB (2026-07-23 dagi 5x xato takrorlanmasin): oddiy formula qator
+    # ichidagi konteyner SANALARINI bilmaydi — langar joriy nuqtada aniqlikni
+    # kafolatlaydi. Batafsil: kamomat_engine.zanjir_sim + demo.
+    def _naklonlar(row):
+        h0 = float(row["min_zaxira"])
+        b0 = float(_sim_taklif(row, h0))
+        if h0 <= 0:
+            return (0.0, 0.0)
+        d  = max(h0 * 0.10, 100.0)
+        up = (_sim_taklif(row, h0 + d) - b0) / d
+        lo = h0 - d
+        dn = (b0 - _sim_taklif(row, lo)) / d if lo > 0 else up
+        return (round(up, 4), round(dn, 4))
+
     df["buyurtma"] = df.apply(_buyurtma, axis=1).astype(int)
+    _nk = df.apply(_naklonlar, axis=1)
+    df["naklon_up"] = [x[0] for x in _nk]
+    df["naklon_dn"] = [x[1] for x in _nk]
     # 2026-07-22 (Huzayfa: "buyurtma berilmagan tovarlarni ham alohida
     # ko'rsatish kerak, ro'yxat oxirida ajratib"): ILGARI bu yerda
     # buyurtma==0 qatorlar BUTUNLAY o'chirilardi -- shu tovarlar qayerda
@@ -609,6 +647,8 @@ def set_cols(ws):
         ws.column_dimensions[get_column_letter(i)].width = width
     for col_i, width in EXTRA_WIDTHS.items():
         ws.column_dimensions[get_column_letter(col_i)].width = width
+    # 2026-07-29: yashirin fallback ustuni (statik B0) — ko'zga ko'rinmasin.
+    ws.column_dimensions[get_column_letter(COL_B0BACK)].hidden = True
 
 
 def write_category_banner(ws, row, text):
@@ -800,18 +840,36 @@ def write_product(ws, row, r, kanal: str = "asosiy") -> int:
     # "Himoyani bekor qilish" bilan istalgan payt ocha oladi).
     ch.protection = Protection(locked=False)
 
-    # C — Buyurtma: qizil bold, REAL zanjir_sim natijasi (STATIK son --
-    # 2026-07-23: JONLI FORMULA bu yerdan OLIB TASHLANDI, chunki u har
-    # konteynerning O'Z SANASINI hisobga OLMAYDI (hammasi 55-kunda bir
-    # yo'la keladi deb soddalashtiradi) va real natijadan bir necha
-    # baravar farq qilishi mumkin edi (haqiqiy voqea: Ф-51 uchun real 8600,
-    # formula 1650 ko'rsatgan). Buyurtma qarori shu ustunga -- ANIQ,
-    # backend natijasiga -- asoslanishi kerak.
-    cc = ws.cell(row=row, column=3, value=int(r["buyurtma"]))
+    # C — Buyurtma: qizil bold. 2026-07-29 (Huzayfa: "Min Zaxirani o'zgartirsam
+    # C o'zi o'zgarsin"): ANCHOR (langar) formula. Joriy Min (H{row}) da AYNAN
+    # B0 (backend zanjir_sim natijasi) chiqadi; H o'zgartirilsa shu qatorning
+    # nakloni (yuqori/past alohida) bilan jonli qayta hisoblanadi. Backend
+    # (zanjir_sim) O'ZGARMAGAN — bu faqat ko'rsatish formulasi.
+    # DIQQAT (2026-07-23 dagi 5x xatoni takrorlamaslik uchun): langar joriy
+    # nuqtada aniqlikni KAFOLATLAYDI (H0 da B0), chunki oddiy formula qator
+    # ichidagi konteyner SANALARINI bila olmaydi. Katta o'zgarishlarda
+    # (± ~30% dan tashqarida) taxminiy — chiziqli langar.
+    b0   = int(r["buyurtma"])
+    h0   = _int0(r.get("min_zaxira", 0))
+    up   = float(r.get("naklon_up", 0) or 0)
+    dn   = float(r.get("naklon_dn", 0) or 0)
+    unit = 1 if _list_yaxlitlanmasmi(r["tovar"]) else 50
+    hcel = f"H{row}"
+    if h0 > 0 and (up or dn):
+        delta   = f"IF({hcel}>={h0},({hcel}-{h0})*{up},({hcel}-{h0})*{dn})"
+        formula = f"=MAX(0,CEILING(MAX(0,{b0}+{delta}),{unit}))"
+        cc = ws.cell(row=row, column=3, value=formula)
+    else:
+        cc = ws.cell(row=row, column=3, value=b0)
     cc.font      = Font(name=FONT_NAME, bold=True, size=FONT_SZ, color=RED)
     cc.fill      = fill
     cc.border    = brd
     cc.alignment = _align(center=True)
+
+    # Yashirin fallback: statik B0 (joriy min'dagi aniq buyurtma). Fayl
+    # Excelda ochilmasdan qayta yuklansa, C formulasining keshlangan qiymati
+    # bo'lmaydi -> services.buyurtma_tekshir() shu ustundan o'qiydi.
+    cb0 = ws.cell(row=row, column=COL_B0BACK, value=b0)
 
     return row + 1
 

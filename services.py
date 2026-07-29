@@ -1407,10 +1407,15 @@ def buyurtma_tekshir(fayl_bytes: bytes, kanal: str = "asosiy"):
     Generate_Asosiy_order.build() formati: "Tovar nomi" | "Uzunlik" | "Buyurtma"
     """
     import openpyxl
-    from Generate_Asosiy_order import strip_length, get_length
+    from Generate_Asosiy_order import strip_length, get_length, COL_B0BACK
 
     try:
-        wb = openpyxl.load_workbook(BytesIO(fayl_bytes))
+        # 2026-07-29: C (Buyurtma) ustuni endi ANCHOR formula — Min Zaxira
+        # o'zgarsa jonli hisoblaydi. data_only=True: foydalanuvchi Excelda
+        # ochib/saqlaganda formula KESHLANGAN qiymatini o'qiymiz (ya'ni uning
+        # tahririga mos son). Fayl umuman ochilmagan bo'lsa C=None keladi ->
+        # pastda yashirin statik B0 (COL_B0BACK) ustunidan olinadi.
+        wb = openpyxl.load_workbook(BytesIO(fayl_bytes), data_only=True)
     except Exception as e:
         return False, f"Faylni ochishda xato: {type(e).__name__}", None
 
@@ -1471,6 +1476,10 @@ def buyurtma_tekshir(fayl_bytes: bytes, kanal: str = "asosiy"):
             uzun_val = ws.cell(row=r, column=2).value
             uzun = "" if uzun_val is None else str(uzun_val).strip()
             buy_val = ws.cell(row=r, column=3).value
+            if buy_val in (None, ""):
+                # C anchor formulasining keshi yo'q (fayl Excelda ochilmagan)
+                # -> yashirin statik B0 fallback ustunidan o'qiymiz.
+                buy_val = ws.cell(row=r, column=COL_B0BACK).value
             if buy_val in (None, ""):
                 continue
             # Avvalo cell comment dan asl inventar nomini o'qiymiz.
