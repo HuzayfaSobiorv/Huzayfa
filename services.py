@@ -1272,6 +1272,13 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
                 for col in ("qoldiq", "yoldagi"):
                     if col in grp.columns:
                         bosh[col] = grp[col].sum()
+                # 2026-07-29: birlashtirilgan qatorda C jonli formulasi
+                # ishlatilmaydi (interpolatsiya nuqtalarini turli min-panjarali
+                # tovarlar bo'yicha qo'shish chalkash) — bp tozalanadi, C statik
+                # (yig'ilgan buyurtma) bo'ladi.
+                if "bp_x" in bosh.index:
+                    bosh["bp_x"] = []
+                    bosh["bp_y"] = []
                 merge_nomlar[str(bosh["tovar"]).strip()] = [
                     str(t).strip() for t in grp["tovar"]
                 ]
@@ -1305,8 +1312,8 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
     # 2. Tasdiqlangan buyurtma ayiriladi (allaqachon buyurilgan, lekin yo'lda emas)
     #    Agar tasdiqlangan hamma yetishmovchilikni qoplasa → buyurtma = 0 → Excel bo'sh
     tasdiq = buyurtma_yuklash(kanal)
+    tasdiq_map = {}
     if tasdiq and tasdiq.get("buyurtmalar") and not df_calc.empty:
-        tasdiq_map = {}
         for item in tasdiq["buyurtmalar"]:
             tov = str(item.get("tovar", "")).strip()
             miq = float(item.get("miqdor", 0))
@@ -1324,6 +1331,25 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
                 f"[{kanal}] tasdiqlangan ayirish: {oldin} → {keyin} ta "
                 f"({oldin-keyin} ta o'chirildi, {len(tasdiq_map)} ta tasdiqlangan)"
             )
+
+    # 2026-07-29: C ustuni INTERPOLATSIYA nuqtalari (bp_y) ham xuddi "buyurtma"
+    # kabi Xitoy_K + tasdiqlangan miqdorga kamaytirilishi SHART — aks holda
+    # jonli C formulasi bu ayirishlarni hisobga olmay, Min o'zgarganda haqiqiydan
+    # KATTA son ko'rsatardi (buyurtma_logika.md 2.3). Ayirma har qator uchun
+    # KONSTANTA (min'ga bog'liq emas), shuning uchun har bir nuqtadan ayiriladi
+    # (0 dan past bo'lmasin). H0 (joriy min) nuqtasi shundan keyin AYNAN
+    # yakuniy "buyurtma" ga teng bo'ladi — yashirin fallback bilan mos.
+    if "bp_y" in df_calc.columns and not df_calc.empty:
+        def _ayirma(tovar) -> int:
+            s = 0.0
+            if xitoy_ostatka:
+                s += sum(float(xitoy_ostatka.get(n, 0)) for n in _nomlar(tovar))
+            s += sum(tasdiq_map.get(n, 0) for n in _nomlar(tovar))
+            return int(s)
+        df_calc["bp_y"] = df_calc.apply(
+            lambda r: [max(0, int(y) - _ayirma(r["tovar"])) for y in (r["bp_y"] or [])],
+            axis=1,
+        )
 
     # ── Mayda truba/profil filtri (2026-07-14, Huzayfa qoidasi) ─────────
     # Ф<51 truba va <50х50 profil buyurtmasi MAYDA_LIMIT(200) dan oshmasa
@@ -1382,6 +1408,11 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
     ].copy()
     if not nobuy_df.empty:
         nobuy_df["buyurtma"] = 0
+        # 2026-07-29: "buyurtma berilmagan" bo'limida C statik 0 (jonli emas) —
+        # bp tozalanadi (write_product h0>0 va bp bo'sh bo'lsa statik yozadi).
+        if "bp_x" in nobuy_df.columns:
+            nobuy_df["bp_x"] = [[] for _ in range(len(nobuy_df))]
+            nobuy_df["bp_y"] = [[] for _ in range(len(nobuy_df))]
         nobuy_df["zakaz"] = nobuy_df["tovar"].apply(
             lambda t: sum(xitoy_ostatka.get(n, 0) for n in _nomlar(t)) if xitoy_ostatka else 0
         )

@@ -777,12 +777,14 @@ def excel_taklif_formula(row: int, yaxlitla: bool, kanal: str = "asosiy") -> str
             f"0))")
 
 
-def _interp_formula(xs, ys, hcell: str, unit: int) -> str:
+def _interp_formula(xs, ys, hcell: str) -> str:
     """xs (o'suvchi Min nuqtalari) va ys (mos ANIQ buyurtmalar) orasini
     chiziqli ulaydigan Excel formulasi. hcell — Min Zaxira katagi (mas. "H5").
     Har nuqtada AYNAN aniq (ys), oraliqda interpolatsiya; nuqtalar tashqarisida
-    chekka segment nakloni bilan davom etadi. MROUND — unit (50 yoki 1) ga
-    yaxlitlaydi. 2026-07-29."""
+    chekka segment nakloni bilan davom etadi. Butun songa yaxlitlaydi
+    (ROUND,0) — ys nuqtalari Xitoy_K/tasdiqlangan ayirilgach 50-karrali
+    bo'lmasligi mumkin, shuning uchun yashirin fallback int(buyurtma) bilan
+    H0 da AYNAN mos bo'lishi uchun butun songa yaxlitlanadi. 2026-07-29."""
     n = len(xs)
     def seg(i: int) -> str:
         # y_i + (H - x_i) * (y_{i+1} - y_i) / (x_{i+1} - x_i)
@@ -792,7 +794,7 @@ def _interp_formula(xs, ys, hcell: str, unit: int) -> str:
     expr = seg(n - 2)                       # oxirgi segment (H > x[oxirgi] uchun ham)
     for i in range(n - 3, -1, -1):
         expr = f"IF({hcell}<={xs[i + 1]},{seg(i)},{expr})"
-    return f"=MAX(0,MROUND(MAX(0,{expr}),{unit}))"
+    return f"=MAX(0,ROUND(MAX(0,{expr}),0))"
 
 
 def write_product(ws, row, r, kanal: str = "asosiy") -> int:
@@ -879,10 +881,9 @@ def write_product(ws, row, r, kanal: str = "asosiy") -> int:
     h0   = _int0(r.get("min_zaxira", 0))
     xs   = list(r.get("bp_x") or [])
     ys   = list(r.get("bp_y") or [])
-    unit = 1 if _list_yaxlitlanmasmi(r["tovar"]) else 50
     hcel = f"H{row}"
     if h0 > 0 and len(xs) >= 2 and len(ys) == len(xs):
-        cc = ws.cell(row=row, column=3, value=_interp_formula(xs, ys, hcel, unit))
+        cc = ws.cell(row=row, column=3, value=_interp_formula(xs, ys, hcel))
     else:
         cc = ws.cell(row=row, column=3, value=b0)
     cc.font      = Font(name=FONT_NAME, bold=True, size=FONT_SZ, color=RED)
@@ -907,9 +908,12 @@ def write_nobuy_section(ws, row, nobuy_df, kanal: str = "asosiy") -> int:
     deb hisoblangan, YOKI Xitoy ostatkasi/tasdiqlangan buyurtma yoki mayda
     limit tufayli 0ga tushgan) tovarlar -- asosiy buyurtma ro'yxatidan
     KEYIN, aniq ajratilgan alohida bo'lim sifatida bir-in ketin yoziladi.
-    Ustunlar bir xil (E/F/G/H, Buyurtma(C) ham doimgidek jonli formula --
-    Min Zaxirani qo'lda o'zgartirib sinab ko'rish mumkin, xuddi yuqoridagi
-    qatorlar kabi).
+    Ustunlar bir xil (E/F/G/H). Buyurtma(C) bu bo'limda STATIK 0 (jonli
+    formula EMAS) -- 2026-07-29: bu tovarlar Xitoy_K/tasdiqlangan/mayda-limit
+    sabab 0 ga tushgan bo'lishi mumkin, interpolatsiya nuqtalari (bp_y) esa
+    xom zanjir_sim; nobuy uchun ayirishlarni to'liq qo'llash chalkash, shu
+    sabab bu bo'limda C jonli emas. Kerak bo'lsa Min_Zaxira.xlsx da min'ni
+    oshirib "Buyurtma yig'ish" qayta bosiladi.
     """
     ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NCOLS)
     c = ws.cell(row=row, column=1,
