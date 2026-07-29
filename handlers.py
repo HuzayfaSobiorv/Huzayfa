@@ -2951,27 +2951,42 @@ def _pm2_qayta_ishga_tushir() -> bool:
 def _yolda_fayllar_topish(query_key: str) -> list:
     """query_key ("sana:..." yoki "nom:...") bo'yicha YOLDA (hali kelmagan)
     konteyner fayllarini topib, sorted list qaytaradi. kg_tgl va
-    _kont_list_yuborish (is_keldi=True) uchun umumiy logika."""
+    _kont_list_yuborish (is_keldi=True) uchun umumiy logika.
+
+    2026-07-29 (bug topildi va tuzatildi, Huzayfa: "konteyner holatini
+    o'zgartirishdagi buglarni qidir"): "nom:" qidiruvi ILGARI xom
+    `f.stem.upper().startswith(nom)` bilan solishtirardi — "tezkor" ("F_"
+    prefiksli) konteynerlar uchun stem "F_aksessuar02_..." bilan
+    boshlanadi, foydalanuvchi esa Power BI'dagi haqiqiy nomni ("aksессuar02")
+    kiritadi — solishtiruv HECH QACHON mos kelmasdi, natijada bunday
+    konteyner nom bo'yicha qidirilganda "topilmadi" chiqardi (aynan
+    2026-07-15'dagi "F_ prefiksi hisobga olinmagan" bug klassi, endi
+    qidiruv qatlamida). Endi `_iso_from_stem()` bilan (F_ prefiksi
+    tashlab) solishtiriladi — sana bo'yicha qidiruv (`sana:`) bunga
+    umuman tegishli emas edi, u avvaldan to'g'ri ishlagan."""
     if query_key.startswith("sana:"):
         sana = query_key[5:]
         return sorted(XITOY_PARSED_DIR.glob(f"*_{sana}.xlsx"))
     else:
         nom = query_key[4:].upper()
         return sorted(f for f in XITOY_PARSED_DIR.glob("*.xlsx")
-                      if not f.stem.endswith("_D") and f.stem.upper().startswith(nom))
+                      if not f.stem.endswith("_D")
+                      and _iso_from_stem(f.stem).upper().startswith(nom))
 
 
 def _keldi_fayllar_topish(query_key: str) -> list:
     """query_key bo'yicha KELDI bo'lgan (allaqachon kelgan) konteyner
     fayllarini topib, sorted list qaytaradi. qt_tgl va
-    _kont_list_yuborish (is_keldi=False) uchun umumiy logika."""
+    _kont_list_yuborish (is_keldi=False) uchun umumiy logika.
+    2026-07-29: xuddi _yolda_fayllar_topish'dagi kabi, "nom:" qidiruvi
+    endi F_ prefiksini tashlab (_iso_from_stem) solishtiradi."""
     if query_key.startswith("sana:"):
         sana = query_key[5:]
         return sorted(XITOY_PARSED_DIR.glob(f"*_{sana}_D.xlsx"))
     else:
         nom = query_key[4:].upper()
         return sorted(f for f in XITOY_PARSED_DIR.glob("*_D.xlsx")
-                      if f.stem[:-2].upper().startswith(nom))
+                      if _iso_from_stem(f.stem[:-2]).upper().startswith(nom))
 
 
 async def _kont_list_yuborish(msg, query_key: str, is_keldi: bool,
@@ -3033,7 +3048,10 @@ async def _kont_list_yuborish(msg, query_key: str, is_keldi: bool,
     buttons = []
     for f in fayllar:
         if is_keldi:
-            iso    = f.stem.rsplit("_", 1)[0]
+            # 2026-07-29 (bug tuzatildi): _iso_from_stem() — F_ (tezkor)
+            # prefiksi bo'lsa tashlaydi, aks holda "F_aksessuar02" kabi
+            # noto'g'ri nom ko'rsatilardi (qarang _yolda_fayllar_topish izohi).
+            iso    = _iso_from_stem(f.stem)
             sana_f = f.stem.rsplit("_", 1)[-1]
             lbl    = f"\U0001f6a2 {iso} ({sana_f})"
             cb     = f"kont_bir_keldi:{f.name}|{query_key}"
@@ -3048,7 +3066,7 @@ async def _kont_list_yuborish(msg, query_key: str, is_keldi: bool,
             continue
         else:
             stem_no_d = f.stem[:-2]
-            iso    = stem_no_d.rsplit("_", 1)[0]
+            iso    = _iso_from_stem(stem_no_d)
             sana_f = stem_no_d.rsplit("_", 1)[-1]
             lbl    = f"\u2705 {iso} ({sana_f})"
             cb     = f"kont_bir_qayt:{f.name}|{query_key}"
@@ -3070,7 +3088,7 @@ def _kg_multi_kb(fayllar, query_key: str, selected: set) -> InlineKeyboardMarkup
     """YOLDA konteynerlar ro'yxati \u2014 checkbox (belgilash) klaviaturasi."""
     buttons = []
     for f in fayllar:
-        iso    = f.stem.rsplit("_", 1)[0]
+        iso    = _iso_from_stem(f.stem)   # 2026-07-29: F_ prefiksi tashlanadi
         sana_f = f.stem.rsplit("_", 1)[-1]
         mark   = "\u2705" if f.name in selected else "\u2b1c"
         lbl    = f"{mark} {iso} ({sana_f})"
@@ -3097,7 +3115,7 @@ def _rasm_multi_kb(fayllar, query_key: str, selected: set) -> InlineKeyboardMark
     2026-07-29."""
     buttons = []
     for f in fayllar:
-        iso    = f.stem.rsplit("_", 1)[0]
+        iso    = _iso_from_stem(f.stem)   # 2026-07-29: F_ prefiksi tashlanadi
         sana_f = f.stem.rsplit("_", 1)[-1]
         mark   = "\u2705" if f.name in selected else "\u2b1c"
         lbl    = f"{mark} {iso} ({sana_f})"
@@ -3146,7 +3164,7 @@ def _qt_multi_kb(fayllar, query_key: str, selected: set) -> InlineKeyboardMarkup
     buttons = []
     for f in fayllar:
         stem_no_d = f.stem[:-2]
-        iso    = stem_no_d.rsplit("_", 1)[0]
+        iso    = _iso_from_stem(stem_no_d)   # 2026-07-29: F_ prefiksi tashlanadi
         sana_f = stem_no_d.rsplit("_", 1)[-1]
         mark   = "\u2705" if f.name in selected else "\u2b1c"
         lbl    = f"{mark} {iso} ({sana_f})"
