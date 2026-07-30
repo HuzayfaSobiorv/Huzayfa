@@ -2462,11 +2462,18 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             preview += "\n\n✅ Barcha tovar nomlari to'g'ri tanildi."
-        await msg.reply_text(
+        sent = await msg.reply_text(
             preview,
             parse_mode="Markdown",
             reply_markup=zakaz_tasdiq_ikb(lang, kanal),
         )
+        # 2026-07-30 (Huzayfa: "tasdiqlash tugmasi bosilganda tasdiqlanmayapti"):
+        # aktiv_inline_belgila BU YERDA chaqirilmagan edi -- global stale-tugma
+        # tekshiruvi (callback_handler, ~595-qator) shu sababli "zakaz_ok"/
+        # "zakaz_no" bosilganda uni ESKIRGAN deb hisoblab, jimgina bloklab
+        # kelgan (faqat show_alert popup, chatda iz qolmaydi). Konteyner
+        # holati buglaridagi bilan AYNAN bir xil sabab.
+        aktiv_inline_belgila(context, sent)
         return
 
     # ── Yo'lga konteyner qo'shish: 1/2 — Труба/Профиль装箱单 ────────────────────
