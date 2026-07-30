@@ -1538,14 +1538,26 @@ def buyurtma_tekshir(fayl_bytes: bytes, kanal: str = "asosiy"):
     dim_lookup  = {}   # yangi, tartibdan mustaqil o'lcham-kaliti
     norm_lookup = {}   # umumiy normalize_product_name fallback (aksessuar va h.k.)
 
-    draft = draft_yuklash(kanal)
+    # 2026-07-30 (Huzayfa savoli: "kunlik qoldiqda ham yo'qmikan?"): draft_{kanal}.json
+    # faqat SHU KUNGI hisoblangan buyurtmaga (buyurtma>0, mayda-filtrdan o'tgan)
+    # kirgan tovarlarni saqlaydi — qoldig'i yetarli (buyurtma=0) yoki mayda-limitdan
+    # past bo'lgan tovarlar Excelga chiqmagani uchun draft'da HAM yo'q bo'lib chiqadi,
+    # garchi Min_Zaxira'da haqiqatda mavjud bo'lsa ham. Tasdiqlangan buyurtma esa
+    # ADMIN tomonidan o'zgartirilgan/qo'shilgan bo'lishi mumkin — shuning uchun
+    # lookup manbai FAQAT draft emas, balki draft + TO'LIQ inventar (Min_Zaxira)
+    # birlashmasi bo'lishi SHART. Tasdiqlandi: (Кора) Пр. 25х25/40х40/50х50 ст 0,9
+    # va Пр. 20х20/40х20 ст 0,7 (5,6/5,8 м) kabi item'lar aynan shu sabab
+    # ("tanilmagan" chiqishi) — Min_Zaxira'da bor, draft'da yo'q edi.
+    draft = draft_yuklash(kanal) or []
+    inv = inventar_olish(kanal)
+    inv_nomlari = list(inv["Товар"].dropna()) if not inv.empty and "Товар" in inv.columns else []
     manba_nomlari = []
-    if draft:
-        manba_nomlari = [str(x).strip() for x in draft]
-    else:
-        inv = inventar_olish(kanal)
-        if not inv.empty and "Товар" in inv.columns:
-            manba_nomlari = [str(x).strip() for x in inv["Товар"].dropna()]
+    _seen = set()
+    for x in list(draft) + inv_nomlari:
+        s = str(x).strip()
+        if s and s not in _seen:
+            _seen.add(s)
+            manba_nomlari.append(s)
 
     for full_name in manba_nomlari:
         excel_nomi = strip_length(_xitoy_nomi(full_name)).strip()
