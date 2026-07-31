@@ -2317,7 +2317,6 @@ async def _kont_tp_list_yakunlash(msg, context: ContextTypes.DEFAULT_TYPE, lang:
     from konteyner_qosh import (
         xitoy_yuklar_oqi, draft_excel_yarat, qisqa_xulosa,
         iso_boyicha_yangilarini_ajrat, notanish_soni,
-        oxirgi_malum_sana, faqat_sanadan_keyingi,
     )
     try:
         yuklar = xitoy_yuklar_oqi(truba_raw, list_raw)
@@ -2326,19 +2325,21 @@ async def _kont_tp_list_yakunlash(msg, context: ContextTypes.DEFAULT_TYPE, lang:
         context.user_data.pop("kutilmoqda", None)
         return
     tarix = konteyner_tarix_olish()
-    oxirgi = oxirgi_malum_sana(XITOY_PARSED_DIR, tarix)
-    soni_oldin = len(yuklar)
-    n_qator_yuklar = [k for k in yuklar if str(k["iso"]).startswith("N-")]
-    oddiy_yuklar   = [k for k in yuklar if not str(k["iso"]).startswith("N-")]
-    oddiy_yuklar = faqat_sanadan_keyingi(oddiy_yuklar, oxirgi)
-    yuklar = oddiy_yuklar + n_qator_yuklar
-    eskisi_soni = soni_oldin - len(yuklar)
-    if oxirgi and eskisi_soni:
-        await msg.reply_text(
-            f"ℹ️ Tizimdagi eng oxirgi ma'lum sana: {oxirgi.strftime('%d.%m.%Y')}. "
-            f"Shundan OLDINGI (eski) {eskisi_soni} ta yozuv Xitoy faylida "
-            f"topildi va o'tkazib yuborildi."
-        )
+    # 2026-07-30 (Huzayfa: "yo'lga eng oxirgi sanadan OLDIN yuklaganlarni
+    # ham qo'shish kerak bo'lmoqda, hozir qo'sha olmayapman"): ILGARI shu
+    # yerda `faqat_sanadan_keyingi()` (GLOBAL sana chegarasi) ishlatilardi —
+    # tizimdagi eng oxirgi ma'lum sanadan OLDINGI barcha "oddiy" (N- bilan
+    # boshlanmagan) yozuvlarni, ularning ISO'si hali umuman qo'shilmagan
+    # bo'lsa ham, butunlay kesib tashlardi. Bu aynan 2026-07-13da Aksessuar
+    # fayli uchun topilgan bug bilan BIR XIL sabab (pastda, "aksessuar fayl
+    # tekshiruvi" bo'limida ham xuddi shu mulohaza bilan olib tashlangan):
+    # Xitoy fayli kumulyativ bo'lgani uchun, admin hali qo'shilmagan ESKI
+    # sanali yukni qo'shmoqchi bo'lsa ham, global chegara bunga yo'l
+    # qo'ymasdi. Endi FAQAT ISO-asosidagi tekshiruv (`iso_boyicha_
+    # yangilarini_ajrat`, pastda) ishlatiladi — bu ANIQ shu ISO ilgari
+    # qo'shilganmi (fayllar/tarix orqali) yoki yo'qmi, sanasidan qat'iy
+    # nazar to'g'ri aniqlaydi, va ALLAQACHON qo'shilganlarni ham ISHONCHLI
+    # o'tkazib yuboradi (qayta qo'shilib ketmaydi).
     yangilar = iso_boyicha_yangilarini_ajrat(yuklar, XITOY_PARSED_DIR, tarix)
     if not yangilar:
         await msg.reply_text(t(lang, "kont_barchasi_bor"), parse_mode="Markdown")
@@ -2366,15 +2367,21 @@ async def _kont_tp_list_yakunlash(msg, context: ContextTypes.DEFAULT_TYPE, lang:
             f"bilan saqlanib qoladi.",
             parse_mode="Markdown",
         )
-        await msg.reply_text(
+        sent = await msg.reply_text(
             "✅ Baribir tasdiqlaysizmi?",
             reply_markup=kont_tasdiq_ikb(lang),
         )
     else:
-        await msg.reply_text(
+        sent = await msg.reply_text(
             "✅ Tasdiqlaysizmi?",
             reply_markup=kont_tasdiq_ikb(lang),
         )
+    # 2026-07-30 (Huzayfa: "yo'lga konteyner qo'shish" bilan "tasdiqlash
+    # tugmasi ishlamayapti" bugi xuddi zakaz_ok'dagi bilan bir xil sabab —
+    # aktiv_inline_belgila shu yerda YO'Q edi, shuning uchun global
+    # eskirgan-tugma tekshiruvi "kont:ha"/"kont:yoq" bosilganda jimgina
+    # bloklardi (chatda iz qoldirmaydigan alert bilan).
+    aktiv_inline_belgila(context, sent)
 
 
 async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2644,15 +2651,16 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"bilan saqlanib qoladi.",
                 parse_mode="Markdown",
             )
-            await msg.reply_text(
+            sent = await msg.reply_text(
                 "✅ Baribir tasdiqlaysizmi?",
                 reply_markup=kont_tasdiq_ikb(lang),
             )
         else:
-            await msg.reply_text(
+            sent = await msg.reply_text(
                 "✅ Tasdiqlaysizmi?",
                 reply_markup=kont_tasdiq_ikb(lang),
             )
+        aktiv_inline_belgila(context, sent)
         return
 
     # ── Xitoy / Yuklatish fayllari uchun parse ───────────────────────────────
