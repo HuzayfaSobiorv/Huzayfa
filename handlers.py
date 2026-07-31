@@ -2566,15 +2566,18 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"bilan saqlanib qoladi.",
                     parse_mode="Markdown",
                 )
-                await msg.reply_text(
+                sent = await msg.reply_text(
                     "✅ Baribir tasdiqlaysizmi?",
                     reply_markup=kont_tasdiq_ikb(lang),
                 )
             else:
-                await msg.reply_text(
+                sent = await msg.reply_text(
                     "✅ Tasdiqlaysizmi?",
                     reply_markup=kont_tasdiq_ikb(lang),
                 )
+            # 2026-07-30: Труба/Профиль/Лист yo'lidagi bilan bir xil bug —
+            # aktiv_inline_belgila shu 3-chi (Aksessuar) joyda ham yo'q edi.
+            aktiv_inline_belgila(context, sent)
             return
 
         # DIQQAT: bu yerda hali og'ir tekshirish/parslash YO'Q — faqat
