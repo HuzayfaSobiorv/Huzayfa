@@ -2874,8 +2874,26 @@ async def perexod_kunlik_tekshiruv(context: ContextTypes.DEFAULT_TYPE) -> None:
       - PEREXOD_KUN_CHEGARA kundan kam — faqat eslatma xabari.
       - PEREXOD_KUN_CHEGARA kun yoki ko'p — avtomatik KELDI (fayl _D ga
         o'zgaradi, main.py qayta ishga tushadi) + xabarda alohida ko'rsatiladi.
+
+    2026-08-04 (Huzayfa: "nega bugun keladi deydi, kelish kunidan o'tib
+    ketganku"): "Кун_Қолди"/"Кечикиш_Кун"/"Холат" (ЙЎЛДА→КЕЧИКДИ) ustunlari
+    main.py ICHIDA, main.py ISHGA TUSHGAN paytdagi "bugun"ga qarab bir
+    MARTA hisoblanadi va Excel'ga YOZIB QO'YILADI (qarang main.py:354,452,
+    766-768) — keyin ko'rish paytida QAYTA hisoblanmaydi. main.py esa FAQAT
+    konteyner amali (qo'shish/KELDI/qaytarish) yoki qo'lda "Ma'lumotlarni
+    yangilash" bosilganda ishga tushardi — agar kunlar davomida bunday amal
+    bo'lmasa (yoki barcha "rasm-pending" ro'yxati bo'sh bo'lsa, pastdagi
+    `if not pending: return` orqali BU FUNKSIYA HAM hech narsa qilmasdi),
+    "Кун_Қолди"/"Холат" necha kun bo'lsa ham ESKI qolib ketardi — aynan
+    shu sabab KH6090/GESU3532763 (Kelish 01.08.2026) 04.08.2026'da ham
+    "Bugun keladi" ko'rsatgan (bug, ATAYLAB EMAS). Endi bu job HAR KUNI
+    (soat 09:00) `pending` bo'sh bo'lsa ham SO'ZSIZ main.py'ni qayta ishga
+    tushiradi — shu bilan kesh eng ko'pi bilan ~1 kunlik eski bo'lishi
+    kafolatlanadi.
     """
     from datetime import date as _date
+
+    _main_py_ishga_tushir()
 
     pending = _rasm_pending_royxat()
     if not pending:
