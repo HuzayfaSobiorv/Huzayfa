@@ -256,7 +256,19 @@ def _parse_konteyner_fayli(file_path: str) -> list[dict]:
     if is_done:
         name = name[:-2]
 
-    parts = name.split('_')
+    # 2026-08-05 (Huzayfa: "Stullar_bilan01" nomli konteyner "Yo'ldagi
+    # yuklar"da ko'rinmadi — ANIQLANDI): ILGARI `name.split('_')` bilan
+    # konteyner_raqam=parts[0]/date_str=parts[1] olinardi — bu nom ICHIDA
+    # underscore bo'lmagan holatlar uchun ishlar edi. Lekin admin ISO/
+    # pseudo-ID sifatida o'zi "Stullar_bilan01" kabi ICHIDA "_" bor nom
+    # bergan bo'lsa, split('_') buni ["Stullar","bilan01","24.07.2026"]ga
+    # bo'lib, date_str="bilan01" (sana emas!) bo'lib qolar, sana aniqlanmay
+    # BUTUN konteyner jimgina o'tkazib yuborilardi (Excelda ham, konsolda
+    # ham ko'rinmas ogohlantirish bilan). `handlers.py::_iso_from_stem()`
+    # buni ALLAQACHON to'g'ri (`rsplit("_",1)`) qilardi — endi shu yerda
+    # ham BIR XIL, oxirgi "_" dan bo'linadi (sana doim ENG OXIRIDA keladi),
+    # nom ichida nechta "_" bo'lishidan qat'iy nazar to'g'ri ishlaydi.
+    parts = name.rsplit('_', 1)
     if len(parts) < 2:
         print(f"  ⚠️  Fayl nomi formati noto'g'ri (o'tkazib yuborildi): {filename}")
         return []
