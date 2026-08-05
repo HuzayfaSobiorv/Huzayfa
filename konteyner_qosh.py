@@ -954,7 +954,16 @@ def _parse_list_chuhuo(raw: bytes) -> dict:
     # Ustun indekslari
     hdrs = [str(c).strip() for c in sh.row_values(hdr_row)]
     mat_i  = next((i for i, h in enumerate(hdrs) if '材质' in h), 0)
-    rang_i = next((i for i, h in enumerate(hdrs) if '颜色' in h), 1)
+    # 2026-08-05 (Huzayfa: "qora listlarni oddiy matviy o'qiyapti" —
+    # 7.24_Zhuanghuo_Qingdan.xlsx): bu faylda alohida "颜色" ustuni YO'Q —
+    # rang/sirt ma'lumoti "品名" ustunida keladi ("Black 8K" kabi). Ilgari
+    # "颜色" topilmasa to'g'ridan-to'g'ri hardcoded 1-indeksga (odatda
+    # "材质", masalan "201#") tushib qolardi — rang sifatida marka kodini
+    # o'qib, hech qachon mos kelmay standart "Матовый"ga tushardi. Endi
+    # "颜色" topilmasa "品名" (mavjud bo'lsa) ustuni ishlatiladi, faqat
+    # ikkalasi ham yo'q bo'lsa eski hardcoded fallback (1) qoladi.
+    rang_i = next((i for i, h in enumerate(hdrs) if '颜色' in h),
+                  next((i for i, h in enumerate(hdrs) if '品名' in h), 1))
     gg_i   = next((i for i, h in enumerate(hdrs) if '规格' in h), 2)
     qty_i  = next((i for i, h in enumerate(hdrs) if '数量' in h), 3)
     bz_i   = next((i for i, h in enumerate(hdrs) if '备注' in h), 9)

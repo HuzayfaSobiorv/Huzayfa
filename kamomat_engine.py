@@ -393,11 +393,14 @@ def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
     IKKI QO'SHIMCHA FILTR (Huzayfa aniq talab qildi):
       1. FAQAT Труба/Профиль/Лист(+Лист рулон) kategoriyalari —
          UZILISH_XAVFI_KATEGORIYALAR.
-      2. FAQAT ABC toifasi A yoki B bo'lgan tovarlar — manba
-         Yuklama_optimal.py::abc_map_yuklash() (Minimal_zaxiralar/
-         Min_Zaxira.xlsx "ABC" ustuni, Huzayfa qo'lda tahrirlaydi —
-         konteyner yuklashda ham AYNAN shu manba ishlatiladi). ABC
-         belgilanmagan tovar "C" deb hisoblanadi va RO'YXATGA KIRMAYDI.
+      2. FAQAT ABC toifasi A bo'lgan tovarlar (2026-08-05: Huzayfa —
+         "faqat A kategoriyadagi tovarlarni olsin, ro'yxat katta bo'lib
+         kelmoqda, eng xavfli narsalarni qilishimiz kerak"; ILGARI A+B
+         edi, endi FAQAT A) — manba Yuklama_optimal.py::abc_map_yuklash()
+         (Minimal_zaxiralar/Min_Zaxira.xlsx "ABC" ustuni, Huzayfa qo'lda
+         tahrirlaydi — konteyner yuklashda ham AYNAN shu manba
+         ishlatiladi). ABC belgilanmagan tovar "C" deb hisoblanadi va
+         RO'YXATGA KIRMAYDI.
 
     "Kunlik" sarf — butun tizimda ishlatiladigan standart formula
     (min_z / KUNLAR, Tsex uchun eski /30), gorizont — Асосий/Ош 70 kun,
@@ -480,7 +483,7 @@ def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
             if not tovar:
                 continue
             abc = _abc_olish(abc_map, tovar)
-            if abc not in ("A", "B"):
+            if abc != "A":
                 continue
             qoldiq = float(row.get(qoldiq_col, 0))
             min_z  = float(row.get(minz_col, 0))
