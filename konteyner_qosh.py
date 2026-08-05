@@ -162,6 +162,34 @@ def _tuzatishdan_top(kalit: str) -> str | None:
     return _tuzatishlarni_yukla().get(kalit)
 
 
+# 2026-08-05 (Huzayfa: "0.6 listlar qatorma-qator yozilgan, umumiy emas —
+# shu bois yo'ldagi yuklarda ham bunday ko'rinadimi?"): Xitoy fayli bir xil
+# tovarni (bir xil spec/marka/rang) BIR NECHTA qatorga (har xil mashina/
+# paletka uchun) bo'lib yozadi. Bu qatorlar draft'da ham, saqlangan
+# konteyner faylida ham, oxir-oqibat "Yo'ldagi yuklar"da ham ALOHIDA-ALOHIDA
+# chiqib, ro'yxatni keraksiz uzaytirar edi. Endi HAR BIR KONTEYNER uchun bir
+# xil yakuniy tovar nomiga ega qatorlar BITTA qatorga yig'iladi (miqdor va
+# vazn qo'shiladi) — bu Труба/Профиль VA Лист ikkalasida ham, parslashning
+# ENG OXIRIDA (ya'ni tovar nomi allaqachon inventarga moslashtirilgan/
+# tuzatilgandan KEYIN) qo'llanadi, shuning uchun draft'dan tortib saqlangan
+# faylgacha VA "Yo'ldagi yuklar"gacha — HAMMA JOYDA bitta yig'ilgan qator
+# ko'rinadi.
+def _items_birlashtir(items: list[tuple]) -> list[tuple]:
+    """[(nom, miqdor, vazn_kg, raw_key), ...] — bir xil `nom`ga ega
+    qatorlarni BITTA qatorga yig'adi (miqdor/vazn qo'shiladi, birinchi
+    uchragan tartib va raw_key saqlanadi)."""
+    yigilgan: dict[str, list] = {}
+    tartib: list[str] = []
+    for nom, miqdor, vazn_kg, raw_key in items:
+        if nom not in yigilgan:
+            yigilgan[nom] = [miqdor, vazn_kg or 0.0, raw_key]
+            tartib.append(nom)
+        else:
+            yigilgan[nom][0] += miqdor
+            yigilgan[nom][1] += (vazn_kg or 0.0)
+    return [(nom, yigilgan[nom][0], yigilgan[nom][1], yigilgan[nom][2]) for nom in tartib]
+
+
 # ── Inventarga moslashtirish (Buyurtma/parsers.py bilan bir xil mexanizm) ────
 # Bu yerda o'zimiznikini emas, "Yo'lga konteyner qo'shish"dan mustaqil
 # ravishda allaqachon ishlab turgan Buyurtma-oqimidagi (parsers.py)
@@ -847,7 +875,7 @@ def _parse_truba_zhuangxiang(raw: bytes) -> dict:
 
         if iso not in result:
             result[iso] = {"sana": sana, "items": []}
-        result[iso]["items"].extend(items)
+        result[iso]["items"].extend(_items_birlashtir(items))
 
     return result
 
@@ -1081,6 +1109,8 @@ def _parse_list_chuhuo(raw: bytes) -> dict:
             vazn_kg = _item_vazn_kg(nom_final, miqdor, xitoy_kg, inv_set)
             result[iso]["items"].append((nom_final, miqdor, vazn_kg, raw_key))
 
+    for iso in result:
+        result[iso]["items"] = _items_birlashtir(result[iso]["items"])
     return result
 
 
