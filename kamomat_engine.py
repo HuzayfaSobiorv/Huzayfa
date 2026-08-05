@@ -367,16 +367,28 @@ def _nol_kutish_hisobla(qoldiq: float, kunlik: float, konteynerlar: list,
     return nol_kuni, None   # konteyner topilmadi (yo'q yoki gorizontdan tashqarida)
 
 
+UZILISH_XAVFI_FOIZ_CHEGARA = 0.70  # 2026-08-05 (Huzayfa): qoldiq/min_zaxira
+# shu chegaradan PAST (yoki teng) bo'lsa, konteyner yo'lda bor-yo'qligidan
+# qat'iy nazar "amalda tugagan" deb ro'yxatga qo'shiladi (pastga qarang).
+
+
 def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
     """
-    2026-07-27 (Huzayfa, oxirgi tuzatilgan mantiq): faqat SHU aniq
-    holatni yig'adi — tovarga YO'LDA (ma'lum, taqvimi bor) konteyner
-    BOR, LEKIN u yetib kelguncha tovar REAL 0 ga tushib qoladi (ya'ni
-    "kelajakda konteyner bor, ammo u kelguncha 0 ga tushadigan
-    tovarlar" — ANIQ shu ta'rif). Konteyner UMUMAN yo'q tovarlar
-    (boshqa muammo — "buyurtma berish kerak", bu ro'yxatga KIRMAYDI) va
-    konteyner o'z vaqtida yetib keladigan (uzilmaydigan) tovarlar ham
-    chiqarib tashlanadi.
+    2026-07-27 (Huzayfa, oxirgi tuzatilgan mantiq), 2026-08-05'da
+    KENGAYTIRILDI: ikki MUSTAQIL mezondan BIRI bajarilsa, tovar ro'yxatga
+    qo'shiladi:
+      1. **Konteyner-vaqt mezoni** (eski, o'zgarmagan): tovarga YO'LDA
+         (ma'lum, taqvimi bor) konteyner BOR, LEKIN u yetib kelguncha
+         tovar REAL 0 ga tushib qoladi.
+      2. **Foiz-chuqurlik mezoni** (2026-08-05, Huzayfa: "2000 min-1500
+         qoldiq uzilgan deyilmaydi, ammo 7500 min-1000 qoldiq katta
+         teshik — bu tugagan deyiladi"): `qoldiq / min_z <=
+         UZILISH_XAVFI_FOIZ_CHEGARA` (70%) bo'lsa — KONTEYNER yo'lda
+         bor-yo'qligidan QAT'IY NAZAR qo'shiladi. Sabab: min_zaxiradan
+         juda chuqur pasayish amalda "tugagan"ga teng, garchi son hali
+         aniq 0 bo'lmasa ham.
+    Ikkalasi ham yo'q bo'lsa (yoki min_z<=0/ABC mos kelmasa) — chiqarib
+    tashlanadi.
 
     IKKI QO'SHIMCHA FILTR (Huzayfa aniq talab qildi):
       1. FAQAT Труба/Профиль/Лист(+Лист рулон) kategoriyalari —
@@ -392,11 +404,14 @@ def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
     Цех 55 kun (Buyurtma/Kamomat bilan bir xil).
 
     Natija nol_kuni (real 0 ga tushish kuni) bo'yicha o'sish tartibida
-    (eng yaqin xavf birinchi) saralanadi.
+    saralanadi — nol_kuni aniqlanmagan (faqat foiz-mezoni bilan qo'shilgan,
+    gorizont ichida 0ga tushmaydigan) qatorlar oxirida, o'z ichida foiz
+    bo'yicha (eng chuqur teshik birinchi).
 
     Qaytaradi: [{"tovar", "kategoriya", "kanal", "kanal_nomi", "abc",
-                 "nol_kuni", "kutish_kun", "qoldiq", "min_z",
-                 "buyurtma_berilgan"}, ...]
+                 "nol_kuni" (yoki None), "kutish_kun" (yoki None),
+                 "qoldiq", "min_z", "foiz", "yolda_jami",
+                 "buyurtma_berilgan", "buyurtma_miqdor"}, ...]
     """
     try:
         inv = pd.read_excel(data_file, sheet_name="Инвентар")
@@ -451,6 +466,13 @@ def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
 
         buy     = buyurtma_yuklash_fn(kanal)
         ordered = {i["tovar"] for i in buy.get("buyurtmalar", [])} if buy else set()
+        # 2026-08-05 (Huzayfa: "byurtma ustunida agar berilgan bo'lsa soni"):
+        # shunchaki bor/yo'qligi emas, aniq buyurilgan MIQDORni ham kerak.
+        ordered_miqdor: dict = {}
+        for i in (buy.get("buyurtmalar", []) if buy else []):
+            nomi = i.get("tovar")
+            if nomi:
+                ordered_miqdor[nomi] = ordered_miqdor.get(nomi, 0) + float(i.get("miqdor", 0))
 
         _horizon = 70.0 if kanal != "sex" else float(KELISH_KUNI)
         for _, row in df.iterrows():
@@ -464,27 +486,38 @@ def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
             min_z  = float(row.get(minz_col, 0))
             if min_z <= 0:
                 continue
+            foiz   = qoldiq / min_z
             kont_l = kont_map.get(tovar, [])
-            if not kont_l:
-                continue   # konteyner UMUMAN yo'q -- bu ro'yxatning mavzusi emas
             kunlik = min_z / float(KUNLAR)
+            # nol_kuni/kutish_kun konteyner bo'lmasa ham hisoblanadi (burn-rate
+            # asosida) — konteyner-vaqt mezoni uchun, kont_l bo'sh bo'lsa ham
+            # ishlaydi (_nol_kutish_hisobla bo'sh ro'yxatni qo'llab-quvvatlaydi).
             nol_kuni, kutish_kun = _nol_kutish_hisobla(qoldiq, kunlik, kont_l, _horizon)
-            if nol_kuni is None or kutish_kun is None:
+            kont_mezoni = nol_kuni is not None and kutish_kun is not None
+            foiz_mezoni = foiz <= UZILISH_XAVFI_FOIZ_CHEGARA
+            if not (kont_mezoni or foiz_mezoni):
                 continue
+            yolda_jami = sum(m for _k, m in kont_l)   # gorizontdan qat'iy nazar — JAMI
             natija.append({
                 "tovar":            tovar,
                 "kategoriya":       str(row.get("Категория", "")),
                 "kanal":            kanal,
                 "kanal_nomi":       KANAL_NOMI[kanal],
                 "abc":              abc,
-                "nol_kuni":         int(nol_kuni),
-                "kutish_kun":       int(kutish_kun) - int(nol_kuni),
+                "nol_kuni":         int(nol_kuni) if nol_kuni is not None else None,
+                "kutish_kun":       (int(kutish_kun) - int(nol_kuni)) if kont_mezoni else None,
                 "qoldiq":           int(qoldiq),
                 "min_z":            int(min_z),
+                "foiz":             round(foiz * 100, 1),
+                "yolda_jami":       int(yolda_jami),
                 "buyurtma_berilgan": tovar in ordered,
+                "buyurtma_miqdor":  int(ordered_miqdor.get(tovar, 0)),
             })
 
-    natija.sort(key=lambda r: r["nol_kuni"])
+    natija.sort(key=lambda r: (
+        r["nol_kuni"] if r["nol_kuni"] is not None else 99999,
+        r["foiz"],
+    ))
     return natija
 
 
@@ -504,9 +537,15 @@ def uzilish_xavfi_excel(data_file: Path, lang: str, buyurtma_yuklash_fn) -> Byte
       - Ikki "kun" ustuni bor (Huzayfa ikkala misolini ham alohida
         so'ragan edi):
           "0 гача (кун)"  — necha kundan keyin tovar REAL 0 ga tushadi
-                             (0 — allaqachon shunday).
+                             (0 — allaqachon shunday). Faqat foiz-mezoni
+                             bilan qo'shilgan (gorizont ichida 0ga
+                             tushmaydigan) qatorlarda "—" ko'rinadi.
           "Кутиш (кун)"   — 0 ga tushgandan keyin ma'lum konteyner
-                             yetib kelguncha necha kun kutadi.
+                             yetib kelguncha necha kun kutadi. Konteyner
+                             yo'q/gorizontdan tashqarida bo'lsa "—".
+    2026-08-05 qo'shildi: "Йўлда_Жами" ustuni (shu tovar uchun YO'LDA
+    bo'lgan JAMI miqdor, gorizontdan qat'iy nazar) va "Буюртма_Ҳолати"
+    endi buyurilgan bo'lsa aniq MIQDORni ham ko'rsatadi.
     """
     import openpyxl
     from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
@@ -528,16 +567,17 @@ def uzilish_xavfi_excel(data_file: Path, lang: str, buyurtma_yuklash_fn) -> Byte
     ws.title = "Узилиш хавфи" if lang == "cyr" else "Uzilish xavfi"
 
     if lang == "cyr":
-        hdrs = ["№", "Товар", "Канал", "ABC", "Қолдиқ",
-                "Мин_Захира", "0 гача (кун)", "Кутиш (кун)", "Буюртма_Ҳолати"]
+        hdrs = ["№", "Товар", "Канал", "ABC", "Қолдиқ", "Мин_Захира",
+                "Йўлда_Жами", "0 гача (кун)", "Кутиш (кун)", "Буюртма_Ҳолати"]
         berildi, kutilmq, kun_suffix = "Берилди ✅", "Кутилмоқда ⏳", "кун"
     else:
-        hdrs = ["№", "Tovar", "Kanal", "ABC", "Qoldiq",
-                "Min_Zaxira", "0 gacha (kun)", "Kutish (kun)", "Buyurtma_Holati"]
+        hdrs = ["№", "Tovar", "Kanal", "ABC", "Qoldiq", "Min_Zaxira",
+                "Yolda_Jami", "0 gacha (kun)", "Kutish (kun)", "Buyurtma_Holati"]
         berildi, kutilmq, kun_suffix = "Berildi ✅", "Kutilmoqda ⏳", "kun"
     # 2026-07-27 (Huzayfa: "shrift juda kichkina, katak ham kichkina"):
     # ustun kengliklari, shrift o'lchami va qator balandligi kattalashtirildi.
-    col_w = [6, 54, 12, 7, 12, 14, 14, 14, 21]
+    # 2026-08-05: "Йўлда_Жами" ustuni qo'shildi (+1 ustun).
+    col_w = [6, 54, 12, 7, 12, 14, 12, 14, 14, 24]
     NCOL  = len(hdrs)
 
     def fill(hex_: str): return PatternFill("solid", fgColor=hex_)
@@ -584,20 +624,28 @@ def uzilish_xavfi_excel(data_file: Path, lang: str, buyurtma_yuklash_fn) -> Byte
         kat_cnt += 1
         colors   = CAT_COLORS.get(kat, CAT_COLORS_DEF)
         row_clr  = colors["a"] if kat_cnt % 2 == 1 else colors["b"]
-        holat_txt = berildi if r["buyurtma_berilgan"] else kutilmq
-        nol_txt    = f"{r['nol_kuni']} {kun_suffix}"
-        kutish_txt = f"{r['kutish_kun']} {kun_suffix}"
+        # 2026-08-05 (Huzayfa: "byurtma ustunida agar berilgan bo'lsa soni,
+        # bo'lmasa kutilmoqda"): miqdor bilan birga ko'rsatiladi.
+        if r["buyurtma_berilgan"]:
+            holat_txt = f"{berildi} ({r['buyurtma_miqdor']})"
+        else:
+            holat_txt = kutilmq
+        # foiz-mezoni bilan qo'shilgan (konteyner gorizont ichida
+        # qutqarmaydigan/yo'q) qatorlarda nol_kuni/kutish_kun aniqlanmagan
+        # bo'lishi mumkin — "—" bilan ko'rsatiladi.
+        nol_txt    = "—" if r["nol_kuni"] is None else f"{r['nol_kuni']} {kun_suffix}"
+        kutish_txt = "—" if r["kutish_kun"] is None else f"{r['kutish_kun']} {kun_suffix}"
 
         excel_row += 1
         ws.append([
-            n, r["tovar"], r["kanal_nomi"], r["abc"],
-            r["qoldiq"], r["min_z"], nol_txt, kutish_txt, holat_txt,
+            n, r["tovar"], r["kanal_nomi"], r["abc"], r["qoldiq"],
+            r["min_z"], r["yolda_jami"], nol_txt, kutish_txt, holat_txt,
         ])
         ws.row_dimensions[excel_row].height = 26
         for col_i in range(1, NCOL + 1):
             cell = ws.cell(row=excel_row, column=col_i)
             cell.fill      = fill(row_clr)
-            cell.font      = font(13, bold=(col_i in (7, 8)))
+            cell.font      = font(13, bold=(col_i in (8, 9)))
             cell.alignment = aln("center" if col_i != 2 else "left")
             cell.border    = border_all
 
