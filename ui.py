@@ -301,6 +301,25 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
             _mcol = "Мин_Захира"
         qoldiq  = float(r0.get(_qcol, 0) or 0)
         min_z   = float(r0.get(_mcol, 0) or 0)
+
+        # 2026-08-04 (Huzayfa: "Asosiyniki 0-yu Tsexniki 0 bo'lmasa, 'sotuvdan
+        # chiqarilgan' deyilmasin — u mavjud, shunchaki Tsexniki tovar"):
+        # min_z=0 BO'LGANDA, pastda "sotuvdan chiqarib yuborilmoqda" deyishdan
+        # OLDIN, shu tovarning BOSHQA kanallardagi захирasini ham tekshiramiz.
+        # Agar biror boshqa kanalda захира > 0 bo'lsa — bu tovar UMUMAN
+        # chiqarilmagan, faqat SHU kanalga tegishli emas (masalan Tsex tovari).
+        _boshqa_kanallar = {
+            "asosiy": [("sex", "Цех_Захира"), ("osh", "Ош_Захира")],
+            "osh":    [("sex", "Цех_Захира"), ("asosiy", "Асосий_Захира")],
+            "sex":    [("asosiy", "Асосий_Захира"), ("osh", "Ош_Захира")],
+        }.get(kanal, [])
+        _kanal_nom = {"asosiy": "Асосий", "sex": "Цех", "osh": "Ош"}
+        boshqa_faol = []
+        for _bk, _bcol in _boshqa_kanallar:
+            if _bcol in inv.columns:
+                _bval = float(r0.get(_bcol, 0) or 0)
+                if _bval > 0:
+                    boshqa_faol.append(_kanal_nom.get(_bk, _bk))
         yolda_j = float(r0.get("Йўлда_Жами", 0) or 0)
         holat   = str(r0.get("Холат", ""))
         kont_list, kont_rows = [], []
@@ -367,7 +386,7 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
                 row = fq.get(key) or {}
                 filial_nomi, filial_dona = f, row.get(f, 0)
 
-        return holat, qoldiq, min_z, yolda_j, sim, kont_list, kont_rows, filial_nomi, filial_dona
+        return holat, qoldiq, min_z, yolda_j, sim, kont_list, kont_rows, filial_nomi, filial_dona, boshqa_faol
 
     try:
         result = await loop.run_in_executor(None, _data_olish)
@@ -379,7 +398,7 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
         await msg.reply_text(f"❌ Topilmadi: {tovar}")
         return
 
-    holat, qoldiq, min_z, yolda_j, sim, kont_list, kont_rows, filial_nomi, filial_dona = result
+    holat, qoldiq, min_z, yolda_j, sim, kont_list, kont_rows, filial_nomi, filial_dona, boshqa_faol = result
 
     # 2026-07-18 (Huzayfa, qayta ishlandi — eski 2026-07-16 qoida faqat
     # aksessuarlar uchun edi):
@@ -393,6 +412,19 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
     #     5,8 variantidan "bahra olsin").
     if min_z <= 0:
         import re as _re
+        # 2026-08-04 (Huzayfa): min_z=0 bo'lsa-yu, BOSHQA kanal(lar)da shu
+        # tovarning захираси > 0 bo'lsa — bu tovar sotuvdan CHIQARILMAGAN,
+        # faqat shu kanalga tegishli emas (masalan Tsex tovari). "Sotuvdan
+        # chiqarilgan/aksiya" degan noto'g'ri xabar o'rniga aniq tushuntirish.
+        if boshqa_faol:
+            await msg.reply_text(
+                f"🏷 *{tovar}*\n\n"
+                f"Bu tovar sotuvdan chiqarilmagan — u mavjud, lekin "
+                f"{' va '.join(boshqa_faol)} kanali(lari) uchun (u yerda "
+                f"захира bor). Shu kanalda kerak emas, xolos.",
+                parse_mode="Markdown",
+            )
+            return
         _tpl = bool(_re.match(r'^(\([^)]*\)\s*)?(Ф-|Пр\s*\.|Лист)',
                               str(tovar).strip(), _re.I))
         if not _tpl:
