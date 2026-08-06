@@ -1107,7 +1107,19 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data.startswith("kg_tgl:"):
         payload = query.data[len("kg_tgl:"):]
-        fname, _, mk_query_key = payload.partition("|")
+        # 2026-08-06 (Huzayfa: "NORAQAM_..." pseudo-ID nomi bilan qidirishda
+        # callback_data 64-bayt chegarasidan chiqib ketib xato berardi —
+        # qarang _kont_list_yuborish'dagi batafsil izoh): endi to'liq fayl
+        # nomi EMAS, uning `fayllar` ro'yxatidagi INDEKSI kodlanadi — bu
+        # har doim qisqa (1-2 raqam), fayl nomi qanchalik uzun bo'lishidan
+        # qat'iy nazar. Haqiqiy fname shu indeks orqali pastda tiklanadi.
+        idx_s, _, mk_query_key = payload.partition("|")
+        fayllar = _yolda_fayllar_topish(mk_query_key)
+        try:
+            fname = fayllar[int(idx_s)].name
+        except (ValueError, IndexError):
+            await query.answer("Bu so'rov eskirgan, qayta urinib ko'ring.", show_alert=True)
+            return
         sel_data = context.user_data.get("kg_multi_sel")
         if not sel_data or sel_data.get("query_key") != mk_query_key:
             sel_data = {"query_key": mk_query_key, "selected": set()}
@@ -1117,7 +1129,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             selected.add(fname)
         context.user_data["kg_multi_sel"] = {"query_key": mk_query_key, "selected": selected}
-        fayllar = _yolda_fayllar_topish(mk_query_key)
         try:
             await query.edit_message_reply_markup(
                 reply_markup=_kg_multi_kb(fayllar, mk_query_key, selected)
@@ -1209,7 +1220,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Guruhga rasm yuborish (albom) — checkbox belgilash/tasdiqlash ─────────
     elif query.data.startswith("rasm_tgl:"):
         payload = query.data[len("rasm_tgl:"):]
-        fname, _, mk_query_key = payload.partition("|")
+        # 2026-08-06: fname emas, indeks — qarang kg_tgl handleridagi izoh
+        # (callback_data 64-bayt chegarasi, uzun pseudo-ID nomlar bilan).
+        idx_s, _, mk_query_key = payload.partition("|")
+        fayllar = _yolda_fayllar_topish(mk_query_key)
+        try:
+            fname = fayllar[int(idx_s)].name
+        except (ValueError, IndexError):
+            await query.answer("Bu so'rov eskirgan, qayta urinib ko'ring.", show_alert=True)
+            return
         sel_data = context.user_data.get("rasm_multi_sel")
         if not sel_data or sel_data.get("query_key") != mk_query_key:
             sel_data = {"query_key": mk_query_key, "selected": set()}
@@ -1219,7 +1238,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             selected.add(fname)
         context.user_data["rasm_multi_sel"] = {"query_key": mk_query_key, "selected": selected}
-        fayllar = _yolda_fayllar_topish(mk_query_key)
         try:
             await query.edit_message_reply_markup(
                 reply_markup=_rasm_multi_kb(fayllar, mk_query_key, selected)
@@ -1307,7 +1325,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data.startswith("qt_tgl:"):
         payload = query.data[len("qt_tgl:"):]
-        fname, _, mk_query_key = payload.partition("|")
+        # 2026-08-06: fname emas, indeks — qarang kg_tgl handleridagi izoh
+        # (callback_data 64-bayt chegarasi, uzun pseudo-ID nomlar bilan).
+        idx_s, _, mk_query_key = payload.partition("|")
+        fayllar = _keldi_fayllar_topish(mk_query_key)
+        try:
+            fname = fayllar[int(idx_s)].name
+        except (ValueError, IndexError):
+            await query.answer("Bu so'rov eskirgan, qayta urinib ko'ring.", show_alert=True)
+            return
         sel_data = context.user_data.get("qt_multi_sel")
         if not sel_data or sel_data.get("query_key") != mk_query_key:
             sel_data = {"query_key": mk_query_key, "selected": set()}
@@ -1317,7 +1343,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             selected.add(fname)
         context.user_data["qt_multi_sel"] = {"query_key": mk_query_key, "selected": selected}
-        fayllar = _keldi_fayllar_topish(mk_query_key)
         try:
             await query.edit_message_reply_markup(
                 reply_markup=_qt_multi_kb(fayllar, mk_query_key, selected)
@@ -3223,7 +3248,16 @@ async def _kont_list_yuborish(msg, query_key: str, is_keldi: bool,
             iso    = _iso_from_stem(f.stem)
             sana_f = f.stem.rsplit("_", 1)[-1]
             lbl    = f"\U0001f6a2 {iso} ({sana_f})"
-            cb     = f"kont_bir_keldi:{f.name}|{query_key}"
+            # 2026-08-06 (Huzayfa: "NORAQAM_07_04_2026_list_11" nomi bilan
+            # qidirilganda "Kutilmagan xatolik" chiqdi): Telegram
+            # callback_data UZUNLIGI 64 BAYTDAN OSHMASLIGI SHART. Oddiy ISO
+            # nomlar ("CRXU1561318") uchun bu yetarli edi, lekin uzun
+            # pseudo-ID nomlar ("NORAQAM_..." kabi) + ustiga qo'shilgan
+            # `|{query_key}` (handler UMUMAN o'qimaydi — pastda
+            # `.split("|",1)[0]` bilan darhol tashlanadi) chegaradan chiqib
+            # ketib, xabar yuborilishning o'zi xato bilan qulardi. Endi
+            # kerak bo'lmagan `|{query_key}` olib tashlandi.
+            cb     = f"kont_bir_keldi:{f.name}"
             # 2026-07-17 (Huzayfa: real omborga tushishi 2-3 kun keyin bo'lsa
             # ham, guruhga rasmni HOZIR yubormoqchi — KELDI qilmasdan turib):
             # yo'ldagi konteyner uchun ham 🖼 tugmasi ko'rsatiladi, statusga
@@ -3238,7 +3272,9 @@ async def _kont_list_yuborish(msg, query_key: str, is_keldi: bool,
             iso    = _iso_from_stem(stem_no_d)
             sana_f = stem_no_d.rsplit("_", 1)[-1]
             lbl    = f"\u2705 {iso} ({sana_f})"
-            cb     = f"kont_bir_qayt:{f.name}|{query_key}"
+            # 2026-08-06: qarang yuqoridagi kont_bir_keldi izohi \u2014 bir xil
+            # callback_data 64-bayt chegarasi bugi, bir xil tuzatish.
+            cb     = f"kont_bir_qayt:{f.name}"
             # 2026-07-15 (Huzayfa: Aksessuarlar02 rasmi guruhga ketmagan edi):
             # allaqachon KELDI bo'lgan (bugun emas, ilgari belgilangan)
             # konteyner uchun "qaytarish"ga tegmasdan, faqat rasmni qayta
@@ -3260,12 +3296,13 @@ async def _kont_list_yuborish(msg, query_key: str, is_keldi: bool,
 def _kg_multi_kb(fayllar, query_key: str, selected: set) -> InlineKeyboardMarkup:
     """YOLDA konteynerlar ro'yxati \u2014 checkbox (belgilash) klaviaturasi."""
     buttons = []
-    for f in fayllar:
+    for i, f in enumerate(fayllar):
         iso    = _iso_from_stem(f.stem)   # 2026-07-29: F_ prefiksi tashlanadi
         sana_f = f.stem.rsplit("_", 1)[-1]
         mark   = "\u2705" if f.name in selected else "\u2b1c"
         lbl    = f"{mark} {iso} ({sana_f})"
-        cb     = f"kg_tgl:{f.name}|{query_key}"
+        # 2026-08-06: to'liq fname emas, indeks \u2014 qarang kg_tgl handleridagi izoh.
+        cb     = f"kg_tgl:{i}|{query_key}"
         # 2026-07-17: bu yerda ham \ud83d\uddbc tugmasi \u2014 KELDI qilmasdan turib rasmni
         # guruhga yuborish imkoni (qarang: _kont_list_yuborish, bitta-natija
         # holati uchun bir xil mantiq).
@@ -3287,12 +3324,12 @@ def _rasm_multi_kb(fayllar, query_key: str, selected: set) -> InlineKeyboardMark
     klaviaturasi. KELDI/statusga tegmaydi; tanlanganlar albom qilib yuboriladi.
     2026-07-29."""
     buttons = []
-    for f in fayllar:
+    for i, f in enumerate(fayllar):
         iso    = _iso_from_stem(f.stem)   # 2026-07-29: F_ prefiksi tashlanadi
         sana_f = f.stem.rsplit("_", 1)[-1]
         mark   = "\u2705" if f.name in selected else "\u2b1c"
         lbl    = f"{mark} {iso} ({sana_f})"
-        cb     = f"rasm_tgl:{f.name}|{query_key}"
+        cb     = f"rasm_tgl:{i}|{query_key}"
         buttons.append([InlineKeyboardButton(lbl, callback_data=cb)])
     n = len(selected)
     buttons.append([InlineKeyboardButton(
@@ -3335,13 +3372,13 @@ async def _rasm_list_yuborish(msg, query_key: str, context=None):
 def _qt_multi_kb(fayllar, query_key: str, selected: set) -> InlineKeyboardMarkup:
     """KELDI konteynerlar ro'yxati \u2014 QAYTARISH uchun checkbox klaviaturasi."""
     buttons = []
-    for f in fayllar:
+    for i, f in enumerate(fayllar):
         stem_no_d = f.stem[:-2]
         iso    = _iso_from_stem(stem_no_d)   # 2026-07-29: F_ prefiksi tashlanadi
         sana_f = stem_no_d.rsplit("_", 1)[-1]
         mark   = "\u2705" if f.name in selected else "\u2b1c"
         lbl    = f"{mark} {iso} ({sana_f})"
-        cb     = f"qt_tgl:{f.name}|{query_key}"
+        cb     = f"qt_tgl:{i}|{query_key}"
         # 2026-07-15: har bir qatorda qo'shimcha "rasmni qayta yubor" tugmasi
         # \u2014 "bugun" himoyasi tufayli qaytarib bo'lmaydigan (eski) konteyner
         # uchun ham rasmni qayta olish imkonini beradi.
