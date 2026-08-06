@@ -382,11 +382,18 @@ def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
          tovar REAL 0 ga tushib qoladi.
       2. **Foiz-chuqurlik mezoni** (2026-08-05, Huzayfa: "2000 min-1500
          qoldiq uzilgan deyilmaydi, ammo 7500 min-1000 qoldiq katta
-         teshik — bu tugagan deyiladi"): `qoldiq / min_z <=
+         teshik — bu tugagan deyiladi"): `umumiy_qoldiq / min_z <=
          UZILISH_XAVFI_FOIZ_CHEGARA` (70%) bo'lsa — KONTEYNER yo'lda
          bor-yo'qligidan QAT'IY NAZAR qo'shiladi. Sabab: min_zaxiradan
          juda chuqur pasayish amalda "tugagan"ga teng, garchi son hali
-         aniq 0 bo'lmasa ham.
+         aniq 0 bo'lmasa ham. MUHIM (2026-08-05, ikkinchi tuzatish,
+         Huzayfa: "tsex uchun ko'rayotganda umuman qoldig'imizni unutyapti
+         — promzon kam bo'lsa ham, Asosiydan chaqirib olsa muammo hal"):
+         bu yerda `qoldiq` KANALGA XOS emas, balki "Қолдиқ" ustuni —
+         Асосий+Цех+Ош QOLDIG'INING KOMPANIYA DARAJASIDAGI YIG'INDISI.
+         Bitta kanalning o'z захираси kam bo'lsa-yu, boshqa kanal(lar)da
+         yetarli захира bo'lsa (chaqirib olish mumkin) — bu haqiqiy
+         uzilish xavfi emas.
     Ikkalasi ham yo'q bo'lsa (yoki min_z<=0/ABC mos kelmasa) — chiqarib
     tashlanadi.
 
@@ -489,7 +496,18 @@ def uzilish_xavfi_royxat(data_file: Path, buyurtma_yuklash_fn) -> list[dict]:
             min_z  = float(row.get(minz_col, 0))
             if min_z <= 0:
                 continue
-            foiz   = qoldiq / min_z
+            # 2026-08-05 (Huzayfa: "tsex uchun ko'rayotgan bir paytda umuman
+            # qoldig'imizda qancha bor ekanligini unutyapti — promzon anborida
+            # kam bo'lsa ham, aslida Asosiydan chaqirib olsa muammo hal"):
+            # FOIZ-mezoni endi KANALGA XOS qoldiq emas, balki "Қолдиқ" ustuni
+            # (barcha kanallar — Асосий+Цех+Ош — yig'indisi, common.py::
+            # Qoldiq_Dona) asosida hisoblanadi. Kanal-o'ziga xos захира кам
+            # bo'lsa-yu, KOMPANIYA DARAJASIDA yetarli bo'lsa (boshqa omborda
+            # bor, chaqirib olish mumkin) — bu haqiqiy uzilish xavfi EMAS.
+            # Konteyner-vaqt mezoni (pastda) ESA hamon kanalga xos qoldiqdan
+            # foydalanadi — o'zgarishsiz (bu ALLAQACHON tasdiqlangan mantiq).
+            umumiy_qoldiq = float(row.get("Қолдиқ", qoldiq) or qoldiq)
+            foiz   = umumiy_qoldiq / min_z
             kont_l = kont_map.get(tovar, [])
             kunlik = min_z / float(KUNLAR)
             # nol_kuni/kutish_kun konteyner bo'lmasa ham hisoblanadi (burn-rate
@@ -537,18 +555,11 @@ def uzilish_xavfi_excel(data_file: Path, lang: str, buyurtma_yuklash_fn) -> Byte
       - Kategoriyalar ANIQ AJRALIB TURADI — "Yo'ldagi yuklar" (yolda_
         excel.py) uslubida: ajratuvchi sarlavha qatori + o'z rang
         oilasida ochroq/тоқроқ (juft/toq) qatorlar, har katak border bilan.
-      - Ikki "kun" ustuni bor (Huzayfa ikkala misolini ham alohida
-        so'ragan edi):
-          "0 гача (кун)"  — necha kundan keyin tovar REAL 0 ga tushadi
-                             (0 — allaqachon shunday). Faqat foiz-mezoni
-                             bilan qo'shilgan (gorizont ichida 0ga
-                             tushmaydigan) qatorlarda "—" ko'rinadi.
-          "Кутиш (кун)"   — 0 ga tushgandan keyin ma'lum konteyner
-                             yetib kelguncha necha kun kutadi. Konteyner
-                             yo'q/gorizontdan tashqarida bo'lsa "—".
-    2026-08-05 qo'shildi: "Йўлда_Жами" ustuni (shu tovar uchun YO'LDA
-    bo'lgan JAMI miqdor, gorizontdan qat'iy nazar) va "Буюртма_Ҳолати"
-    endi buyurilgan bo'lsa aniq MIQDORni ham ko'rsatadi.
+    2026-08-05 (Huzayfa): ustunlar SODDALASHTIRILDI — "ABC" (ro'yxat
+    allaqachon faqat A tovarlardan iborat, ustun ortiqcha edi), "Мин_
+    Захира", "0 гача (кун)" va "Кутиш (кун)" OLIB TASHLANDI. Qolgan
+    ustunlar: №, Товар, Канал, Қолдиқ, Йўлда_Жами, Буюртма_Ҳолати (bu
+    oxirgisi buyurilgan bo'lsa aniq MIQDORni ham ko'rsatadi).
     """
     import openpyxl
     from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
@@ -569,18 +580,21 @@ def uzilish_xavfi_excel(data_file: Path, lang: str, buyurtma_yuklash_fn) -> Byte
     ws = wb.active
     ws.title = "Узилиш хавфи" if lang == "cyr" else "Uzilish xavfi"
 
+    # 2026-08-05 (Huzayfa: "ABC ustunini yo'qot, Мин_Захира va 0 гача/Кутиш
+    # ustunlarini ham yo'qot"): ro'yxat allaqachon FAQAT ABC=A tovarlardan
+    # iborat (ustun ortiqcha edi), va endi 70%-mezoni tufayli "0 гача"/
+    # "Кутиш" ko'p qatorda "—" bo'lib chiqqani ham keraksiz murakkablik
+    # qo'shgan edi. Qolgan ustunlar: №, Товар, Канал, Қолдиқ, Йўлда_Жами,
+    # Буюртма_Ҳолати — soddaroq, faqat kerakli ma'lumot.
     if lang == "cyr":
-        hdrs = ["№", "Товар", "Канал", "ABC", "Қолдиқ", "Мин_Захира",
-                "Йўлда_Жами", "0 гача (кун)", "Кутиш (кун)", "Буюртма_Ҳолати"]
-        berildi, kutilmq, kun_suffix = "Берилди ✅", "Кутилмоқда ⏳", "кун"
+        hdrs = ["№", "Товар", "Канал", "Қолдиқ", "Йўлда_Жами", "Буюртма_Ҳолати"]
+        berildi, kutilmq = "Берилди ✅", "Кутилмоқда ⏳"
     else:
-        hdrs = ["№", "Tovar", "Kanal", "ABC", "Qoldiq", "Min_Zaxira",
-                "Yolda_Jami", "0 gacha (kun)", "Kutish (kun)", "Buyurtma_Holati"]
-        berildi, kutilmq, kun_suffix = "Berildi ✅", "Kutilmoqda ⏳", "kun"
+        hdrs = ["№", "Tovar", "Kanal", "Qoldiq", "Yolda_Jami", "Buyurtma_Holati"]
+        berildi, kutilmq = "Berildi ✅", "Kutilmoqda ⏳"
     # 2026-07-27 (Huzayfa: "shrift juda kichkina, katak ham kichkina"):
     # ustun kengliklari, shrift o'lchami va qator balandligi kattalashtirildi.
-    # 2026-08-05: "Йўлда_Жами" ustuni qo'shildi (+1 ustun).
-    col_w = [6, 54, 12, 7, 12, 14, 12, 14, 14, 24]
+    col_w = [6, 54, 12, 12, 12, 24]
     NCOL  = len(hdrs)
 
     def fill(hex_: str): return PatternFill("solid", fgColor=hex_)
@@ -634,21 +648,16 @@ def uzilish_xavfi_excel(data_file: Path, lang: str, buyurtma_yuklash_fn) -> Byte
         else:
             holat_txt = kutilmq
         # foiz-mezoni bilan qo'shilgan (konteyner gorizont ichida
-        # qutqarmaydigan/yo'q) qatorlarda nol_kuni/kutish_kun aniqlanmagan
-        # bo'lishi mumkin — "—" bilan ko'rsatiladi.
-        nol_txt    = "—" if r["nol_kuni"] is None else f"{r['nol_kuni']} {kun_suffix}"
-        kutish_txt = "—" if r["kutish_kun"] is None else f"{r['kutish_kun']} {kun_suffix}"
-
         excel_row += 1
         ws.append([
-            n, r["tovar"], r["kanal_nomi"], r["abc"], r["qoldiq"],
-            r["min_z"], r["yolda_jami"], nol_txt, kutish_txt, holat_txt,
+            n, r["tovar"], r["kanal_nomi"], r["qoldiq"],
+            r["yolda_jami"], holat_txt,
         ])
         ws.row_dimensions[excel_row].height = 26
         for col_i in range(1, NCOL + 1):
             cell = ws.cell(row=excel_row, column=col_i)
             cell.fill      = fill(row_clr)
-            cell.font      = font(13, bold=(col_i in (8, 9)))
+            cell.font      = font(13, bold=(col_i == NCOL))
             cell.alignment = aln("center" if col_i != 2 else "left")
             cell.border    = border_all
 
