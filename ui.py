@@ -331,8 +331,26 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
         try:
             kont   = _get_kont()
             kont   = kont[kont["Холат"].astype(str).str.strip() != "КЕЛДИ ✅"].copy()
-            kont_n = kont["Товар"].astype(str).apply(_norm)
-            kont_f = kont[kont_n == tv_n].copy()
+            # 2026-08-06 (Huzayfa: "Yo'lda jami: 502 deydi, lekin
+            # konteynerlarini chiqarmayapti"): "Контейнерлар" varag'idagi
+            # "Товар" ustuni — bu ХОМ ном emas, `main.py` uni
+            # `common.normalize_product_name()` orqali BIR MARTA
+            # normalizatsiya qilib yozgan (main.py: `Mahsulot_Normalized` →
+            # `Товар`, "Йўлда_Жами" ustuni ham AYNAN shu normalizatsiya
+            # bilan hisoblanadi). Bu yerdagi eslatma esa faqat "Лист- 0,8"
+            # kabi bo'shliqni tuzatadigan ZAIF `_norm()` bilan solishtirardi
+            # — agar `normalize_product_name` yana boshqa narsani ham
+            # o'zgartirgan bo'lsa (masalan uzunlik "(6м)"→"(6 м)" yoki
+            # "Лист-0,8"→"Лист- 0,8"), Инвентар'dagi ХОМ nom bilan
+            # Контейнерлар'dagi NORMALLASHGAN nom endi hech qachon mos
+            # kelmay qolardi — natijada "Йўлда_Жами" (main.py hisoblagan,
+            # to'g'ri) bilan shu yerda ko'rsatiladigan konteyner-ro'yxat
+            # (bu yerdagi ZAIF taqqoslash, chala) bir-biriga zid chiqardi.
+            # Endi AYNAN main.py ishlatgan `normalize_product_name` bilan
+            # solishtiriladi — ikkalasi bir xil manbadan kelib chiqadi.
+            tv_norm = normalize_product_name(tv)
+            kont_n  = kont["Товар"].astype(str).apply(normalize_product_name)
+            kont_f  = kont[kont_n == tv_norm].copy()
             if "Кун_Қолди" in kont_f.columns:
                 kont_f = kont_f.sort_values("Кун_Қолди")
             for _, r in kont_f.iterrows():

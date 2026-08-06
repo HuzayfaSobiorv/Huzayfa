@@ -37,14 +37,14 @@ for _stream in (sys.stdout, sys.stderr):
 
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
-    MessageHandler, filters, ContextTypes,
+    MessageHandler, filters, ContextTypes, PicklePersistence,
 )
 from telegram import Update
 from telegram.request import HTTPXRequest
 
 from datetime import time as _time
 
-from config import BOT_TOKEN, SUPER_ADMIN_ID, logger, xlsx_refresh
+from config import BOT_TOKEN, SUPER_ADMIN_ID, logger, xlsx_refresh, BOT_HOLAT_DIR
 from handlers import (
     start, callback_handler, text_keldi, fayl_keldi, adduser_cmd,
     removeuser_cmd, users_cmd, chatid_cmd, perexod_kunlik_tekshiruv,
@@ -117,7 +117,19 @@ def main() -> None:
         write_timeout=30.0,
         pool_timeout=10.0,
     )
-    app = Application.builder().token(BOT_TOKEN).request(request).build()
+    # 2026-08-06 (Huzayfa: admin tomon "tugmalar ishlamay, doim asosiy
+    # menyuga qaytaraveradi" muammosi — sabab: `context.user_data` ILGARI
+    # faqat XOTIRADA saqlanardi, diskka YOZILMASDI. Bot jarayoni biror
+    # marta qayta ishga tushsa (masalan tarmoq xatosidan keyin server/pm2
+    # qayta ko'tarsa) — HAMMA foydalanuvchining til/screen holati standart
+    # qiymatlarga qaytib ketardi, lekin foydalanuvchi qurilmasida ESKI
+    # klaviatura ko'rinishda qolganidan tugma matni endi mos kelmay qolar
+    # edi (qarang: handlers.py::text_keldi, "Amal topish" bo'limi — u yerda
+    # ham qo'shimcha himoya qo'shildi). Endi PicklePersistence bilan
+    # user_data/chat_data restart bo'lsa ham diskdan tiklanadi — bu turdagi
+    # holat yo'qolishi umuman oldini oladi.
+    persistence = PicklePersistence(filepath=str(BOT_HOLAT_DIR / "bot_persistence.pickle"))
+    app = Application.builder().token(BOT_TOKEN).request(request).persistence(persistence).build()
     app.add_error_handler(global_xato_ushlagich)
 
     # 2026-07-16: "rasm yuborilgan, hali KELDI qilinmagan" konteynerlarni

@@ -1017,12 +1017,25 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             is_dan_keldi = old_path.stem.endswith("_D")
             stem_no_d = old_path.stem[:-2] if is_dan_keldi else old_path.stem
             iso = _iso_from_stem(stem_no_d)
-            if not is_dan_keldi:
-                # 2026-07-16: hali yo'lda — rasm yuborish BILAN KELDI qilish
-                # ENDI ajratildi. Sana shu yerda qayd etiladi, faylga/statusga
-                # tegilmaydi — real omborga tushishi kutiladi (kunlik job
-                # tekshiradi, PEREXOD_KUN_CHEGARA kundan keyin avtomatik KELDI).
-                _rasm_pending_belgila(fname)
+            # 2026-08-06 (Huzayfa: "rasmni chizdirib qo'ygan yoki orqaga
+            # tugmasini bosgan edim, guruhga yuborilmagan, lekin shu
+            # konteyner 'Yo'ldagi konteynerlar' ro'yxatidan butunlay
+            # tushib qoldi"): ILGARI `_rasm_pending_belgila(fname)` AYNAN
+            # SHU YERDA — rasm hali FAQAT ADMINGA preview sifatida
+            # ko'rsatilayotganda, guruhga yuborish TASDIQLANISHIDAN OLDIN —
+            # chaqirilardi. Agar admin keyin "❌ Bekor qilish" bossa (yoki
+            # umuman javob bermay ketsa), bu belgi HECH QACHON qaytarib
+            # olinmasdi (`kg_cancel:` handlerida `_rasm_pending_ochirish`
+            # chaqirilmaydi) — natijada konteyner GURUHGA HAQIQATDA
+            # YUBORILMAGAN bo'lsa ham abadiy "rasm yuborilgan" deb
+            # hisoblanib, (1) "Yo'ldagi konteynerlar" ro'yxatidan yashiringan,
+            # HAM (2) kunlik job tomonidan necha kundan keyin AVTOMATIK
+            # "KELDI" deb belgilanish xavfi tug'dirardi — garchi guruhda
+            # hech kim bu haqda xabardor qilinmagan bo'lsa ham. Endi bu
+            # belgi FAQAT haqiqiy guruhga-yuborish muvaffaqiyatli
+            # bo'lgandan KEYIN qo'yiladi (qarang: _kg_yuborish_guruhga,
+            # `fname` shu yerda `kg_pending`ga saqlab, o'sha funksiyaga
+            # uzatiladi).
             await query.answer("Tayyorlanmoqda...")
             rasm = generate_kelgan_rasm(iso)
             if not rasm:
@@ -1049,6 +1062,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data["kg_pending"] = {
                     "iso": iso,
                     "file_id": sent.photo[-1].file_id,
+                    # faqat hali yo'lda bo'lgan (KELDI qilinmagan) konteyner
+                    # uchun kerak — allaqachon KELDI bo'lganini qayta chizib
+                    # yuborishda pending-belgisi umuman ishlatilmaydi.
+                    "fname": None if is_dan_keldi else fname,
                 }
 
     elif query.data.startswith("kont_bekor:"):
@@ -1060,7 +1077,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not pending or pending.get("iso") != iso:
             await query.answer("Bu so'rov eskirgan, qayta urinib ko'ring.", show_alert=True)
         else:
-            context.user_data["kutilmoqda"] = ("kg_caption", iso, pending["file_id"])
+            context.user_data["kutilmoqda"] = ("kg_caption", iso, pending["file_id"], pending.get("fname"))
             context.user_data["screen"] = "keldi_menu"
             lang = context.user_data.get("lang", "cyr")
             from telegram import ReplyKeyboardMarkup as _RKM
@@ -1223,14 +1240,18 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # SHAXSIY chatda ko'rsatamiz (preview) va file_id larni yig'amiz.
             # KELDI/statusga UMUMAN tegmaydi — faqat rasm-pending qayd etiladi
             # (bittalik kont_rasm_qayta bilan bir xil mantiq).
-            isos, file_ids, topilmadi = [], [], []
+            # 2026-08-06: `_rasm_pending_belgila` bu yerda ENDI CHAQIRILMAYDI
+            # — faqat `fnames` ro'yxatida saqlab qo'yamiz, haqiqiy belgilash
+            # `_kg_yuborish_guruhga_multi`da, guruhga MUVAFFAQIYATLI
+            # yuborilgandan KEYIN bo'ladi (qarang kont_rasm_qayta izohi —
+            # bekor qilingan/hech qachon yuborilmagan albom ham abadiy
+            # "rasm yuborilgan" deb qolib ketmasin uchun).
+            isos, file_ids, fnames, topilmadi = [], [], [], []
             for fname in sorted(selected):
                 old_path = XITOY_PARSED_DIR / fname
                 if not old_path.exists():
                     continue
                 iso = _iso_from_stem(old_path.stem)   # F_ prefiksi tashlanadi
-                if not old_path.stem.endswith("_D"):
-                    _rasm_pending_belgila(fname)       # hali yo'lda — kuzatuvga
                 rasm = generate_kelgan_rasm(iso)
                 if not rasm:
                     topilmadi.append(iso)
@@ -1242,6 +1263,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 isos.append(iso)
                 file_ids.append(sent.photo[-1].file_id)
+                fnames.append(None if old_path.stem.endswith("_D") else fname)
             context.user_data.pop("rasm_multi_sel", None)
             context.user_data["screen"] = "keldi_menu"
             try:
@@ -1257,7 +1279,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 await kont_holat_royhat(query.message, context)
             else:
-                context.user_data["kg_pending_multi"] = {"isos": isos, "file_ids": file_ids}
+                context.user_data["kg_pending_multi"] = {"isos": isos, "file_ids": file_ids, "fnames": fnames}
                 ogoh = ""
                 if topilmadi:
                     ogoh = ("\n\n⚠️ Ma'lumot topilmagani uchun chiqmadi: "
@@ -1597,14 +1619,14 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── "Kelgan yuklar" guruhiga yuborish uchun matn (caption) kutilmoqda ──────
     if isinstance(kut, tuple) and kut[0] == "kg_caption":
         _back_texts = {t("cyr", "back"), t("lat", "back"), "⬅️ Орқага", "⬅️ Orqaga", "← Orqaga"}
-        _, kg_iso, kg_file_id = kut
+        _, kg_iso, kg_file_id, kg_fname = kut
         if text in _back_texts or bool(get_action(lang, screen, text)):
             context.user_data.pop("kutilmoqda", None)
             context.user_data.pop("kg_pending", None)
         else:
             context.user_data.pop("kutilmoqda", None)
             context.user_data.pop("kg_pending", None)
-            await _kg_yuborish_guruhga(msg, context, kg_iso, kg_file_id, text)
+            await _kg_yuborish_guruhga(msg, context, kg_iso, kg_file_id, text, kg_fname)
             return
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -1620,7 +1642,8 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data.pop("kg_pending_multi", None)
             await _kg_yuborish_guruhga_multi(
                 msg, context,
-                pending.get("isos", []), pending.get("file_ids", []), text
+                pending.get("isos", []), pending.get("file_ids", []), text,
+                pending.get("fnames", [])
             )
             return
     # ─────────────────────────────────────────────────────────────────────────
@@ -1755,6 +1778,30 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Amal topish
     action = get_action(lang, screen, text)
+
+    # 2026-08-06 (Huzayfa: "admin tomon buzilib qoldi, tugmalar bosilsa ham
+    # doim asosiy menyuga qaytaraveradi, oddiy userlarniki ishlayapti"):
+    # bot jarayoni qayta ishga tushganda (masalan tarmoq xatosidan keyin
+    # pm2/OS qayta ko'targanda) `context.user_data` xotirada saqlanadi —
+    # HECH QANDAY diskka persistence yo'q (Bot.py: Application.builder()
+    #'.persistence(...)' chaqirmaydi). Demak restart bo'lsa, aynan shu
+    # foydalanuvchining `lang` qiymati standart holatga ("cyr") qaytadi,
+    # LEKIN uning Telegram ilovasida hali OLDINGI (masalan "lat") tilidagi
+    # klaviatura tugmalari ko'rinib turadi (Telegram alohida buyruq
+    # kelmaguncha eski reply-klaviaturani ekranda saqlaydi). Natijada
+    # bosilgan tugmaning matni serverdagi joriy `lang` lug'atiga mos
+    # kelmay qoladi va get_action() doim None qaytaradi — tugma "ishlamay",
+    # bot har safar asosiy menyuni qayta ko'rsatib turaveradi.
+    # Tuzatish: agar joriy tilda mos kelmasa, ENDI IKKINCHI tilda ham
+    # tekshiramiz — agar o'sha yerda topilsa, `lang`ni ham avtomatik shunga
+    # moslab tuzatamiz (foydalanuvchi hech narsa qilmasdan o'zi tiklanadi).
+    if action is None:
+        _other_lang = "lat" if lang == "cyr" else "cyr"
+        _other_action = get_action(_other_lang, screen, text)
+        if _other_action is not None:
+            lang = _other_lang
+            context.user_data["lang"] = lang
+            action = _other_action
 
     if action is None:
         # search ekranida (kategoriya tanlash) — matn yozilsa eslatma
@@ -3311,8 +3358,17 @@ def _qt_multi_kb(fayllar, query_key: str, selected: set) -> InlineKeyboardMarkup
     return InlineKeyboardMarkup(buttons)
 
 
-async def _kg_yuborish_guruhga(msg, context, iso: str, file_id: str, caption: str):
-    """KELDI bo'lgan konteyner rasmini 'Kelgan yuklar' guruhi/mavzusiga yuboradi."""
+async def _kg_yuborish_guruhga(msg, context, iso: str, file_id: str, caption: str,
+                                fname: str | None = None):
+    """KELDI bo'lgan konteyner rasmini 'Kelgan yuklar' guruhi/mavzusiga yuboradi.
+
+    `fname` — hali yo'lda (KELDI qilinmagan) konteyner uchun, uning asl xlsx
+    fayl nomi. 2026-08-06: rasm-pending belgisi (`_rasm_pending_belgila`)
+    ENDI FAQAT shu yerda, guruhga yuborish HAQIQATDA muvaffaqiyatli
+    bo'lgandan KEYIN qo'yiladi — avval preview bosqichida (admin hali
+    "Guruhga jo'natish"ni bosmagan/bekor qilgan bo'lsa ham) qo'yilardi,
+    bu esa hech qachon yuborilmagan konteynerni ham abadiy "rasm
+    yuborilgan" deb belgilab qo'yardi (qarang kont_rasm_qayta izohi)."""
     if not config.KELGAN_YUKLAR_CHAT_ID:
         await msg.reply_text(
             "⚠️ Guruh sozlanmagan. .env faylida KELGAN_YUKLAR_CHAT_ID "
@@ -3326,6 +3382,8 @@ async def _kg_yuborish_guruhga(msg, context, iso: str, file_id: str, caption: st
                 caption=caption,
                 message_thread_id=config.KELGAN_YUKLAR_TOPIC_ID,
             )
+            if fname:
+                _rasm_pending_belgila(fname)
             await msg.reply_text(
                 f"✅ *{iso}* — \"Kelgan yuklar\" guruhiga yuborildi!",
                 parse_mode="Markdown",
@@ -3337,10 +3395,17 @@ async def _kg_yuborish_guruhga(msg, context, iso: str, file_id: str, caption: st
     await kont_holat_royhat(msg, context)
 
 
-async def _kg_yuborish_guruhga_multi(msg, context, isos: list, file_ids: list, caption: str):
+async def _kg_yuborish_guruhga_multi(msg, context, isos: list, file_ids: list, caption: str,
+                                      fnames: list | None = None):
     """Bir nechta KELDI bo'lgan konteyner rasmlarini bitta albom (media group)
     sifatida 'Kelgan yuklar' guruhi/mavzusiga yuboradi. Har biri alohida rasm
-    bo'lib qoladi, faqat bitta xabar ichida birga ketadi."""
+    bo'lib qoladi, faqat bitta xabar ichida birga ketadi.
+
+    `fnames` — `isos`/`file_ids` bilan PARALLEL ro'yxat (hali yo'lda bo'lgan
+    konteynerlar uchun asl xlsx fayl nomi, KELDI bo'lganlar uchun None).
+    2026-08-06: `_rasm_pending_belgila` ENDI FAQAT shu yerda, guruhga
+    yuborish MUVAFFAQIYATLI bo'lgandan keyin qo'yiladi (qarang
+    _kg_yuborish_guruhga'dagi batafsil izoh)."""
     if not file_ids:
         await msg.reply_text("❌ Yuboriladigan rasm topilmadi.")
     elif not config.KELGAN_YUKLAR_CHAT_ID:
@@ -3357,6 +3422,9 @@ async def _kg_yuborish_guruhga_multi(msg, context, isos: list, file_ids: list, c
                 caption=caption,
                 message_thread_id=config.KELGAN_YUKLAR_TOPIC_ID,
             )
+            for _fn in (fnames or []):
+                if _fn:
+                    _rasm_pending_belgila(_fn)
             await msg.reply_text(
                 f"✅ {len(isos)} ta konteyner (" + ", ".join(isos) + ") — "
                 "\"Kelgan yuklar\" guruhiga yuborildi!",

@@ -362,7 +362,24 @@ def konteyner_tarix_olish() -> set[str]:
                 # dagi bir xil tuzatish bilan izchil).
                 if stem.startswith("F_"):
                     stem = stem[2:]
-                iso, _, sana = stem.partition("_")
+                # 2026-08-06 (Huzayfa: "66 kun kechikkan konteyner hali ham
+                # yo'lda ko'rsatilmoqda, u allaqachon kelgan"): ILGARI
+                # `stem.partition("_")` ishlatilardi -- BIRINCHI "_"dan
+                # bo'lardi. Pseudo-ID nomlar ("NORAQAM_07_04_2026_list_11")
+                # ko'p "_" ichiga oladi -- natijada iso="NORAQAM" (kesilgan)
+                # bo'lib, sana maydoniga esa "07_04_2026_list_11_07.04.2026"
+                # kabi parslanmaydigan chalkash matn tushib qolardi. Bu ISO
+                # keyinchalik dedup tekshiruvida (iso_boyicha_yangilarini_ajrat)
+                # HAQIQIY to'liq pseudo-ID bilan MOS KELMASDI -- konteyner
+                # doim "hali umuman ko'rilmagan" deb topilib, qayta-qayta YANGI
+                # sifatida qo'shilib turardi (garchi allaqachon KELDI qilingan
+                # bo'lsa ham) -- xuddi shu naqsh main.py/_iso_from_stem'da
+                # oldin tuzatilgan edi, bu yerda unutilgan ekan. Endi OXIRGI
+                # "_"dan bo'linadi (main.py bilan izchil).
+                if "_" in stem:
+                    iso, sana = stem.rsplit("_", 1)
+                else:
+                    iso, sana = stem, ""
                 if iso:
                     boshlangich.add(konteyner_tarix_kalit(iso, sana))
         try:
@@ -371,9 +388,38 @@ def konteyner_tarix_olish() -> set[str]:
             logger.error(f"konteyner_tarix boshlang'ich to'ldirishda xato: {e}")
         return boshlangich
     try:
-        return set(json.loads(KONTEYNER_TARIX_FILE.read_text(encoding="utf-8")))
+        tarix = set(json.loads(KONTEYNER_TARIX_FILE.read_text(encoding="utf-8")))
     except Exception:
         return set()
+
+    # 2026-08-06: yuqoridagi bug bilan ILGARI yozilgan buzilgan yozuvlarni
+    # (masalan "NORAQAM|07_04_2026_list_11_07.04.2026" -- sana maydoni
+    # haqiqiy sana emas) avtomatik aniqlab, bir martalik tuzatib qo'yamiz --
+    # aks holda kod tuzatilsa ham, allaqachon diskka yozilgan buzuq
+    # yozuvlar muammoni davom ettiraveradi.
+    from konteyner_qosh import _sana_parse
+    tuzatilgan = set()
+    ozgardimi = False
+    for kalit in tarix:
+        iso, ajratuvchi, sana = str(kalit).partition("|")
+        if not ajratuvchi or _sana_parse(sana) is not None:
+            tuzatilgan.add(kalit)
+            continue
+        stem = f"{iso}_{sana}" if iso else sana
+        if "_" in stem:
+            iso2, sana2 = stem.rsplit("_", 1)
+        else:
+            iso2, sana2 = stem, ""
+        tuzatilgan.add(konteyner_tarix_kalit(iso2, sana2))
+        ozgardimi = True
+    if ozgardimi:
+        try:
+            atomic_json_write(KONTEYNER_TARIX_FILE, sorted(tuzatilgan))
+            logger.info("konteyner_tarix: eski buzilgan yozuvlar avtomatik tuzatildi")
+        except Exception as e:
+            logger.error(f"konteyner_tarix tuzatishda xato: {e}")
+        return tuzatilgan
+    return tarix
 
 
 def konteyner_tarix_qoshish(konteynerlar: list) -> None:
