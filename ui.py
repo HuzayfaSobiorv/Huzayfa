@@ -478,27 +478,19 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
     # boshqa har qanday tovar bilan bir xil ko'rinishda chiqadi.
     meyor0_txt = ""
 
-    # 2026-08-07 (Huzayfa: "Сергили база: 1288 vs Qoldiq: 32 — tushunmadim"):
-    # "Qoldiq" — FAQAT joriy kanalning (masalan Цех) захираsi (yuqoridagi
-    # _qcol'ga qarang), "Filial" qatori esa foydalanuvchi biriktirilgan
-    # filialning XOM (kanaldan qat'i nazar) umumiy zaxirasi — ikkalasi
-    # ATAYLAB alohida hisoblanadi (filial_qoldiqlarini_chiqar() izohiga
-    # qarang), shuning uchun bir-biriga mos kelishi SHART emas va
-    # taqqoslab bo'lmaydi. Chalkashlik oldini olish uchun ikkala qatorga
-    # ham aniq izoh qo'shildi.
-    _kanal_label = {"sex": "Цех", "osh": "Ош"}.get(kanal, "Асосий")
-
+    # 2026-08-07 (Huzayfa: "Tsex deganin nimasi? Tsex bu Promzona, u ham bir
+    # filyal" — "kanal" so'zi/tushunchasini kartada ko'rsatish BUTUNLAY OLIB
+    # TASHLANDI, chalkashtiradi xolos. Karta endi faqat 3 narsani ko'rsatadi:
+    # umumiy qoldiq, yo'lda jami, va foydalanuvchining o'z filiali — ortiqcha
+    # izoh/label YO'Q.
     filial_txt = ""
     if filial_nomi is not None:
-        filial_txt = (
-            f"🏬 {filial_nomi} (sizning filialingiz, barcha kanallar "
-            f"bo'yicha umumiy): *{int(filial_dona):,}* ta\n"
-        )
+        filial_txt = f"🏬 {filial_nomi}: *{int(filial_dona):,}* ta\n"
 
     text_card = (
         f"📊 *{tovar}*\n\n"
         f"{holat}{meyor0_txt}\n"
-        f"Qoldiq ({_kanal_label} kanali): *{int(qoldiq):,}*{kam_ombor_txt}\n"
+        f"Umumiy qoldiq: *{int(qoldiq):,}*{kam_ombor_txt}\n"
         f"Yo'lda jami: *{int(yolda_j):,}*\n"
         f"{filial_txt}\n"
         f"▬▬▬▬▬▬▬▬▬▬▬▬\n\n"

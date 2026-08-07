@@ -949,7 +949,17 @@ def grafik_chiz(tovar: str, qoldiq: float, min_z: float,
     except ImportError:
         return None
 
-    kunlik = min_z / float(KUNLIK_SOTUV_BOLISH) if min_z > 0 else 1.0
+    # 2026-08-07 (Huzayfa: "qoldiq pasga oqar edi, xozir tekis turibdi"):
+    # ILGARI min_z<=0 bo'lganda kunlik SOXTA "1.0 dona" deb qo'yilardi —
+    # bu hech qachon ko'rinmasdi, chunki bunday tovarlar avval butunlay
+    # bloklanardi (qidiruv karta chiqarmasdi). Bloklash olib tashlangach
+    # (2026-08-06), bu soxta "1 dona/kun" endi 10 000+ miqyosli
+    # grafiklarda deyarli tekis chiziq bo'lib ko'rinib, chalkashlik
+    # keltirdi. min_z=0 — sotuv normasi UMUMAN hisoblanmagan (ma'lumot
+    # yo'q) degani, shuning uchun endi ROSTAKAM 0 qo'yiladi (zanjir_sim()
+    # ham xuddi shu holatda hech qanday pasayish modellashtirmaydi —
+    # ikkalasi endi izchil).
+    kunlik = min_z / float(KUNLIK_SOTUV_BOLISH) if min_z > 0 else 0.0
 
     # ── Konteynerlarni kun bo'yicha guruhlash ──────────────────
     kont_sorted = sorted(konteynerlar, key=lambda x: x[0])
@@ -1128,9 +1138,9 @@ def grafik_chiz(tovar: str, qoldiq: float, min_z: float,
     for sp in ax2.spines.values():
         sp.set_color(GRID)
 
-    ax.set_xlabel(
-        "Kunlik: {:,} dona".format(int(kunlik)).replace(",", " "),
-        color="#8899AA", fontsize=9)
+    _kunlik_txt = ("Kunlik: sotuv normasi yo'q (Min zaxira=0)" if kunlik <= 0
+                   else "Kunlik: {:,} dona".format(int(kunlik)).replace(",", " "))
+    ax.set_xlabel(_kunlik_txt, color="#8899AA", fontsize=9)
     ax.set_ylabel("Qoldiq (dona)", color="#8899AA", fontsize=9)
     ax.tick_params(colors="#8899AA", labelsize=8)
     for sp in ax.spines.values():
