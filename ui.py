@@ -287,39 +287,23 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
         if row.empty:
             return None
         r0 = row.iloc[0]
-        # 2026-07-24 (Huzayfa: "Asosiyda buyurtma yozsak, u O'shning/Tsexning
-        # qoldig'ini hisobga olmasligi kerak"): grafik/qidiruv kartasi ham
-        # endi kanalga mos Қолдиқ/Мин_Захира ustunidan o'qiydi — Buyurtma
-        # Excel bilan bir xil son ko'rsatishi uchun (aks holda C-ustuni
-        # bugidagi kabi ikki joy mos kelmay qolardi). Fallback -- eski
-        # (kanal ustunlarisiz) Power BI fayli uchun -- umumiy ustunlarga.
-        _qcol = {"sex": "Цех_Қолдиқ", "osh": "Ош_Қолдиқ"}.get(kanal, "Асосий_Қолдиқ")
-        if _qcol not in inv.columns:
-            _qcol = "Қолдиқ"
-        _mcol = {"sex": "Цех_Захира", "osh": "Ош_Захира"}.get(kanal, "Асосий_Захира")
-        if _mcol not in inv.columns:
-            _mcol = "Мин_Захира"
-        qoldiq  = float(r0.get(_qcol, 0) or 0)
-        min_z   = float(r0.get(_mcol, 0) or 0)
-
-        # 2026-08-04 (Huzayfa: "Asosiyniki 0-yu Tsexniki 0 bo'lmasa, 'sotuvdan
-        # chiqarilgan' deyilmasin — u mavjud, shunchaki Tsexniki tovar"):
-        # min_z=0 BO'LGANDA, pastda "sotuvdan chiqarib yuborilmoqda" deyishdan
-        # OLDIN, shu tovarning BOSHQA kanallardagi захирasini ham tekshiramiz.
-        # Agar biror boshqa kanalda захира > 0 bo'lsa — bu tovar UMUMAN
-        # chiqarilmagan, faqat SHU kanalga tegishli emas (masalan Tsex tovari).
-        _boshqa_kanallar = {
-            "asosiy": [("sex", "Цех_Захира"), ("osh", "Ош_Захира")],
-            "osh":    [("sex", "Цех_Захира"), ("asosiy", "Асосий_Захира")],
-            "sex":    [("asosiy", "Асосий_Захира"), ("osh", "Ош_Захира")],
-        }.get(kanal, [])
-        _kanal_nom = {"asosiy": "Асосий", "sex": "Цех", "osh": "Ош"}
-        boshqa_faol = []
-        for _bk, _bcol in _boshqa_kanallar:
-            if _bcol in inv.columns:
-                _bval = float(r0.get(_bcol, 0) or 0)
-                if _bval > 0:
-                    boshqa_faol.append(_kanal_nom.get(_bk, _bk))
+        # 2026-08-07 (Huzayfa: "Qidiruvdan kanal tanlamayman, qidiruv tizimi
+        # UMUMIY! Tsexniki 0 bo'lsa, asosiyniki bor-ku, asosiyniki bo'lmasa
+        # tsexniki bor, ikkalasiniki bo'lsa ikkisi qo'shiladi"): ILGARI
+        # (2026-07-24) qidiruv kartasi kanalga mos (Асосий/Цех/Ош) alohida
+        # ustundan o'qirdi — Buyurtma Excel bilan bir xil son chiqishi uchun.
+        # Bu ENDI OLIB TASHLANDI: qidiruv — umumiy, kanal tushunchasi bilan
+        # ishi yo'q. Tekshirildi: "Қолдиқ" va "Мин_Захира" (umumiy ustunlar)
+        # ALLAQACHON aynan Асосий+Цех+Ош yig'indisiga teng (real faylda
+        # 100% mos keldi) — ya'ni Huzayfa so'ragan "bo'lmasa boshqasiniki,
+        # ikkalasi bo'lsa qo'shiladi" mantig'i shu umumiy ustunlarning o'zida
+        # bor. Shuning uchun endi doim shu ikkalasidan o'qiladi, kanalga
+        # (parametr sifatida kelayotgan `kanal`ga) qarab TANLASH yo'q.
+        # (Buyurtma Excel — Generate_Asosiy_order.py — bundan mustasno,
+        # u hali ham har kanal uchun ALOHIDA hisoblaydi, chunki xarid
+        # rejasi kanal bo'yicha ajratilishi SHART — bu yerga tegishli emas.)
+        qoldiq  = float(r0.get("Қолдиқ", 0) or 0)
+        min_z   = float(r0.get("Мин_Захира", 0) or 0)
         yolda_j = float(r0.get("Йўлда_Жами", 0) or 0)
         holat   = str(r0.get("Холат", ""))
         kont_list, kont_rows = [], []
@@ -404,7 +388,7 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
                 row = fq.get(key) or {}
                 filial_nomi, filial_dona = f, row.get(f, 0)
 
-        return holat, qoldiq, min_z, yolda_j, sim, kont_list, kont_rows, filial_nomi, filial_dona, boshqa_faol
+        return holat, qoldiq, min_z, yolda_j, sim, kont_list, kont_rows, filial_nomi, filial_dona
 
     try:
         result = await loop.run_in_executor(None, _data_olish)
@@ -416,7 +400,7 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
         await msg.reply_text(f"❌ Topilmadi: {tovar}")
         return
 
-    holat, qoldiq, min_z, yolda_j, sim, kont_list, kont_rows, filial_nomi, filial_dona, boshqa_faol = result
+    holat, qoldiq, min_z, yolda_j, sim, kont_list, kont_rows, filial_nomi, filial_dona = result
 
     # 2026-08-06 (Huzayfa: "qidiruvdagi manabu narsani butunlay ochib
     # tashla, mutlaq ochiq koddan ko'rsataversin, umuman kerak emas —
@@ -426,8 +410,9 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
     # bilan TO'XTATILARDI (2026-07-18/08-04/08-05'da bosqichma-bosqich
     # qurilgan mantiq). Huzayfa buni butunlay olib tashlashni aniq so'radi
     # — qidiruv HECH QANDAY shartsiz, har doim TO'LIQ kartani ko'rsatsin.
-    # `boshqa_faol` endi ishlatilmaydi (faqat _data_olish ichida
-    # hisoblanadi, natija e'tiborga olinmaydi — zarar yo'q).
+    # 2026-08-07: `boshqa_faol` tushunchasi butunlay OLIB TASHLANDI —
+    # qidiruv umumiy (Қолдиқ/Мин_Захира) ustunidan o'qigani uchun "boshqa
+    # kanalda захира bormi" degan tekshiruv endi ma'nosiz (yuqoriga qarang).
 
     uzilish = sim.get("uzilish_kun")
     taklif  = sim.get("taklif", 0)
