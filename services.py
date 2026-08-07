@@ -1426,8 +1426,19 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
     # E/F ustunlari uchun — xuddi shu tovar nomi bo'yicha Zakaz/Tayyor
     # qiymatlarini qo'shib qo'yamiz (FAQAT ko'rsatish uchun, hisoblashga
     # ta'sir qilmaydi — "buyurtma" ustuni yuqorida allaqachon tuzatilgan).
+    # 2026-08-06 (Huzayfa: "tasdiqlangan buyurtma mohiyatan Xitoy
+    # ostatkasidir — Xitoyga buyurtma berib, keyin botga tasdiqlaymiz,
+    # shuning uchun tasdiqlangan ham ostatka ustuniga qo'shib yozilsin;
+    # ostatkada yo'q tovar bo'lsa, tasdiqlanganning o'zi ostatka bo'lib
+    # yozilsin"): "zakaz" (Xitoy ostatka) ustuni ENDI xitoy_ostatka +
+    # tasdiq_map YIG'INDISINI ko'rsatadi — ikkalasi ham "buyurtma" ustunini
+    # yuqorida ALLAQACHON kamaytirgan (1- va 2-bosqich), bu yerda faqat
+    # KO'RSATISH uchun, ular ENDI qanday ko'rinishini to'g'irlaymiz (ilgari
+    # faqat xom xitoy_ostatka ko'rsatilib, tasdiqlangan hisobga kirmasdi —
+    # admin "nega ostatka kam-u, buyurtma shuncha kam?" deb chalkashardi).
     df_calc["zakaz"] = df_calc["tovar"].apply(
-        lambda t: sum(xitoy_ostatka.get(n, 0) for n in _nomlar(t)) if xitoy_ostatka else 0
+        lambda t: (sum(xitoy_ostatka.get(n, 0) for n in _nomlar(t)) if xitoy_ostatka else 0)
+                  + sum(tasdiq_map.get(n, 0) for n in _nomlar(t))
     )
     df_calc["tayyor"] = df_calc["tovar"].apply(
         lambda t: sum(ombor_map.get(n, 0) for n in _nomlar(t)) if ombor_map else 0
@@ -1465,8 +1476,11 @@ def asosiy_styled_excel_yarat(xitoy_ostatka: dict | None = None,
         if "bp_x" in nobuy_df.columns:
             nobuy_df["bp_x"] = [[] for _ in range(len(nobuy_df))]
             nobuy_df["bp_y"] = [[] for _ in range(len(nobuy_df))]
+        # 2026-08-06: qarang yuqoridagi df_calc["zakaz"] izohi — bir xil
+        # mantiq (ostatka + tasdiqlangan) shu bo'lim uchun ham.
         nobuy_df["zakaz"] = nobuy_df["tovar"].apply(
-            lambda t: sum(xitoy_ostatka.get(n, 0) for n in _nomlar(t)) if xitoy_ostatka else 0
+            lambda t: (sum(xitoy_ostatka.get(n, 0) for n in _nomlar(t)) if xitoy_ostatka else 0)
+                      + sum(tasdiq_map.get(n, 0) for n in _nomlar(t))
         )
         nobuy_df["tayyor"] = nobuy_df["tovar"].apply(
             lambda t: sum(ombor_map.get(n, 0) for n in _nomlar(t)) if ombor_map else 0
