@@ -92,6 +92,12 @@ CATEGORIES  = [
     "Отвод",
     "Чашка",       # Қўзиқорин ham shu varaqqa kiradi
     "Полировка",   # 2026-07-21: Совун (sovun) ham shu varaqqa kiradi endi
+    # 2026-08-06 (Huzayfa: "Tsex uchun Труба/Профиль/Листdan boshqa hamma
+    # narsani BITTA sahifada saqlaymiz — Аксессуар deb nomlaymiz"): faqat
+    # kanal=="sex" bo'lganda calculate() ichida qo'llaniladi (pastga
+    # qarang) — Асосий/Ош uchun bu kategoriya hech qachon paydo
+    # bo'lmaydi, ular avvalgidek alohida sahifalarda qoladi.
+    "Аксессуар",
 ]
 SORTED_CATS = {"Труба","Профиль","Лист"}
 
@@ -626,6 +632,16 @@ def calculate(df, kont_map: dict | None = None, kanal: str = "asosiy"):
     # emas" bo'limi uchun qolganlar.
 
     df["kategoriya"] = df["tovar"].apply(get_category)
+    # 2026-08-06 (Huzayfa: "Tsex byurtma Excelida stul oyoqchasi, polirovka
+    # va hokazo — Труба/Профиль/Листdan boshqa hamma narsa BITTA
+    # 'Аксессуар' sahifasida bo'lsin"): FAQAT Tsex (kanal=="sex") uchun —
+    # Асосий/Ош o'zgarishsiz, ular hamon Баласина/Стойка/Шар/Соқка/Отвод/
+    # Чашка/Полировка/Безшовный труба kabi alohida sahifalarda qoladi.
+    if kanal == "sex":
+        _tsex_asosiy_kats = {"Труба", "Профиль", "Лист"}
+        df["kategoriya"] = df["kategoriya"].apply(
+            lambda k: k if k in _tsex_asosiy_kats else "Аксессуар"
+        )
     df["surface"]    = df["tovar"].apply(get_surface)
     df["marka"]      = df["tovar"].apply(get_marka)
     df["size_ord"]   = df.apply(lambda r: get_size_order(r["tovar"], r["kategoriya"]), axis=1)
