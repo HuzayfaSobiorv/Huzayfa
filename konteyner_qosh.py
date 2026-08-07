@@ -284,6 +284,15 @@ def _notadan_pseudo_id(note: str, ri: int) -> str:
     cleaned = _NOTE_LABEL_RE.sub('', str(note or '')).strip()
     cleaned = re.sub(r'[\s\n]+', '_', cleaned)
     cleaned = re.sub(r'[^\w\u4e00-\u9fff-]', '', cleaned)
+    # 2026-08-06 (Huzayfa: "NORAQAM_..." uzun pseudo-ID nomi Telegram
+    # callback_data'ning 64-bayt chegarasidan chiqib, "Kutilmagan xatolik"
+    # berdi \u2014 qarang handlers.py'dagi kont_bir_keldi/kg_tgl va h.k. izohlari):
+    # bu funksiya orqali yaratiladigan YANGI pseudo-ID'lar ham (agar
+    # nota juda uzun bo'lsa, masalan uzun manzil/izoh) xuddi shunday
+    # xavf tug'dirishi mumkin edi. Uzun Xitoycha belgilar UTF-8'da har
+    # biri 3 baytgacha bo'lgani uchun, belgi sonini emas 15 taga
+    # cheklaymiz \u2014 bu har doim xavfsiz margin qoldiradi.
+    cleaned = cleaned[:15]
     return f"N-{cleaned}" if cleaned else f"N-qator{ri + 1}"
 
 
@@ -1305,7 +1314,14 @@ def yangi_konteynerlar(yuklar: list[dict], kont_dir: Path) -> list[dict]:
             # CRXU1561318_07.06.2026.xlsx yoki _..._D.xlsx yoki F_...xlsx
             stem = f.stem[:-2] if f.stem.endswith("_D") else f.stem
             stem = _iso_tozala(stem) if stem.startswith("F_") else stem
-            iso, _, sana = stem.partition("_")
+            # 2026-08-06: pastki-chiziqli pseudo-ID fayllar uchun OXIRGI
+            # "_"dan bo'linadi — qarang _mavjud_sanalar_iso_boyicha izohi.
+            # (DIQQAT: bu funksiya hozircha ishlatilmaydi, lekin izchillik
+            # uchun ham tuzatildi.)
+            if "_" in stem:
+                iso, sana = stem.rsplit("_", 1)
+            else:
+                iso, sana = stem, ""
             if iso:
                 existing.add((iso, sana))
 
@@ -1333,7 +1349,9 @@ def oxirgi_malum_sana(kont_dir: Path, tarix: set = None) -> "date | None":
     if kont_dir.exists():
         for f in kont_dir.glob("*.xlsx"):
             stem = f.stem[:-2] if f.stem.endswith("_D") else f.stem
-            _, _, sana_s = stem.partition("_")
+            # 2026-08-06: qarang _mavjud_sanalar_iso_boyicha izohi — OXIRGI
+            # "_"dan (bu funksiya hozircha ishlatilmaydi, izchillik uchun).
+            sana_s = stem.rsplit("_", 1)[-1] if "_" in stem else ""
             d = _sana_parse(sana_s)
             if d:
                 sanalar.append(d)
@@ -1383,7 +1401,20 @@ def _mavjud_sanalar_iso_boyicha(kont_dir: Path, tarix: set = None) -> dict:
         for f in kont_dir.glob("*.xlsx"):
             stem = f.stem[:-2] if f.stem.endswith("_D") else f.stem
             stem = _iso_tozala(stem) if stem.startswith("F_") else stem
-            iso, _, sana_s = stem.partition("_")
+            # 2026-08-06 (Huzayfa: "66 kun kechikkan konteyner qayta-qayta
+            # yangi deb qo'shilib turibdi" bugini qidirishda topildi): bu
+            # funksiya ACTIVE (iso_boyicha_yangilarini_ajrat orqali HAR
+            # BIR "Yo'lga konteyner qo'shish" bosqichida XITOY_PARSED_DIR
+            # ustida ishlaydi) — `stem.partition("_")` BIRINCHI "_"dan
+            # bo'lardi, "NORAQAM_07_04_2026_list_11_07.04.2026.xlsx" kabi
+            # ko'p "_"li pseudo-ID fayllar uchun iso="NORAQAM" (kesilgan)
+            # bo'lib chiqardi — xuddi services.py::konteyner_tarix_olish'da
+            # topilgan bug bilan bir xil, faqat bu yerda FAYL nomlaridan
+            # o'qishda. Endi OXIRGI "_"dan (main.py bilan izchil).
+            if "_" in stem:
+                iso, sana_s = stem.rsplit("_", 1)
+            else:
+                iso, sana_s = stem, ""
             d = _sana_parse(sana_s)
             if iso and d:
                 natija.setdefault(iso, []).append(d)

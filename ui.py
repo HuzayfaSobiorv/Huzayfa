@@ -418,81 +418,16 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
 
     holat, qoldiq, min_z, yolda_j, sim, kont_list, kont_rows, filial_nomi, filial_dona, boshqa_faol = result
 
-    # 2026-07-18 (Huzayfa, qayta ishlandi — eski 2026-07-16 qoida faqat
-    # aksessuarlar uchun edi):
-    #   * Стойка/Балясина (aksessuar): eski "aksiya" matni qoladi.
-    #   * Труба/Профиль/Лист, min=0, YO'LDA yuk BOR: karta TO'LIQ
-    #     ko'rsatiladi (foydalanuvchi yo'ldagi holatini ko'ra olsin).
-    #   * Труба/Профиль/Лист, min=0, yo'lda ham YO'Q: "sotuvdan chiqarib
-    #     yuborilmoqda" deyiladi va shu tovarning BOSHQA UZUNLIKDAGI faol
-    #     variantlari tugma qilib taklif etiladi (Huzayfa 6м larni 0 qilgan,
-    #     5,8 qulay — 6м qidirgan user panikaga tushmasin, bir bosishda
-    #     5,8 variantidan "bahra olsin").
-    if min_z <= 0:
-        import re as _re
-        # 2026-08-04 (Huzayfa): min_z=0 bo'lsa-yu, BOSHQA kanal(lar)da shu
-        # tovarning захираси > 0 bo'lsa — bu tovar sotuvdan CHIQARILMAGAN,
-        # faqat shu kanalga tegishli emas (masalan Tsex tovari). "Sotuvdan
-        # chiqarilgan/aksiya" degan noto'g'ri xabar o'rniga aniq tushuntirish.
-        if boshqa_faol:
-            await msg.reply_text(
-                f"🏷 *{tovar}*\n\n"
-                f"Bu tovar sotuvdan chiqarilmagan — u mavjud, lekin "
-                f"{' va '.join(boshqa_faol)} kanali(lari) uchun (u yerda "
-                f"захира bor). Shu kanalda kerak emas, xolos.",
-                parse_mode="Markdown",
-            )
-            return
-        _tpl = bool(_re.match(r'^(\([^)]*\)\s*)?(Ф-|Пр\s*\.|Лист)',
-                              str(tovar).strip(), _re.I))
-        # 2026-08-05 (Huzayfa: "min zaxirasi 0 bo'lganlarni sotuvdan
-        # chiqarilgan deyilyapti, ammo bizda ostatkada bor — muammo shuni
-        # qidiruvdan kuzata olmayapmiz"): min_z=0 ENDI YETARLI EMAS — agar
-        # QOLDIQ hali ham > 0 bo'lsa (ombordagi zaxira hali tugamagan), bu
-        # tovar hali sotuvda/kuzatuvda bo'lishi kerak (admin qancha qolganini
-        # ko'ra olishi uchun) — faqat QOLDIQ HAM 0 bo'lsa (umuman qolmagan)
-        # "sotuvdan chiqarilgan/chiqarib yuborilmoqda" deyiladi.
-        if not _tpl:
-            if qoldiq <= 0:
-                await msg.reply_text(
-                    f"🏷 *{tovar}*\n\n"
-                    "Bu mahsulot aksiya mahsulot sifatida sotuvdan chiqarilgan.",
-                    parse_mode="Markdown",
-                )
-                return
-            # qoldiq > 0 -> pastga tushib, oddiy karta ko'rsatiladi (qoldiqni
-            # kuzatish uchun), garchi min_z=0 bo'lsa ham.
-        else:
-            yolda_bor = yolda_j > 0 or bool(kont_rows) or bool(kont_list)
-            if not yolda_bor and qoldiq <= 0:
-                # Boshqa uzunlikdagi faol (min>0) variantlarni topamiz
-                variants = []
-                try:
-                    inv_all = _get_inv()
-                    _uz = _re.compile(r'\s*\([\d,\.]+\s*м\)')
-                    base = _uz.sub('', str(tovar)).strip()
-                    for _, rr in inv_all.iterrows():
-                        nm = str(rr.get("Товар", "")).strip()
-                        if not nm or nm == str(tovar).strip():
-                            continue
-                        if _uz.sub('', nm).strip() == base and \
-                                float(rr.get("Мин_Захира", 0) or 0) > 0:
-                            variants.append(nm)
-                except Exception:
-                    variants = []
-                txt = (f"🏷 *{tovar}*\n\n"
-                       "Bu mahsulot sotuvdan chiqarib yuborilmoqda.")
-                if variants and context is not None:
-                    from keyboards import grafik_tovar_ikb
-                    context.user_data["grafik_natijalar"] = variants
-                    txt += "\n\n💡 Uning o'rniga quyidagi variantlari sotuvda bor:"
-                    sent = await msg.reply_text(txt, parse_mode="Markdown",
-                                                reply_markup=grafik_tovar_ikb(variants))
-                    aktiv_inline_belgila(context, sent)
-                else:
-                    await msg.reply_text(txt, parse_mode="Markdown")
-                return
-            # yo'lda bor YOKI qoldiq>0 — karta odatdagidek davom etadi
+    # 2026-08-06 (Huzayfa: "qidiruvdagi manabu narsani butunlay ochib
+    # tashla, mutlaq ochiq koddan ko'rsataversin, umuman kerak emas —
+    # user hohlagan tovarni qidirib hohlagancha ko'raversin"): ILGARI
+    # min_z<=0 bo'lganda ("sotuvdan chiqarilgan"/"boshqa kanalga tegishli"
+    # kabi turli sabablarga qarab) karta ko'rsatilmay, faqat qisqa xabar
+    # bilan TO'XTATILARDI (2026-07-18/08-04/08-05'da bosqichma-bosqich
+    # qurilgan mantiq). Huzayfa buni butunlay olib tashlashni aniq so'radi
+    # — qidiruv HECH QANDAY shartsiz, har doim TO'LIQ kartani ko'rsatsin.
+    # `boshqa_faol` endi ishlatilmaydi (faqat _data_olish ichida
+    # hisoblanadi, natija e'tiborga olinmaydi — zarar yo'q).
 
     uzilish = sim.get("uzilish_kun")
     taklif  = sim.get("taklif", 0)
@@ -537,18 +472,11 @@ async def grafik_ko_rsatish(msg, tovar: str, kanal: str, kat: str = "truba",
     if uzilish is None and qoldiq < min_z:
         kam_ombor_txt = "\n⚠️ Omborda kam qoldi"
 
-    # 2026-07-18: min=0, lekin yo'lda yuk bor — foydalanuvchiga aniq aytamiz.
-    # 2026-08-05 (Huzayfa): endi min=0 bo'lsa-yu QOLDIQ hali ham > 0 bo'lsa
-    # (yo'lda yuk bo'lmasa ham) karta shu yerga yetib keladi — matn
-    # "yo'ldagi yuk ma'lumoti" deb YOLG'ON aytmasligi uchun, sababga qarab
-    # ikki xil izoh ko'rsatiladi.
+    # 2026-08-06 (Huzayfa: "umuman kerak emas, qidiruv hohlagancha
+    # ko'rsataversin"): min_z<=0 bo'lganda ham hech qanday maxsus
+    # "sotuvdan chiqarib yuborilmoqda" izohi ko'rsatilmaydi — karta
+    # boshqa har qanday tovar bilan bir xil ko'rinishda chiqadi.
     meyor0_txt = ""
-    if min_z <= 0:
-        yolda_bor_txt = yolda_j > 0 or bool(kont_rows) or bool(kont_list)
-        if yolda_bor_txt:
-            meyor0_txt = "\n🏷 Sotuvdan chiqarib yuborilmoqda — yo'ldagi yuk ma'lumoti:"
-        else:
-            meyor0_txt = "\n🏷 Sotuvdan chiqarib yuborilmoqda — omborda hali qoldiq bor, kuzatuv uchun:"
 
     filial_txt = ""
     if filial_nomi is not None:
