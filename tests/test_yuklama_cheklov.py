@@ -16,11 +16,17 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import Yuklama_optimal as YO
 from Yuklama_optimal import (
     DONA_CHEKLOV_KONTEYNER,
+    LIMIT_TRUBA_PROFIL,
+    MIN_QATOR_KG_KAT,
+    _butun_zaxira_maydami,
     _dona_cheklovi,
+    _mayda_qatormi,
     optimallashtir,
 )
+from vazn_hisobla import tovar_vazni
 
 F51 = "Ф-51 ст 0,9 (5,8 м) (201 марка)"
 LIMIT = 800
@@ -112,3 +118,85 @@ class TestOptimallashtir:
         eng_kop = max(_dona(y, "Ф-16") for y in yuklar)
         assert eng_kop > LIMIT, \
             f"cheklovsiz tovarga ham 800 chegarasi qo'llandi ({eng_kop})"
+
+
+# ── Mayda "bo'lak" (fragment) qoidasi ─────────────────────────────────
+# 2026-08-08 (Huzayfa): "ostatkada tayyor mahsulot 2000 ta bor, dastur 1 ta
+# konteynerga VAZN TO'G'RILASH uchun 30 ta yuklab qo'ymoqda — bu xato ish".
+# ESKI qoida (dona < 20 VA kg < 150) 30-34 donalik ~100 kg bo'lakni
+# to'smasdi, chunki dona 20 dan katta edi.
+PROF = "Пр. 20х20 ст 0,9 (5,8 м) (201 марка)"
+TOLDIRUVCHI = "Ф-32 ст 0,9 (5,8 м) (201 марка)"
+
+
+class TestMaydaBolak:
+
+    @staticmethod
+    def _tolgan_konteyner_ssenariysi():
+        """Труба/Профиль slotini ~100 kg qoladigan qilib to'ldiradi —
+        ya'ni Пр. 20х20 dan faqat ~34 dona "sig'adigan" holat."""
+        v_told = tovar_vazni(TOLDIRUVCHI, xitoy=True)
+        n_told = int((LIMIT_TRUBA_PROFIL - 100) / v_told)
+        kerak = pd.DataFrame([
+            {"Товар": TOLDIRUVCHI, "Холат": "🔴 КРИТИК", "Кам": 99999, "urg_kun": 0},
+            {"Товар": PROF,        "Холат": "🔴 КРИТИК", "Кам": 1,     "urg_kun": 0},
+        ])
+        mavjud = pd.DataFrame([{"Товар": TOLDIRUVCHI, "Миқдор": n_told},
+                               {"Товар": PROF,        "Миқдор": 2000}])
+        yuklar, qolgan, _, _, _ = optimallashtir(
+            kerak, mavjud, abc_map={}, max_yuklar=20)
+        return yuklar
+
+    def test_vazn_togrilash_uchun_mayda_bolak_yaratilmaydi(self):
+        yuklar = self._tolgan_konteyner_ssenariysi()
+        qatorlar = [(i, it) for i, y in enumerate(yuklar, 1)
+                    for it in y["items"] if "20х20" in it["tovar"]]
+        assert qatorlar, "Пр. 20х20 umuman yuklanmadi"
+        for i, it in qatorlar:
+            assert it["vazn_kg"] >= MIN_QATOR_KG_KAT["Профиль"], (
+                f"konteyner #{i} da kulgili bo'lak: "
+                f"{it['dona']} dona / {it['vazn_kg']:.0f} kg"
+            )
+
+    def test_hamma_dona_saqlanadi(self):
+        yuklar = self._tolgan_konteyner_ssenariysi()
+        jami = sum(it["dona"] for y in yuklar for it in y["items"]
+                   if "20х20" in it["tovar"])
+        assert jami == 2000, f"dona yo'qoldi: {jami}"
+
+    def test_eski_qoida_bugni_bergan_bolardi(self):
+        """Eski qoidani vaqtincha tiklab, bug QAYTA HOSIL bo'lishini
+        ko'rsatamiz — ya'ni test haqiqatan shu bugni ushlaydi."""
+        eski = YO._mayda_qatormi
+        try:
+            YO._mayda_qatormi = lambda d, v, cat=None: d < 20 and d * v < 150.0
+            yuklar = self._tolgan_konteyner_ssenariysi()
+            mayda = [it for y in yuklar for it in y["items"]
+                     if "20х20" in it["tovar"] and it["vazn_kg"] < 400]
+            assert mayda, "eski qoida bilan mayda bo'lak chiqishi kerak edi"
+        finally:
+            YO._mayda_qatormi = eski
+
+
+class TestChegaralar:
+
+    @pytest.mark.parametrize("cat,kg_chegara", [
+        ("Труба", 400.0), ("Профиль", 400.0), ("Лист", 300.0),
+    ])
+    def test_kategoriya_chegarasi(self, cat, kg_chegara):
+        assert MIN_QATOR_KG_KAT[cat] == kg_chegara
+        assert _mayda_qatormi(10, (kg_chegara - 1) / 10, cat) is True
+        assert _mayda_qatormi(10, (kg_chegara + 1) / 10, cat) is False
+
+    def test_dona_soni_ozi_ahamiyatsiz(self):
+        """ESKI BUG: 30 dona > 20 bo'lgani uchun tekshiruv o'tkazib
+        yuborilardi. Endi faqat og'irlik muhim."""
+        assert _mayda_qatormi(30, 3.0, "Профиль") is True      # 90 kg
+        assert _mayda_qatormi(5, 100.0, "Профиль") is False    # 500 kg
+
+    def test_butun_zaxira_yumshoq_qoida(self):
+        """Xitoyda bor-yo'g'i shuncha bo'lsa (sun'iy bo'lak emas) —
+        eski, yumshoqroq chegara qoladi (Huzayfa: "agar ostatkada
+        shuncha bo'lmasa")."""
+        assert _butun_zaxira_maydami(30, 3.0) is False   # 90 kg, lekin hammasi shu
+        assert _butun_zaxira_maydami(2, 3.0) is True     # 6 kg — chinakam kulgili

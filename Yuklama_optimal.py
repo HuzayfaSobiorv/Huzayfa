@@ -233,11 +233,59 @@ MIN_KICHIK_PARCHA = 20  # qisman joylashtirishda bundan kichik "bo'lak" qabul qi
 # DONA ham (< MIN_KICHIK_PARCHA), VAZN ham (< MIN_QATOR_KG) past bo'lsa --
 # og'ir tovar (mas. 2 dona x 150 kg list ~ 300 kg) kam donada ham normal,
 # yengil tovar esa faqat sezilarli partiyada yuklanadi.
-MIN_QATOR_KG = 150.0
+MIN_QATOR_KG = 150.0   # eskirgan (2026-08-08) — pastdagi MIN_QATOR_KG_KAT ishlatiladi
+
+# ── Minimal qator (kategoriya bo'yicha) ──────────────────────────────────────
+# 2026-08-08 (Huzayfa: "mahsulotdan ozgina yuklab qo'ymoqda, masalan 20x20 0,9
+# dan 30 ta — bu juda kulgili va achinarli hol"; "ostatkada tayyor mahsulot
+# 2000 ta bor, dastur 1 ta konteynerga VAZN TO'G'RILASH uchun 30 ta yuklab
+# qo'ymoqda — bu xato ish").
+#
+# ESKI QOIDA XATOSI: `_mayda_qatormi` qator "mayda" deb hisoblanishi uchun
+# IKKALA shartni talab qilardi — dona < 20 VA kg < 150. 30 dona 20 dan katta
+# bo'lgani uchun tekshiruv UMUMAN ishlamasdi va 30 x 3 kg = 90 kg lik kulgili
+# qator o'tib ketardi. Endi faqat OG'IRLIK mezoni (kategoriya bo'yicha) —
+# dona soni emas. Sabab: bir xil dona butunlay boshqa narsani anglatadi —
+# Пр. 20х20 (3 kg) dan 30 ta = 90 kg, Лист-3,0 (68 kg) dan 30 ta = 2 040 kg.
+# Og'irlik mezoni kichik profillar uchun avtomatik ravishda KO'PROQ dona
+# talab qiladi (400 kg ≈ 133 dona Пр. 20х20), katta tovarlar esa
+# ortiqcha cheklanmaydi — Huzayfa aytgan "50х50 dan pastki profillar"
+# muammosi aynan shu yo'l bilan hal bo'ladi.
+#
+# Chegara qiymatlari 59 ta HAQIQIY konteyner (452 qator) tahlilidan:
+#   Труба   — eng kichik real qator 256 kg, mediana 2 318 kg
+#   Профиль — eng kichik real qator 266 kg, mediana 2 251 kg
+#   Лист    — eng kichik real qator 183 kg, mediana 2 678 kg
+# Ya'ni 400/400/300 real amaliyotdan biroz yuqori, lekin medianadan ancha
+# past — normal partiyalarga tegmaydi, faqat "qirindi"ni to'sadi.
+# Huzayfa: "keyinga suramiz" — aniq raqamlar keyin qayta ko'riladi, shuning
+# uchun ular SHU YERDA, bitta jadvalda turadi.
+MIN_QATOR_KG_KAT = {
+    "Труба":   400.0,
+    "Профиль": 400.0,
+    "Лист":    300.0,
+}
+MIN_QATOR_KG_DEFAULT = 300.0
 
 
-def _mayda_qatormi(dona: float, vazn_dona: float) -> bool:
-    """Qator ham dona, ham vazn bo'yicha chegaradan past bo'lsa -- "mayda"."""
+def _min_qator_kg(cat: str | None) -> float:
+    return MIN_QATOR_KG_KAT.get(str(cat), MIN_QATOR_KG_DEFAULT)
+
+
+def _mayda_qatormi(dona: float, vazn_dona: float, cat: str | None = None) -> bool:
+    """SUN'IY BO'LAK mayda-mi? — mahsulotdan yana bor, lekin shu konteynerga
+    faqat shuncha "sig'yapti" degan holat uchun. Og'irlik kategoriya
+    chegarasidan past bo'lsa -- "mayda", bunday bo'lak yaratilmaydi.
+    `cat` berilmasa umumiy (DEFAULT) chegara ishlatiladi."""
+    return dona * vazn_dona < _min_qator_kg(cat)
+
+
+def _butun_zaxira_maydami(dona: float, vazn_dona: float) -> bool:
+    """BUTUN zaxira (Xitoyda bor-yo'g'i shuncha) mayda-mi?
+    Bu yerda ESKI, yumshoqroq qoida saqlanadi (dona VA vazn ikkalasi past) —
+    2026-08-08 (Huzayfa): "agar ostatkada shuncha bo'lmasa" — mahsulotdan
+    umuman kam bo'lsa, uni yuklash mumkin; yangi qattiq chegara faqat
+    sun'iy bo'lakka qo'llanadi."""
     return dona < MIN_KICHIK_PARCHA and dona * vazn_dona < MIN_QATOR_KG
 
 
@@ -324,9 +372,13 @@ def optimallashtir(
             qolgan.append({"tovar": tovar, "dona": bor_dona,
                            "vazn_kg": round(bor_dona * vazn_dona, 2)})
             continue
-        if _mayda_qatormi(bor_dona, vazn_dona):
+        if _butun_zaxira_maydami(bor_dona, vazn_dona):
             # 2026-07-18: butun zaxira ham dona, ham vazn bo'yicha mayda
-            # (mas. katta tovardan 1-2 dona) -- kulgili qator yaratmaymiz
+            # (mas. katta tovardan 1-2 dona) -- kulgili qator yaratmaymiz.
+            # 2026-08-08: bu yerda ATAYLAB ESKI (yumshoq) chegara qoladi —
+            # Huzayfa: "...yuklanmasligi kerak AGAR OSTATKADA SHUNCHA
+            # BO'LMASA". Ya'ni Xitoyda bor-yo'g'i shuncha bo'lsa, uni
+            # yuklash mumkin; taqiq faqat SUN'IY BO'LAKKA (pastda) tegishli.
             qolgan.append({"tovar": tovar, "dona": bor_dona,
                            "vazn_kg": round(bor_dona * vazn_dona, 2)})
             continue
@@ -370,13 +422,18 @@ def optimallashtir(
                     sig_dona = min(sig_dona, max(_qolgan_dona, 0))
                 if sig_dona <= 0:
                     continue
-                if sig_dona < qoldi and _mayda_qatormi(sig_dona, vazn_dona):
+                if sig_dona < qoldi and _mayda_qatormi(sig_dona, vazn_dona, cat):
                     # 2026-07-10 (2026-07-18 vazn-asosli qilindi): bu
-                    # konteynerda faqat MAYDA bo'lak (dona ham, vazn ham past)
-                    # sig'sa -- bu yerga tashlab qo'yilmaydi, boshqa (yoki
-                    # yangi) konteyner qidiriladi. Endi og'ir tovarning kichik
-                    # (lekin >= MIN_QATOR_KG) bo'lagi qabul qilinadi --
-                    # to'ldirish yaxshilanadi, qirindi baribir bloklanadi.
+                    # konteynerda faqat MAYDA bo'lak sig'sa -- bu yerga
+                    # tashlab qo'yilmaydi, boshqa (yoki yangi) konteyner
+                    # qidiriladi.
+                    # 2026-08-08 (Huzayfa: "ostatkada 2000 ta bor, dastur
+                    # 1 ta konteynerga VAZN TO'G'RILASH uchun 30 ta yuklab
+                    # qo'ymoqda — bu xato ish"): AYNAN SHU JOY. Chegara endi
+                    # kategoriya bo'yicha og'irlikka bog'liq (Труба/Профиль
+                    # 400 kg, Лист 300 kg) — ilgari "dona<20 VA kg<150"
+                    # bo'lgani uchun 30 dona x 3 kg = 90 kg lik bo'lak
+                    # bemalol o'tib ketardi.
                     continue
                 dona = min(qoldi, sig_dona)
                 og   = round(dona * vazn_dona, 2)
@@ -391,7 +448,7 @@ def optimallashtir(
                 mavjud[tovar] = mavjud.get(tovar, 0) - dona
                 if qoldi == 0:
                     break
-                if _mayda_qatormi(qoldi, vazn_dona):
+                if _mayda_qatormi(qoldi, vazn_dona, cat):
                     # 2026-07-18 (DUM-QOIDASI, "kulgili 1-2 dona" tuzatmasi):
                     # asosiy qism joylashdi, qolgan "dum" mayda -- uni BOSHQA
                     # konteynerga sochmaymiz (avval shu yerda 83+2 bo'lib
@@ -399,7 +456,7 @@ def optimallashtir(
                     break
             if qoldi == 0:
                 break
-            if qoldi < bor_dona and _mayda_qatormi(qoldi, vazn_dona):
+            if qoldi < bor_dona and _mayda_qatormi(qoldi, vazn_dona, cat):
                 # Dum "qolgan" ro'yxatiga -- keyingi safar to'planganda yuklanadi
                 qolgan.append({"tovar": tovar, "dona": qoldi,
                                "vazn_kg": round(qoldi * vazn_dona, 2)})
