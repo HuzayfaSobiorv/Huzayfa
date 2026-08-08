@@ -236,6 +236,46 @@ def kerak_hisob(pb_df: pd.DataFrame) -> pd.DataFrame:
     ]
 
 
+def qoldiq_yolda_map_qur(pb_df, inv_set: set) -> dict:
+    """{tovar_nomi: (Қолдиқ, Йўлда)} — Excel G/H ustunlari uchun.
+
+    2026-08-08 (Huzayfa: "0,8 mat 201 da yo'lda bor, ammo bu yerda qoldiqni
+    ham yo'ldani ham nol ko'rsatmoqda, deyarli barcha listlarni shunday
+    ko'rsatmoqda" — REAL bug, ekran rasmi bilan):
+    ILGARI kalitlar faqat `normalize_product_name()` bilan qurilardi. Lekin u
+    "Лист-" dan keyin DOIM bo'shliq qo'yadi ("Лист- 0,8"), inventarning
+    o'zida esa ko'p Лист qatorlari bo'shliqSIZ yozilgan ("Лист-0,8").
+    Rejadagi tovar nomlari (kerak_df orqali) inventarning ANIQ shakliga
+    keltirilgan — ya'ni bo'shliqsiz. Natijada bu map'dan qidirish TOPMASDI
+    va Қолдиқ/Йўлда ustunlari 0 bo'lib chiqardi.
+    Miqyosi: инвентардаги 165 ta Лист'dan 129 tasi (78%) topilmasdi;
+    Труба/Профиль'da esa 364 tadan atigi 1 ta — shuning uchun muammo
+    faqat Лист'da ko'rinardi.
+    Yechim: kalit kerak_df bilan BIR XIL usulda (kanonik moslashtirish
+    orqali) quriladi. Bu parsers.py::_parse_list_xitoy dagi xuddi shu
+    bug-klassining uchinchi ko'rinishi edi.
+    """
+    from common import normalize_product_name as _norm
+    from parsers import _inventardan_moslashtir
+
+    natija: dict = {}
+    if pb_df is None or pb_df.empty:
+        return natija
+    for _, r in pb_df.iterrows():
+        qiymat = (
+            float(r.get("qoldiq", 0) or 0),
+            float(r.get("yolda", 0) or 0),
+        )
+        nomi = _norm(r.get("tovar"))
+        # Ikkala shakl ham kalit sifatida yoziladi — inventarga
+        # moslashtirilgani (asosiy) va normalize qilingani (eski
+        # xatti-harakat bilan muvofiqlik uchun), shunda qaysi shakl
+        # kelsa ham topiladi.
+        natija[_inventardan_moslashtir(nomi, inv_set)] = qiymat
+        natija.setdefault(nomi, qiymat)
+    return natija
+
+
 # ── Sana belgilash ────────────────────────────────────────────────────────────
 def sana_belgi(yuklar: list[dict], start_date: datetime) -> list[dict]:
     """Har bir yukga yuklatish kunini belgilaydi (max 4/kun)."""
@@ -927,14 +967,23 @@ def main_with_data(kanal: str, ombor_map: dict,
     # 2026-07-11: G/H ustunlari (Қолдиқ/Йўлда) uchun -- pb_df dan (kerak_hisob
     # bu ustunlarni tashlab yuboradi, shu sabab alohida map qurilyapti).
     # Nom normalize qilinadi -- kerak_df/mavjud_df bilan bir xil kalit bo'lsin.
-    qoldiq_yolda_map = {}
-    if not pb_df.empty:
-        for _, _r in pb_df.iterrows():
-            _key = _norm(_r.get("tovar"))
-            qoldiq_yolda_map[_key] = (
-                float(_r.get("qoldiq", 0) or 0),
-                float(_r.get("yolda", 0) or 0),
-            )
+    #
+    # 2026-08-08 (Huzayfa: "0,8 mat 201 da yo'lda bor, ammo bu yerda qoldiqni
+    # ham yo'ldani ham nol ko'rsatmoqda, deyarli barcha listlarni shunday
+    # ko'rsatmoqda" — REAL bug, ekran rasmi bilan):
+    # BU YERDA faqat `_norm()` ishlatilardi. Lekin `normalize_product_name()`
+    # "Лист-" dan keyin DOIM bo'shliq qo'yadi ("Лист- 0,8"), inventarning
+    # o'zida esa ko'p Лист qatorlari bo'shliqSIZ ("Лист-0,8"). Rejadagi tovar
+    # nomlari (kerak_df orqali) inventarning ANIQ shakliga keltirilgan, ya'ni
+    # bo'shliqsiz — natijada bu map'dan qidirish TOPMASDI va Қолдиқ/Йўлда
+    # ustunlari 0 bo'lib chiqardi.
+    # Miqyosi: инвентардаги 165 ta Лист'dan 129 tasi (78%) topilmasdi;
+    # Труба/Профиль'da esa 364 tadan atigi 1 ta — shuning uchun muammo faqat
+    # Лист'da ko'rinardi.
+    # Yechim: kalit ham kerak_df bilan BIR XIL usulda (kanonik moslashtirish
+    # orqali) quriladi. Bu parsers.py::_parse_list_xitoy dagi xuddi shu
+    # bug-klassining uchinchi ko'rinishi edi.
+    qoldiq_yolda_map = qoldiq_yolda_map_qur(pb_df, _inv_set)
 
     # Xitoy ombor → mavjud_df (nomlar allaqachon normalize qilingan)
     mavjud_df = pd.DataFrame(list(ombor_map.items()), columns=["Товар", "Миқдор"])
