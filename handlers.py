@@ -721,13 +721,16 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         if _dep not in _sys.modules:
                             _sp = _ilu.spec_from_file_location(_dep, _nd / f"{_dep}.py")
                             _m  = _ilu.module_from_spec(_sp); _sys.modules[_dep] = _m; _sp.loader.exec_module(_m)
-                    xlsx_path = _sys.modules["yuklatish_rejasi"].main_with_data(kanal, ombor_akkum, xitoy_vazn=vazn_akkum)
+                    xlsx_path = _sys.modules["yuklatish_rejasi"].main_with_data(
+                        kanal, ombor_akkum, xitoy_vazn=vazn_akkum,
+                        notanish=context.user_data.get("notanish_akkum", []))
                 except Exception as e:
                     await query.message.reply_text(f"❌ Yuklatish rejasi xato:\n{str(e)[:300]}")
                     return
             context.user_data.pop("xitoy_akkum", None)
             context.user_data.pop("ombor_akkum", None)
             context.user_data.pop("vazn_akkum", None)
+            context.user_data.pop("notanish_akkum", None)
             if xlsx_path:
                 with open(xlsx_path.split("|")[-1] if "|" in xlsx_path else xlsx_path, "rb") as f:
                     await query.message.reply_document(document=f, filename="Yuklatish_rejasi.xlsx")
@@ -1871,6 +1874,7 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["xitoy_akkum"]   = {}   # akkumulyator reset
             context.user_data["ombor_akkum"]   = {}   # ombor akkumulyator reset
             context.user_data["vazn_akkum"]    = {}   # vazn akkumulyator reset
+            context.user_data["notanish_akkum"] = []  # 2026-08-08: o'qib bo'lmagan spec'lar
         return
 
     # Oddiy navigatsiya
@@ -1950,6 +1954,7 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["xitoy_akkum"] = {}
         context.user_data["ombor_akkum"] = {}
         context.user_data["vazn_akkum"]  = {}
+        context.user_data["notanish_akkum"] = []   # 2026-08-08
         context.user_data["kanal"]       = kanal
         ch = t(lang, CH_KEY[kanal])
         await msg.reply_text(
@@ -1983,7 +1988,9 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 main_with_data = sys.modules["yuklatish_rejasi"].main_with_data
                 ombor_akkum = context.user_data.get("ombor_akkum", {})
                 vazn_akkum  = context.user_data.get("vazn_akkum", {})
-                xlsx_path = main_with_data(kanal, ombor_akkum, xitoy_vazn=vazn_akkum)
+                xlsx_path = main_with_data(
+                    kanal, ombor_akkum, xitoy_vazn=vazn_akkum,
+                    notanish=context.user_data.get("notanish_akkum", []))
             except Exception as e:
                 await msg.reply_text(
                     f"❌ Yuklatish rejasi yaratishda xato:\n{str(e)[:300]}"
@@ -1992,6 +1999,7 @@ async def text_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("xitoy_akkum", None)
         context.user_data.pop("ombor_akkum", None)
         context.user_data.pop("vazn_akkum", None)
+        context.user_data.pop("notanish_akkum", None)
         context.user_data.pop("kutilmoqda", None)
 
         # STATS:konteyner|yuklangan_kg|yuklangan_xil|qolgan_xil|qolgan_kg|path
@@ -2890,6 +2898,14 @@ async def fayl_keldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["xitoy_akkum"] = akkum
         context.user_data["ombor_akkum"] = ombor_akkum
         context.user_data["vazn_akkum"]  = vazn_akkum
+        # 2026-08-08: parser umuman o'qiy olmagan spec'lar — Excelning
+        # "Ogohlantirish" varag'iga tushishi uchun to'planadi (bir nechta
+        # fayl ketma-ket yuborilsa hammasi birlashadi).
+        notanish_akkum = context.user_data.get("notanish_akkum", [])
+        for _sp in (unknown_list or []):
+            if _sp not in notanish_akkum:
+                notanish_akkum.append(_sp)
+        context.user_data["notanish_akkum"] = notanish_akkum
 
         n = len(ombor_map or {}) or len(xitoy_map or {})
         jami = len(ombor_akkum) or len(akkum)

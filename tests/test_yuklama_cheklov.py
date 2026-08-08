@@ -35,7 +35,7 @@ def _optimallashtir(tovarlar: dict):
     mavjud = pd.DataFrame(
         [{"Товар": n, "Миқдор": d} for n, d in tovarlar.items()]
     )
-    yuklar, qolgan, _, _ = optimallashtir(kerak, mavjud, abc_map={}, max_yuklar=20)
+    yuklar, qolgan, _, _, _ = optimallashtir(kerak, mavjud, abc_map={}, max_yuklar=20)
     return yuklar, qolgan
 
 

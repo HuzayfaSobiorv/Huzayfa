@@ -597,6 +597,91 @@ def _vazn_yoq_blok(ws, row: int, vazn_yoq: list[dict]) -> int:
     return row
 
 
+def _ogoh_blok(ws, row: int, sarlavha: str, rang: str, matn_rang: str,
+               fon: str, items: list[dict], dona_kor: bool = True) -> int:
+    """2026-08-08 (Huzayfa: "umuman yuklatilinmayotgan mahsulotlar,
+    tanimaganlar, mutloq skip qilayotganlari" — Excel ichida alohida
+    ogohlantirish varag'i): "Ogohlantirish" varag'idagi bitta blok.
+    `items` — [{"tovar": str, "dona": int|None, "izoh": str|None}, ...]
+    Bo'sh bo'lsa HECH NARSA chizilmaydi (varaq bo'm-bo'sh qolsin)."""
+    if not items:
+        return row
+    row = _empty_rows(ws, row, 2) if row > 1 else row
+
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NC)
+    c = ws.cell(row=row, column=1, value=f"  {sarlavha}  ({len(items)} ta)")
+    c.font      = _font(bold=True, size=12, color=C_WHITE)
+    c.fill      = _fill(rang)
+    c.alignment = _align(h="left", indent=1)
+    c.border    = _border()
+    ws.row_dimensions[row].height = 28
+    row += 1
+
+    for it in sorted(items, key=lambda x: str(x.get("tovar", ""))):
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+        c1 = ws.cell(row=row, column=1, value=f"  {it.get('tovar', '')}")
+        c1.font      = _font(bold=False, size=10, color=matn_rang)
+        c1.fill      = _fill(fon)
+        c1.border    = _border()
+        c1.alignment = _align(h="left", indent=1)
+
+        dona = it.get("dona")
+        cd = ws.cell(row=row, column=3,
+                     value=(int(dona) if (dona_kor and dona is not None) else ""))
+        cd.font = _font(bold=False, size=10, color=matn_rang)
+        cd.fill = _fill(fon); cd.border = _border(); cd.alignment = _align(h="center")
+
+        c4 = ws.cell(row=row, column=4, value=it.get("izoh", "") or "")
+        c4.font = _font(bold=False, size=10, color=matn_rang, italic=True)
+        c4.fill = _fill(fon); c4.border = _border(); c4.alignment = _align(h="left", indent=1)
+
+        ws.row_dimensions[row].height = 20
+        row += 1
+
+    return row
+
+
+def _ogohlantirish_varaq(wb: Workbook, qolgan: list[dict], vazn_yoq: list[dict],
+                         boshqa_kat: list[dict], yangi: list[dict],
+                         notanish: list[str]) -> None:
+    """2026-08-08 (Huzayfa): Excel ichidagi DOIMIY "Ogohlantirish" varag'i.
+
+    Sabab: yuklatish hisobida tovar bir necha xil yo'l bilan rejadan
+    tushib qolishi mumkin edi va ularning bir qismi HECH QAYERDA
+    ko'rinmasdi ("mutloq skip"). Endi hammasi bitta joyda:
+      1. Fayldan o'qib bo'lmadi        — parser spec'ni umuman tanimadi
+      2. Vazni aniqlanmadi             — YUKLANMADI
+      3. Kategoriyasi аксессуар/бошқа  — YUKLANMADI (ilgari butunlay jim edi)
+      4. Limit/juda kam miqdor         — bu safar yuklanmadi
+      5. Инвентарда topilmadi          — YUKLANDI, lekin yangi tovar
+
+    Varaq HAR DOIM yaratiladi (hatto muammo bo'lmasa ham) — shunda admin
+    "ogohlantirish bormi?" degan savolga doim BIR joydan javob oladi.
+    Muammo bo'lmasa varaq BO'M-BO'SH qoladi (Huzayfa talabi)."""
+    ws = wb.create_sheet("Ogohlantirish")
+    ws.sheet_view.showGridLines = False
+    _set_widths(ws)
+
+    row = 1
+    row = _ogoh_blok(
+        ws, row, "❓  FAYLDAN O'QIB BO'LMADI — parser tanimadi, hisobga UMUMAN kirmadi",
+        "6C3483", "4A235A", "F4ECF7",
+        [{"tovar": s, "dona": None, "izoh": "xom spec"} for s in notanish],
+        dona_kor=False)
+    row = _ogoh_blok(
+        ws, row, "🚫  VAZNI ANIQLANMADI — YUKLANMADI (vazn_lookup.xlsx ga qo'shing)",
+        "922B21", "922B21", "FDEDEC", vazn_yoq)
+    row = _ogoh_blok(
+        ws, row, "🚫  KATEGORIYASI АКСЕССУАР/БОШҚА — YUKLANMADI (vazn hisoblanmaydi)",
+        "B9770E", "7E5109", "FEF5E7", boshqa_kat)
+    row = _ogoh_blok(
+        ws, row, "⏭️   BU SAFAR YUKLANMADI — konteyner limiti yoki juda kam miqdor",
+        "7F8C8D", "555555", "F0F0F0", qolgan)
+    _ogoh_blok(
+        ws, row, "🆕  ИНВЕНТАРДА ТОПИЛМАДИ — yuklandi, lekin YANGI tovar sifatida",
+        "1A5276", "1A5276", "EBF5FB", yangi)
+
+
 def _yuk_toliqmi(yuk: dict) -> bool:
     """
     Konteyner "to'liq" hisoblanadi, agar:
@@ -654,16 +739,25 @@ def excel_yaz(yuklar: list[dict], qolgan: list[dict],
               holat_map: dict, kanal: str = "asosiy",
               qoldiq_yolda_map: dict | None = None,
               kerak_yoq: list[dict] | None = None,
-              vazn_yoq: list[dict] | None = None) -> Path:
+              vazn_yoq: list[dict] | None = None,
+              boshqa_kat: list[dict] | None = None,
+              yangi: list[dict] | None = None,
+              notanish: list[str] | None = None) -> Path:
     """
     Yuklatish rejasi Excel faylini yozadi.
     holat_map: {tovar_nomi: holat_str}  (Power BI dan)
     qoldiq_yolda_map: {tovar_nomi: (qoldiq, yolda)}  (Power BI dan, G/H ustunlari)
     kerak_yoq: Xitoyda tayyor bor, lekin Кам=0 bo'lgani uchun yuklanmagan ro'yxat
     vazn_yoq: vazni topilmagani uchun yuklanmagan ro'yxat (2026-07-18)
+    boshqa_kat: kategoriyasi аксессуар/бошқа bo'lgani uchun yuklanmagan (2026-08-08)
+    yangi: инвентарда topilmagan (yuklandi, lekin yangi) tovarlar (2026-08-08)
+    notanish: parser umuman o'qiy olmagan xom spec'lar (2026-08-08)
     """
-    kerak_yoq = kerak_yoq or []
-    vazn_yoq  = vazn_yoq or []
+    kerak_yoq  = kerak_yoq or []
+    vazn_yoq   = vazn_yoq or []
+    boshqa_kat = boshqa_kat or []
+    yangi      = yangi or []
+    notanish   = notanish or []
     qoldiq_yolda_map = qoldiq_yolda_map or {}
     wb = Workbook()
 
@@ -766,6 +860,10 @@ def excel_yaz(yuklar: list[dict], qolgan: list[dict],
         row = _kerak_yoq_blok(wsq, row, kerak_yoq)
         _vazn_yoq_blok(wsq, row, vazn_yoq)
 
+    # ── Ogohlantirish varag'i — HAR DOIM yaratiladi (2026-08-08, Huzayfa) ────
+    # Muammo bo'lmasa bo'm-bo'sh qoladi.
+    _ogohlantirish_varaq(wb, qolgan, vazn_yoq, boshqa_kat, yangi, notanish)
+
     # Xulosa varaqi
     _xulosa_varaq(wb, yuklar, qolgan, kanal, start_sana_str)
 
@@ -777,11 +875,14 @@ def excel_yaz(yuklar: list[dict], qolgan: list[dict],
 # ── Asosiy funksiyalar ────────────────────────────────────────────────────────
 def main_with_data(kanal: str, ombor_map: dict,
                    start_date: datetime | None = None,
-                   xitoy_vazn: dict | None = None) -> str | None:
+                   xitoy_vazn: dict | None = None,
+                   notanish: list[str] | None = None) -> str | None:
     """
     Bot tomonidan chaqiriladi — ombor_map tayyordan uzatiladi.
     ombor_map:  {tovar_nomi: tayyor_miqdor}  (L ustun)
     xitoy_vazn: {tovar_nomi: 1_dona_kg} — Xitoy faylidan olingan vazn (ixtiyoriy)
+    notanish:   parser xom faylda umuman o'qiy olmagan spec'lar (2026-08-08) —
+                Excelning "Ogohlantirish" varag'ida ko'rsatiladi
     Qaytaradi: Excel fayl yo'li yoki None (kerak yo'q)
     """
     if start_date is None:
@@ -850,11 +951,13 @@ def main_with_data(kanal: str, ombor_map: dict,
     yangi_tovarlar = mavjud_set - kerak_set
 
     # kerak_df ga yangi tovarlarni qo'shamiz (yuklash uchun kerak, inventarda yo'q bo'lsa ham)
+    yangi_list = []   # 2026-08-08: "Ogohlantirish" varag'i uchun
     if yangi_tovarlar:
         yangi_rows = []
         for tov in yangi_tovarlar:
             miq = int(mavjud_df[mavjud_df["Товар"] == tov]["Миқдор"].iloc[0])
             yangi_rows.append({"Товар": tov, "Холат": "🆕 ЯНГИ", "Кам": miq, "urg_kun": 999})
+            yangi_list.append({"tovar": tov, "dona": miq})
             holat_map[tov] = "🆕 ЯНГИ"
         yangi_df = pd.DataFrame(yangi_rows)
         kerak_df = pd.concat([kerak_df, yangi_df], ignore_index=True) if not kerak_df.empty else yangi_df
@@ -865,7 +968,7 @@ def main_with_data(kanal: str, ombor_map: dict,
         return "KERAK_YOQ"
 
     print(f"Kerak: {len(kerak_df)} ta, Xitoyda tayyor: {len(mavjud_set)} ta, Yangi: {len(yangi_tovarlar)} ta")
-    yuklar, qolgan, kerak_yoq, vazn_yoq = optimallashtir(
+    yuklar, qolgan, kerak_yoq, vazn_yoq, boshqa_kat = optimallashtir(
         kerak_df, mavjud_df, max_yuklar=MAX_PER_MONTH,
         xitoy_vazn=xitoy_vazn or {})
 
@@ -879,7 +982,8 @@ def main_with_data(kanal: str, ombor_map: dict,
     print(f"Excel yozilmoqda ({len(yuklar)} konteyner)...")
     out = excel_yaz(yuklar, qolgan, holat_map, kanal,
                     qoldiq_yolda_map=qoldiq_yolda_map, kerak_yoq=kerak_yoq,
-                    vazn_yoq=vazn_yoq)
+                    vazn_yoq=vazn_yoq, boshqa_kat=boshqa_kat,
+                    yangi=yangi_list, notanish=notanish or [])
 
     n_konteyner    = len(yuklar)
     yuklangan_kg   = sum(y["jami_kg"] for y in yuklar)
@@ -896,6 +1000,12 @@ def main_with_data(kanal: str, ombor_map: dict,
         print(f"   Hozircha kerak emas: {len(kerak_yoq)} xil (Excel oxirida ro'yxat)")
     if vazn_yoq:
         print(f"   ⚠️ Vazni topilmadi: {len(vazn_yoq)} xil (Excel oxirida ogohlantirish bloki)")
+    if boshqa_kat:
+        print(f"   ⚠️ Kategoriya аксессуар/бошқа: {len(boshqa_kat)} xil (yuklanmadi)")
+    if yangi_list:
+        print(f"   🆕 Инвентарда yo'q: {len(yangi_list)} xil (yuklandi, yangi tovar)")
+    if notanish:
+        print(f"   ❓ Fayldan o'qib bo'lmadi: {len(notanish)} spec")
 
     # STATS:konteyner|yuklangan_kg|yuklangan_xil|qolgan_xil|qolgan_kg|path
     return f"STATS:{n_konteyner}|{yuklangan_kg:.0f}|{yuklangan_xil}|{qolgan_xil}|{qolgan_kg:.0f}|{out}"

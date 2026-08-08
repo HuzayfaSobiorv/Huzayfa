@@ -247,10 +247,10 @@ def optimallashtir(
     abc_map: dict | None = None,
     max_yuklar: int = 20,
     xitoy_vazn: dict | None = None,
-) -> tuple[list[dict], list[dict], list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict]]:
     """kerak_df: Товар|Холат|Кам  mavjud_df: Товар|Миқдор
     xitoy_vazn: {tovar_nomi: 1_dona_kg} — vazn_lookup da yo'q tovarlar uchun fallback
-    Qaytaradi: (yuklar, qolgan, kerak_yoq, vazn_yoq)
+    Qaytaradi: (yuklar, qolgan, kerak_yoq, vazn_yoq, boshqa_kat)
       qolgan    — limit yoki minimal-miqdor qoidasi tufayli yuklanmadi
       kerak_yoq — hozircha doim bo'sh ro'yxat (2026-07-11: Кам-cheklovi
                   bekor qilindi -- Xitoyda tayyor bo'lgan HAMMASI yana
@@ -258,6 +258,17 @@ def optimallashtir(
       vazn_yoq  — 2026-07-18: vazni HECH QAYERDAN topilmagan tovarlar
                   (avval jimgina tashlab ketilardi -- endi Excelda
                   ogohlantirish bloki bilan ko'rsatiladi)
+      boshqa_kat— 2026-08-08 (Huzayfa: "shunday mahsulotlarni shundayligicha
+                  skip qivormayaptimi yo'qmi bilishim kerak"): kategoriyasi
+                  Труба/Профиль/Лист emas (аксессуар — Баласина, Шар,
+                  Отвод va h.k.) bo'lgani uchun yuklanmagan tovarlar.
+                  Bular ILGARI HECH QAYERGA yozilmasdan, butunlay JIM
+                  `continue` bilan tashlab ketilardi — foydalanuvchi
+                  tovarning "yo'qolganini" bilishning HECH QANDAY yo'li
+                  yo'q edi. Endi ro'yxatga tushadi va Excelning
+                  "Огоҳлантириш" varag'ida ko'rsatiladi.
+                  (Vazn ataylab hisoblanmaydi — loyiha qarori o'zgarmadi,
+                   faqat ko'rinadigan bo'ldi.)
     """
     if abc_map is None:
         abc_map = abc_map_yuklash()
@@ -271,6 +282,7 @@ def optimallashtir(
     qolgan: list[dict] = []
     kerak_yoq: list[dict] = []   # 2026-07-11: cheklov bekor qilindi, doim bo'sh
     vazn_yoq: list[dict] = []    # 2026-07-18: vazni topilmagan tovarlar
+    boshqa_kat: list[dict] = []  # 2026-08-08: kategoriyasi tanilmagan (аксессуар)
 
     for _, row in kerak.iterrows():
         tovar      = row["Товар"]
@@ -281,7 +293,12 @@ def optimallashtir(
         cat  = get_category(tovar)
         turi = yuk_turi(tovar, cat)
         if cat in ("\u0411\u043e\u0448\u049b\u0430",):
-            # Aksessuar/boshqa toifa -- vazn ataylab hisoblanmaydi (loyiha qarori)
+            # Aksessuar/boshqa toifa -- vazn ataylab hisoblanmaydi (loyiha qarori).
+            # 2026-08-08: ilgari shu yerda JIMGINA `continue` bo'lardi va tovar
+            # hech qayerda ko'rinmasdi. Endi ro'yxatga yoziladi (Excel
+            # "\u041e\u0433\u043e\u04b3\u043b\u0430\u043d\u0442\u0438\u0440\u0438\u0448" varag'i uchun) -- xatti-harakat o'zgarmadi,
+            # faqat KO'RINADIGAN bo'ldi.
+            boshqa_kat.append({"tovar": tovar, "dona": bor_dona})
             continue
         vazn_dona = tovar_vazni(tovar)
         # Xitoy faylidan fallback: vazn_lookup da yo'q tovar uchun
@@ -393,7 +410,7 @@ def optimallashtir(
                 break
             yuklar.append(_yangi_yuk(turi))
 
-    return yuklar, qolgan, kerak_yoq, vazn_yoq
+    return yuklar, qolgan, kerak_yoq, vazn_yoq, boshqa_kat
 
 
 def konteyner_xulosa(yuklar: list[dict]) -> dict:
