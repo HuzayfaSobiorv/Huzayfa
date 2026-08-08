@@ -26,6 +26,39 @@ LIMITS_BY_TYPE = {
 ABC_CAP_PCT = {"A": 0.40, "B": 0.60, "C": 1.00}
 ABC_RANK    = {"A": 0, "B": 1, "C": 2}
 
+# ── Konteyner ichida DONA cheklovi (hajm/"kub" sababli) ──────────────────────
+# 2026-08-08 (Huzayfa: "51 dan maksimalniy 800 ta yuklansin, sababi kubi
+# sig'may qoladi"): optimizator FAQAT og'irlikni hisoblaydi (28 t jami,
+# труба/профиль 11 t) — hajmni umuman qaramaydi. Katta diametrli, ammo
+# yengil quvurlar og'irlik bo'yicha "sig'adi", lekin konteynerga jismonan
+# joylashmaydi. Masalan Ф-51 bitta konteynerga 1827 donagacha tushib
+# ketardi. Bu yerda mahsulot guruhiga konteyner-ichi DONA chegarasi
+# qo'yiladi: chegara bitta KONTEYNER uchun, jami reja uchun emas — ortiqchasi
+# keyingi konteynerga o'tadi (yuklanmay qolmaydi).
+#
+# Kalit — tovar nomiga qo'llanadigan regex, qiymat — bitta konteynerdagi
+# maksimal dona. Bir tovar bir nechta shablonga mos kelsa, BIRINCHI moslik
+# ishlatiladi. Yangi cheklov qo'shish uchun shu jadvalga qator qo'shish
+# kifoya — boshqa joyni o'zgartirish shart emas.
+#
+# Ф-51: qalinligidan (0,9 / 1,1 / 1,4 ...), uzunligidan (5,8 м / 6 м) va
+# markasidan (201 / 304) QAT'I NAZAR — Huzayfa bilan kelishilgan (2026-08-08).
+DONA_CHEKLOV_KONTEYNER = {
+    r'^(?:\([^)]*\)\s*)?Ф-51(?!\d)': 800,
+}
+
+
+def _dona_cheklovi(tovar: str) -> tuple[str, int] | None:
+    """Tovarga konteyner-ichi dona cheklovi bormi?
+    Qaytaradi: (guruh_kaliti, maksimal_dona) yoki None.
+    Guruh kaliti — regexning o'zi: bir guruhga tushgan HAMMA tovar
+    (masalan Ф-51 ning barcha qalinliklari) bitta hisobni bo'lishadi."""
+    s = str(tovar)
+    for pattern, limit in DONA_CHEKLOV_KONTEYNER.items():
+        if re.search(pattern, s):
+            return pattern, int(limit)
+    return None
+
 
 def _holat_rank(holat: str) -> int:
     s = str(holat)
@@ -55,8 +88,11 @@ def yuk_turi(name: str, cat: str) -> str:
 
 
 def _yangi_yuk(turi: str) -> dict:
+    # "_guruh_dona" — DONA_CHEKLOV_KONTEYNER guruhlari bo'yicha shu
+    # konteynerga allaqachon yuklangan dona soni (2026-08-08).
     return {"turi": turi, "truba_profil_kg": 0.0,
-            "list_kg": 0.0, "jami_kg": 0.0, "items": [], "_item_kg": {}}
+            "list_kg": 0.0, "jami_kg": 0.0, "items": [], "_item_kg": {},
+            "_guruh_dona": {}}
 
 
 def abc_map_yuklash() -> dict:
@@ -293,6 +329,8 @@ def optimallashtir(
         # yuklanmay qolib ketardi. Xitoyda nechta tayyor bo'lsa,
         # yana hammasi yuklanadi (Кам faqat tartib/ustunlik uchun).
         qoldi   = bor_dona
+        # 2026-08-08: hajm ("kub") sababli konteyner-ichi dona chegarasi
+        chek = _dona_cheklovi(tovar)
 
         while qoldi > 0:
             for yuk in yuklar:
@@ -307,6 +345,12 @@ def optimallashtir(
                 qolgan_jami = LIMIT_TOTAL           - yuk["jami_kg"]
                 sig_kg      = min(qolgan_cap, qolgan_slot, qolgan_jami)
                 sig_dona    = int(sig_kg // vazn_dona)
+                if chek:
+                    # Og'irlik bo'yicha sig'sa ham, dona chegarasidan
+                    # oshmasin (guruh bo'yicha, mas. barcha Ф-51 birgalikda)
+                    _guruh, _max_dona = chek
+                    _qolgan_dona = _max_dona - yuk["_guruh_dona"].get(_guruh, 0)
+                    sig_dona = min(sig_dona, max(_qolgan_dona, 0))
                 if sig_dona <= 0:
                     continue
                 if sig_dona < qoldi and _mayda_qatormi(sig_dona, vazn_dona):
@@ -323,6 +367,9 @@ def optimallashtir(
                 yuk[key]               = round(yuk[key]  + og, 2)
                 yuk["jami_kg"]         = round(yuk["jami_kg"] + og, 2)
                 yuk["_item_kg"][tovar] = round(already_kg + og, 2)
+                if chek:
+                    yuk["_guruh_dona"][chek[0]] = \
+                        yuk["_guruh_dona"].get(chek[0], 0) + dona
                 qoldi        -= dona
                 mavjud[tovar] = mavjud.get(tovar, 0) - dona
                 if qoldi == 0:
