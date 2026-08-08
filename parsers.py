@@ -150,6 +150,10 @@ def _inventar_snap(nom: str, inventar_set: set) -> str:
       1,45 → avvalo '1,45' qidir (aniq), yo'q bo'lsa '1,5' (yaxlitlangan)
     Sabab: Xitoy 1.35 desa, bizda 1.35 bor bo'lsa unga ulaymiz,
            yo'q bo'lsa 1.4 bormi qidiramiz (Xitoy 1.35 = bizning 1.4).
+
+    MUHIM: snap FAQAT stenkani (qalinlikni) o'zgartiradi. UZUNLIK
+    (5,8 м / 6 м) HECH QACHON o'zgartirilmaydi — 2026-08-08 gacha shunday
+    emas edi, pastdagi izohga qarang.
     """
     if not inventar_set:
         return nom
@@ -164,26 +168,26 @@ def _inventar_snap(nom: str, inventar_set: set) -> str:
     }
     candidates = _SNAP_ORDER.get(stenka)
     if candidates:
-        # Marka va prefix ajratamiz — uzunlik farqi bo'lsa ham topilsin
-        marka_m = re.search(r'\(\d+ марка\)$', nom.strip())
-        marka_sfx = marka_m.group(0) if marka_m else ''   # "(201 марка)"
+        # 2026-08-08 (Huzayfa: "0.65/1.35/1.45 bu qalinlikku, nega 6 m
+        # uzunlikka o'zgartirilyapdi? tushunmadim"): BU YERDA ilgari
+        # "uzunlik farqi bo'lsa ham topilsin" degan qidiruv bor edi — u
+        # nomni birinchi "(" gacha kesib, inventardan SHU prefiks bilan
+        # boshlanadigan HAR QANDAY qatorni olardi. Qavsdan keyingi qism esa
+        # aynan UZUNLIK. Natijada qalinlikni yaxlitlash funksiyasi jimgina
+        # uzunlikni ham almashtirib yuborardi:
+        #   Xitoy "Φ 38 cT 1.35" (5,8 м) → "Ф-38 ст 1,4 (6 м) (201 марка)"
+        # ya'ni 297 dona tovar butunlay boshqa (6 м) mahsulotga yozilardi.
+        # Bundan ham yomoni — bu FAQAT 0,65/1,35/1,45 stenkalarda ishlardi,
+        # boshqa stenkalarda ishlamasdi, ya'ni xatti-harakat izchil emasdi.
+        # Tarix (142 fayl), Yillik_sotuv_natija va Min_Zaxira tekshirildi:
+        # Ф-25 ст 1,2 / Ф-38 ст 1,2 / Ф-38 ст 1,35 / Пр. 40х40 ст 2,0 —
+        # bularning 5,8 м varianti HECH QACHON bo'lmagan, faqat 6 м bor.
+        # QOIDA (Huzayfa): Xitoy 5,8 desa — 5,8 qidiriladi; inventarda
+        # yo'q bo'lsa bu YANGI mahsulot, 6 м ga ULANMAYDI.
         for c in candidates:
             new_nom = nom[:m.start(1)] + c + nom[m.end(1):]
             if new_nom in inventar_set:
                 return new_nom
-            # Uzunlik farqi bo'lishi mumkin (masalan xitoy 5,8м, inventar 6м)
-            stenka_end = m.start(1) + len(c)
-            pfx_end = new_nom.find('(', stenka_end)
-            if pfx_end != -1:
-                prefix = new_nom[:pfx_end].rstrip()
-                if marka_sfx:
-                    match = next((x for x in inventar_set
-                                  if x.startswith(prefix + ' (') and x.endswith(marka_sfx)), None)
-                else:
-                    match = next((x for x in inventar_set
-                                  if x.startswith(prefix + ' (')), None)
-                if match:
-                    return match
     # (Ж-X) suffixni olib tashlab qidiramiz — har qanday stenka uchun
     jm = re.search(r'\s*\(Ж-\d+\)\s*$', nom)
     if jm:
@@ -233,7 +237,15 @@ def _china_spec_to_inventar(spec: str, length: str) -> str | None:
     # Marka (default 201)
     marka = '201'
     for m_val in ('304', '316', '321', '430'):
-        if re.search(rf'\b{m_val}\b', spec):
+        # 2026-08-08: `\b` bu yerda Xitoy matni bilan ISHLAMAYDI — Python
+        # regexda CJK belgilar ham \w hisoblanadi, shuning uchun
+        # "304不锈钢" ichida `\b304\b` mos KELMAYDI (marka jimgina 201 deb
+        # qolardi). Chegara sifatida raqam VA o'lcham ajratgichlari
+        # (x/х/×/*) inkor qilinadi — bu "KB 304x30" kabi O'LCHAM ichidagi
+        # raqamni marka deb olishning oldini oladi (eski `\b` xatti-harakati
+        # shu holatda to'g'ri edi, saqlanadi), lekin CJK/harf yonidagi
+        # markani endi topadi.
+        if re.search(rf'(?<![\dxXхХ×*.,]){m_val}(?![\dxXхХ×*.,])', spec):
             marka = m_val
             break
 
@@ -264,16 +276,31 @@ def _china_spec_to_inventar(spec: str, length: str) -> str | None:
     # Xuddi pastdagi "KB ...x..." qatoridagi Кирилл "х" ni ham qabul
     # qiladigan mavjud pattern kabi, bu yerga ham Кирилл с/С, т/Т
     # variantlari qo'shildi — xavfsiz, faqat qamrovni kengaytiradi.
-    m = re.match(r'^[φΦ]\s*(\d+)\s+[cCсС][tTтТ]\s+([\d,\.]+)', spec)
+    # 2026-08-08 (Huzayfa: "koplab mahsulotlarni tanilmayapti" — REAL bug,
+    # "Metalmart_Jadvallar_Jamlanma.xlsx" faylida topilgan): ba'zi Xitoy
+    # fayllarida stenka qiymati RAQAM ICHIDA bo'shliq bilan yoziladi —
+    # "Φ 16 cT 0, 65", "Φ 25 cT 1. 20" (qo'lda terishdagi nomuvofiqlik).
+    # ESKI pattern `([\d,\.]+)` bo'shliqda TO'XTARDI va faqat "0," / "1."
+    # qismini olardi → _yaxlitla_stenka("0,") = "0,0". Natijada:
+    #   - "Φ 51 cT 0. 85" → "Ф-51 ст 0,0" (inventarda yo'q → 🆕 ЯНГИ);
+    #   - "Φ 38 cT 1. 20" va "Φ 38 cT 1. 35" IKKALASI ham "ст 1,0" bo'lib,
+    #     ikki xil mahsulot BITTA qatorga qo'shilib ketardi (456+297=753);
+    #   - "Φ 25 cT 1. 20" → "Ф-25 ст 1,0" — bu nom inventarda MAVJUD, ya'ni
+    #     bot "tanidim" deb BUTUNLAY BOSHQA mahsulotni yuklatish rejasiga
+    #     qo'yardi, hech qanday ogohlantirishsiz (eng xavflisi shu).
+    # Endi son ichidagi bo'shliqlar qabul qilinadi va olib tashlanadi.
+    # `\s+` → `\s*`: "Φ16cT0.85" kabi bo'shliqsiz variant ham ishlaydi.
+    m = re.match(r'^[φΦ]\s*(\d+)\s*[cCсС][tTтТ]\s*(\d+(?:\s*[,\.]\s*\d+)?)', spec)
     if m:
-        stenka = _yaxlitla_stenka(m.group(2))
+        stenka = _yaxlitla_stenka(re.sub(r'\s+', '', m.group(2)))
         besh = ' Бесшовный' if (m.group(1), stenka, marka) in BESHOVNY_KOMBO else ''
         return f'{brend_pfx}Ф-{m.group(1)} ст {stenka}{besh} ({L_str}){marka_sfx}{suffix}'
 
-    # Профиль: KB 20x20 CT 0.65  /  KB 30x30CT 0.85
-    m = re.match(r'^KB\s+(\d+)[xXхх×]\s*(\d+)\s*[cCсС][tTтТ]\s*([\d,\.]+)', spec)
+    # Профиль: KB 20x20 CT 0.65  /  KB 30x30CT 0.85  /  KB 40x40 CT 1. 95
+    # (yuqoridagi izohdagi bo'shliq muammosi bu yerga ham tegishli)
+    m = re.match(r'^KB\s*(\d+)\s*[xXхх×]\s*(\d+)\s*[cCсС][tTтТ]\s*(\d+(?:\s*[,\.]\s*\d+)?)', spec)
     if m:
-        stenka = _yaxlitla_stenka(m.group(3))
+        stenka = _yaxlitla_stenka(re.sub(r'\s+', '', m.group(3)))
         return f'{brend_pfx}Пр. {m.group(1)}х{m.group(2)} ст {stenka} ({L_str}){marka_sfx}{suffix}'
 
     # Профиль D型管 (yarim aval): KB D型管30*15*1.05 → (Ярим овал) Пр. 30х15 ст 1,1
@@ -382,8 +409,15 @@ def _parse_truba_profil_xitoy(rows: list, ombor_i: int,
         if inventar_nom:
             # K ustun (buyurtma) — snap YO'Q, nom o'zgarmaydi
             nom_k = normalize_product_name(inventar_nom)
-            # L ustun (yuklatish) — snap BOR, inventarga moslanadi
-            nom_l = normalize_product_name(_inventar_snap(inventar_nom, _get_inventar_set()))
+            # L ustun (yuklatish) — snap BOR, inventarga moslanadi.
+            # 2026-08-08: `_inventardan_moslashtir` qo'shildi — Лист tomonida
+            # topilgan bo'shliq-nomuvofiqligi (izohi `_parse_list_xitoy`da)
+            # труба/профиль nomlarida ham yuzaga kelishi mumkin, chunki
+            # inventarda ba'zi qatorlar qo'sh bo'shliq bilan yozilgan
+            # (masalan "Пр. 20х20 ст 0,9 (6 м)  (201 марка)").
+            nom_l = _inventardan_moslashtir(
+                normalize_product_name(_inventar_snap(inventar_nom, _get_inventar_set())),
+                _get_inventar_set())
             if mq > 0:
                 known[nom_k] = known.get(nom_k, 0) + mq
             if ombor_mq > 0:
@@ -424,6 +458,18 @@ def _parse_list_xitoy(rows: list) -> dict:
     yan_se_i  = next((i for i, h in enumerate(h0) if '颜色' in h), None)
     gui_ge_i  = next((i for i, h in enumerate(h0) if '规格' in h), None)
     shu_i     = next((i for i, h in enumerate(h0) if '数量' in h), None)
+    # 2026-08-08 (Huzayfa: "koplab mahsulotlarni tanilmayapti" — REAL bug,
+    # "Xiaoshou_Qingdan_2026-08-08.xlsx" faylida topilgan): marka ilgari
+    # FAQAT 品号 (mahsulot kodi) ustunidan olinardi. Lekin "销售清单"
+    # (sotuv ro'yxati) formatidagi fayllarda 品号 ustuni UMUMAN YO'Q —
+    # material 材质 ustunida keladi ("201直板" / "304直板"). Natijada
+    # marka='' bo'lib qolardi va IKKI jiddiy oqibat berardi:
+    #   1) nom "(201 марка)" qo'shimchasisiz yasalardi, inventarda esa
+    #      DOIM marka bilan → 19 tovardan 19 tasi mos kelmay 🆕 ЯНГИ;
+    #   2) 201 va 304 bir xil nom hosil qilib, QO'SHILIB ketardi
+    #      (masalan 0.80*1219*2438 砂板: 201 dan 1700 + 304 dan 100 = 1800).
+    # Endi 材质 ham o'qiladi (品号 bo'lmasa yoki undan marka chiqmasa).
+    cai_zhi_i = next((i for i, h in enumerate(h0) if '材质' in h), None)
     if gui_ge_i is None or shu_i is None:
         return {}, []
 
@@ -442,11 +488,23 @@ def _parse_list_xitoy(rows: list) -> dict:
         gui_ge_s = str(gui_ge).strip()
         if any(k in gui_ge_s for k in TOTAL_KEYS):
             continue
-        m = re.match(r'^([\d\.]+)[*×xX]([\d\.]+)[*×xX]([\d\.]+)', gui_ge_s)
+        # Bo'shliqqa chidamli: "0.45*1219*2438" ham, "0.45 * 1219 * 2438" ham
+        # (труба tomonidagi bo'shliq bugi bilan bir xil sabab, 2026-08-08).
+        m = re.match(r'^\s*([\d\.,]+)\s*[*×xX]\s*([\d\.,]+)\s*[*×xX]\s*([\d\.,]+)', gui_ge_s)
         if not m:
-            # Haqiqiy mahsulot satrini tekshirish: pin_hao kodi bor bo'lsa — noma'lum
-            ph_check = row[pin_hao_i] if pin_hao_i is not None and pin_hao_i < nlen else None
-            if ph_check and str(ph_check).strip():
+            # Haqiqiy mahsulot satrimi? — 品号, 材质 yoki 数量 dan BIRORTASI
+            # to'ldirilgan bo'lsa "ha".
+            # 2026-08-08: ilgari FAQAT pin_hao (品号) tekshirilardi. 品号
+            # ustuni yo'q fayllarda (销售清单 formati) parser tanimagan
+            # qatorlar JIMGINA tashlab yuborilardi — na Excel'da, na
+            # ogohlantirishda ko'rinmasdi. Endi bunday qator `unknown`ga
+            # tushadi va admin uni ko'radi.
+            _real_row = False
+            for _ci in (pin_hao_i, cai_zhi_i, shu_i):
+                if _ci is not None and _ci < nlen and row[_ci] not in (None, ''):
+                    _real_row = True
+                    break
+            if _real_row:
                 unknown.append(gui_ge_s)
             continue
         try:
@@ -471,19 +529,44 @@ def _parse_list_xitoy(rows: list) -> dict:
             if key in yan_se:
                 rang = RANG[key]
                 break
-        # Marka
+        # Marka — avval 品号 (mahsulot kodi), topilmasa 材质 (material).
+        # DIQQAT: `\b` bu yerda ISHLAMAYDI — Python'da CJK belgilar ham \w
+        # hisoblanadi, shuning uchun "201直板" ichida `\b201\b` mos kelmaydi.
+        # Shu sabab raqam-chegarasi lookaround bilan tekshiriladi.
         marka = ''
-        ph_val = row[pin_hao_i] if pin_hao_i is not None and pin_hao_i < nlen else None
-        if ph_val:
-            pm = re.match(r'^(\d+)', str(ph_val))
-            if pm:
-                marka = pm.group(1)
+        for _mi in (pin_hao_i, cai_zhi_i):
+            if _mi is None or _mi >= nlen:
+                continue
+            _mv = row[_mi]
+            if not _mv:
+                continue
+            _ms = str(_mv).strip()
+            _mm = (re.search(r'(?<!\d)(201|304|316|321|430)(?!\d)', _ms)
+                   or re.match(r'^(\d+)', _ms))
+            if _mm:
+                marka = _mm.group(1)
+                break
         name = f"Лист-{qalinlik_s} ({en}х{boy})"
         if rang:
             name += f" ({rang})"
         if marka:
             name += f" ({marka} марка)"
-        nom = normalize_product_name(name)
+        # 2026-08-08 (yuqoridagi marka bugini tuzatgandan KEYIN chiqqan
+        # ikkinchi qatlam — oxirigacha simulyatsiyada topildi): nom to'g'ri
+        # yasalgan bo'lsa ham inventar bilan mos kelmasdi, chunki
+        # normalize_product_name() DOIM "Лист-" dan keyin bo'shliq qo'yadi
+        # ("Лист- 0,8"), inventarning o'zida esa ko'p qatorlar bo'shliqSIZ
+        # yozilgan ("Лист-0,8") — tarixiy formatlash nomuvofiqligi.
+        # yuklatish_rejasi.main_with_data() kerak_df tomonini allaqachon
+        # _inventardan_moslashtir() bilan kanonik shaklga keltiradi, lekin
+        # ombor (Xitoy) tomoni keltirilmasdi — natijada AYNAN BIR XIL tovar
+        # ikki xil satr bo'lib, mos kelmay 🆕 ЯНГИ bo'lib chiqardi
+        # (19 ta Лист shu sababdan yo'qolgan edi).
+        # _inventardan_moslashtir kanonik (bo'shliq/nuqta-vergulga chidamli)
+        # solishtiradi va inventardagi ASL matnni qaytaradi; topilmasa nomni
+        # o'zgarishsiz qoldiradi — ya'ni chin YANGI tovarlar buzilmaydi.
+        nom = _inventardan_moslashtir(normalize_product_name(name),
+                                      _get_inventar_set())
         known[nom] = known.get(nom, 0) + mq
     return known, unknown
 
